@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 publish = false
+license = "GPL-3.0-only"
+repository = "https://github.com/Woblu/waymark-launcher"
 
 # The launcher is judged on how fast it feels, so release builds trade
 # compile time for runtime speed and a smaller binary.

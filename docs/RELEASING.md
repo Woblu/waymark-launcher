@@ -24,13 +24,7 @@ The installer and its `.sig` file land in `target/release/bundle/nsis/`.
 
 The repository is `Woblu/waymark-launcher`. Its Actions secrets are `TAURI_SIGNING_PRIVATE_KEY` and `WAYMARK_CURSEFORGE_API_KEY`. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` stays unset because the key has no password.
 
-Installed copies and the website have to download releases without signing in, and GitHub only serves release files publicly from a public repository. Once releases have a public home, point the update address at it. The app checks `https://waymark-launcher.vercel.app/updates/latest.json`, so add this to `redirects` in `apps/site/vercel.json` and deploy the site:
-
-```json
-{ "source": "/updates/latest.json", "destination": "https://github.com/<owner>/<repo>/releases/latest/download/latest.json", "permanent": false }
-```
-
-Using our own address means the repository can move without breaking installed copies.
+The app checks `https://waymark-launcher.vercel.app/updates/latest.json`, and `apps/site/vercel.json` redirects that to the newest published GitHub release. Using our own address means the repository can move without breaking installed copies. If it moves, change the redirect and deploy the site. Until a release is published, the redirect ends in a 404, which the app treats as no update.
 
 ## Making a release
 
@@ -69,15 +63,17 @@ This runs inside the build through `bundle.windows.signCommand`, so the app and 
 
 Certificates last three days, and the signature's timestamp keeps it valid after that. Signing doesn't remove SmartScreen warnings straight away, because reputation builds as people download the installer.
 
-### Windows alternative: SignPath Foundation
+### Windows, free: SignPath Foundation
 
-Free, but a poor fit until Waymark is established:
+The only free route for a directly downloaded installer. Waymark's public source and GPL license already meet the license terms. Still needed:
 
-- The project must be released already, in the form you want signed, and have a verifiable reputation. Approval is at their discretion.
-- Everything must use an OSI-approved license with no commercial dual licensing, and the source has to be publicly verifiable.
-- The website needs a code signing policy page, every team member needs MFA, and each release needs manual approval.
-- The signature names SignPath Foundation as publisher, not you.
-- Signing happens on an uploaded artifact after the build, so the release workflow would have to make the update signature and `latest.json` itself.
+- A published release in the form you want signed, plus a verifiable reputation. Approval is at their discretion and no review time is published, so it can be refused.
+- A code signing policy page on the website, with the wording and team roles from [their terms](https://signpath.org/terms), and a privacy statement.
+- MFA on GitHub and SignPath, and manual approval of every release.
+
+The signature names SignPath Foundation as publisher, not you. Signing happens on an uploaded artifact after the build, so the release workflow would have to make the update signature and `latest.json` itself.
+
+The Microsoft Store isn't a way around this. Individual registration is free and the Store signs MSIX packages for free, but Tauri only makes EXE and MSI installers, and Tauri's docs say those must be code signed already.
 
 ### macOS: Apple Developer ID
 

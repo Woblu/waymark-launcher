@@ -64,3 +64,16 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 - **Respect CurseForge authors.** When a file has no download URL, the author has opted out of third-party apps, so the player is sent to CurseForge.
 - **Pack files are untrusted.** Paths are checked with `safe_relative` and download hosts against the `.mrpack` allow list.
 - **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
+
+## Forking
+
+Forks need their own identity:
+
+- **Azure client ID.** The one in `brand.rs` is registered to this project and approved by Mojang for this app only. Register your own and apply for your own approval.
+- **CurseForge key.** Request your own. Without one, CurseForge search is switched off.
+- **Update key and endpoint.** Generate your own, or your builds will look for updates from this project.
+- **Name.** Change the product name in `brand.rs`, so people can tell your build from this one.
+
+## License
+
+Waymark is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt).
