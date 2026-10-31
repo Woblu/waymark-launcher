@@ -1,0 +1,16 @@
+target/
+apps/desktop/src-tauri/gen/
+node_modules/
+dist/
+.vercel/
+.env
+.env.*
+*.log
+.DS_Store
+
+# Signing material never belongs in the repository
+*.key
+*.p12
+*.p8
+*.pfx
+*.pem

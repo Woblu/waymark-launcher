@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Waymark, a launcher for Minecraft: Java Edition</title>
+    <meta name="description" content="Waymark is a launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone. In development." />
+    <meta property="og:title" content="Waymark" />
+    <meta property="og:description" content="A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone." />
+    <meta property="og:image" content="/assets/app-library.webp" />
+    <link rel="icon" href="/assets/favicon.png" />
+    <link rel="preload" href="/assets/fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <img class="art" src="/assets/dusk.png" width="480" height="150" alt="Pixel art of a line of lit stone markers crossing dark hills at dusk" />
+
+    <main>
+      <header>
+        <h1>Waymark</h1>
+        <p class="lede">A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone.</p>
+        <p class="note">In development. There is no public download yet.</p>
+      </header>
+
+      <figure class="wide">
+        <img src="/assets/app-library.webp" alt="The Waymark library, with a list of instances on the left and the selected instance, its Play button and its mods on the right" width="1800" height="1145" />
+        <figcaption>An early build, with sample data.</figcaption>
+      </figure>
+
+      <section>
+        <h2>History</h2>
+        <div>
+          <p>Waymark records an instance's mods and config files whenever they change, and again before each launch. Each record is a waymark. Choose an earlier one and the instance goes back to that state. Only the files that differ are touched, so this is quick even on a large pack, and the state you left stays in the list in case you want it back.</p>
+          <p>Worlds aren't included. They're too large and change too often, and removing a mod shouldn't rewind your saves.</p>
+          <p>Each file is stored once, by hash, and hard-linked into the instances that use it. A second copy of a large modpack takes up almost no extra disk space, and a waymark is only a list of hashes.</p>
+          <figure>
+            <img src="/assets/app-trail.webp" alt="The Waymarks tab, listing each recorded change to an instance with the files added, removed and changed" width="1720" height="893" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Finding a bad mod</h2>
+        <div>
+          <p>When a pack crashes and the log doesn't say why, Waymark can search for the cause. It switches half the mods off, keeping their dependencies on, and asks you to launch the game and report what happened. Then it repeats with whichever half is left.</p>
+          <p>A 300 mod pack takes about a dozen launches. If a crash only happens when two mods are loaded together, the search finds both.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Crash reports</h2>
+        <div>
+          <p>After a crash, Waymark reads the crash report and <code>latest.log</code> on your computer and looks for known causes: a mod built for a newer Java, a missing dependency, two copies of one mod, a Mixin failure, running out of memory, or a graphics driver fault. If it recognizes one, it tells you which mod is involved and what to change.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Updates</h2>
+        <div>
+          <p>Waymark checks every Modrinth mod in an instance with a single request and applies the updates as one change, so one rollback undoes all of them. CurseForge mods aren't covered by update checks yet.</p>
+          <p>New releases are held back for 48 hours by default. In 2023 the Fractureiser malware spread through stolen CurseForge and Bukkit accounts, and a short delay gives people time to catch something like that before it reaches your game. You can change the delay or turn it off.</p>
+          <figure>
+            <img src="/assets/app-mods.webp" alt="The Mods tab, showing two updates ready to install, one held back because it is too new, and a searchable list of mods" width="1720" height="893" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Details</h2>
+        <div>
+          <table>
+            <tbody>
+              <tr><th scope="row">Mod loaders</th><td>Fabric, Quilt, Forge, NeoForge</td></tr>
+              <tr><th scope="row">Mods</th><td>Modrinth and CurseForge. If a CurseForge author has blocked third-party downloads, Waymark sends you to their page.</td></tr>
+              <tr><th scope="row">Modpacks</th><td><code>.mrpack</code> and CurseForge <code>.zip</code></td></tr>
+              <tr><th scope="row">Java</th><td>Mojang's own runtimes, installed automatically for each version</td></tr>
+              <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, the CurseForge app and the Modrinth App. Importing makes a copy and leaves the original alone.</td></tr>
+              <tr><th scope="row">Platform</th><td>Windows for now</td></tr>
+              <tr><th scope="row">Installer</th><td>Under 5 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Requirements</h2>
+        <div>
+          <p>You need a Microsoft account that owns Minecraft: Java Edition. Waymark checks ownership when you sign in and again at every launch, and the game won't start without it. There is no username-only mode. With no internet connection, an account verified in the last 30 days can still play.</p>
+          <p>Minecraft is downloaded from Mojang's servers and isn't redistributed. Sign-in tokens are kept in Windows Credential Manager and are only sent to Microsoft and Mojang.</p>
+        </div>
+      </section>
+
+      <section id="contact">
+        <h2>Contact</h2>
+        <div>
+          <p>Waymark is made by Woblu, who is responsible for it. For support or anything else, email <a href="mailto:waymarklaunchersupport@proton.me">waymarklaunchersupport@proton.me</a>.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.</p>
+    </footer>
+  </body>
+</html>

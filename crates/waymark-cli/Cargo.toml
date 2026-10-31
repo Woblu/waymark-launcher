@@ -1,0 +1,15 @@
+[package]
+name = "waymark-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "waymark"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+waymark-core = { path = "../waymark-core" }

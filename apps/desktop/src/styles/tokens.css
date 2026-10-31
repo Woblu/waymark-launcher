@@ -1,0 +1,40 @@
+/* The whole visual language. Components use these names and never raw values. */
+:root {
+  --bg: #0d0f12;
+  --panel: #111418;
+  --raised: #181b20;
+  --control: #1e2227;
+  --control-hover: #262a31;
+
+  --line: #24272d;
+  --line-strong: #363a42;
+
+  --text: #e8e6e1;
+  --text-2: #a5a6a9;
+  --text-3: #808287;
+
+  --accent: #e6ad62;
+  --accent-hover: #efbd79;
+  --on-accent: #1a1207;
+  --selected: #20242a;
+
+  --good: #8bc9a0;
+  --warn: #dfc27c;
+  --bad: #e88f84;
+  --info: #93b3d8;
+
+  --font: 'Libre Franklin Variable', 'Segoe UI', system-ui, sans-serif;
+  --mono: Consolas, ui-monospace, Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-s: 13px;
+  --text-m: 14px;
+  --text-l: 16px;
+  --text-xl: 26px;
+
+  --radius: 3px;
+
+  --titlebar: 40px;
+  --statusbar: 26px;
+  --sidebar: 262px;
+}
