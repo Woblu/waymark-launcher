@@ -69,8 +69,8 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 
 Forks need their own identity:
 
-- **Azure client ID.** The one in `brand.rs` is registered to this project and approved by Mojang for this app only. Register your own and apply for your own approval.
-- **CurseForge key.** Request your own. Without one, CurseForge search is switched off.
+- **Azure client ID.** The one in `brand.rs` is registered to this project, and Mojang reviews each app's ID separately. Register your own and apply for your own approval.
+- **CurseForge key.** Request your own and set `WAYMARK_CURSEFORGE_API_KEY` when you build.
 - **Update key and endpoint.** Generate your own, or your builds will look for updates from this project.
 - **Name.** Change the product name in `brand.rs`, so people can tell your build from this one.
 
