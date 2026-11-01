@@ -11,6 +11,7 @@
     { id: 'discover', label: 'Discover' },
     { id: 'skins', label: 'Skins' },
     { id: 'screenshots', label: 'Screenshots' },
+    { id: 'friends', label: 'Friends' },
   ];
 
   const account = $derived(app.activeAccount);
@@ -42,7 +43,9 @@
   <button class="back" class:shown={app.canGoBack} aria-label="Back" title="Back" tabindex={app.canGoBack ? 0 : -1} onclick={() => app.back()}><ArrowLeft size={18} /></button>
   <nav class="main-nav" aria-label="Main">
     {#each VIEWS as view (view.id)}
-      <button class:active={app.view === view.id} aria-current={app.view === view.id ? 'page' : undefined} onclick={() => app.go(view.id)}>{view.label}</button>
+      <button class:active={app.view === view.id} aria-current={app.view === view.id ? 'page' : undefined} onclick={() => app.go(view.id)}>
+        {view.label}{#if view.id === 'friends' && app.friendAlerts}<span class="count tabular">{app.friendAlerts}</span>{/if}
+      </button>
     {/each}
   </nav>
   <div class="right" data-tauri-drag-region>
@@ -80,6 +83,7 @@
   /* A small lit marker under the page you're on. */
   .main-nav button.active::after { content: ''; position: absolute; bottom: 7px; left: 50%; width: 6px; height: 6px; margin-left: -3px; background: var(--accent); }
 
+  .count { display: inline-block; min-width: 16px; margin-left: 5px; padding: 0 4px; background: var(--accent); color: var(--on-accent); font-size: var(--text-xs); font-weight: 700; line-height: 16px; text-align: center; }
   .right { flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
   .you { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 200px; height: 34px; padding: 0 10px; color: var(--text-2); font-weight: 600; }
   .you:hover { color: var(--text); }

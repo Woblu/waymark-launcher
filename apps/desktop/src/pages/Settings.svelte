@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Plus } from '@lucide/svelte';
+  import Modal from '../components/Modal.svelte';
   import { api } from '../lib/api';
-  import type { Account, Settings, Trashed } from '../lib/api';
+  import type { Account, CustomTheme, Settings, Trashed } from '../lib/api';
   import { bytes, timeAgo } from '../lib/format';
   import { LANGUAGE_NAMES, chooseLanguage, savedLanguage } from '../lib/i18n';
-  import { useTheme } from '../lib/theme';
+  import { PRESETS, previewTheme, useTheme } from '../lib/theme';
   import { app } from '../lib/state.svelte';
 
   let settings = $state<Settings | null>(null);
@@ -59,7 +61,50 @@
 
   async function chooseTheme() {
     if (!settings) return;
-    useTheme(settings.theme);
+    useTheme(settings.theme, settings.customThemes);
+    await save();
+  }
+
+  let editing = $state<CustomTheme | null>(null);
+  let creating = $state(false);
+
+  const ownTheme = $derived(settings?.customThemes.find((theme) => theme.id === settings?.theme));
+
+  function newTheme() {
+    creating = true;
+    editing = { id: crypto.randomUUID(), name: '', base: '#0c1118', accent: '#efb36c' };
+  }
+
+  function editTheme(theme: CustomTheme) {
+    creating = false;
+    editing = { ...theme };
+  }
+
+  $effect(() => {
+    if (editing) previewTheme({ base: editing.base, accent: editing.accent });
+  });
+
+  function stopEditing() {
+    editing = null;
+    if (settings) useTheme(settings.theme, settings.customThemes);
+  }
+
+  async function saveTheme(event: SubmitEvent) {
+    event.preventDefault();
+    if (!settings || !editing) return;
+    const theme = { ...$state.snapshot(editing), name: editing.name.trim() };
+    settings.customThemes = [...settings.customThemes.filter((other) => other.id !== theme.id), theme];
+    settings.theme = theme.id;
+    stopEditing();
+    await save();
+  }
+
+  async function deleteTheme() {
+    if (!settings || !editing) return;
+    const id = editing.id;
+    settings.customThemes = settings.customThemes.filter((other) => other.id !== id);
+    if (settings.theme === id) settings.theme = 'dark';
+    stopEditing();
     await save();
   }
 
@@ -108,11 +153,16 @@
       <div class="body">
         <div class="form-row">
           <label for="theme">Theme</label>
-          <select id="theme" class="field short" bind:value={settings.theme} onchange={chooseTheme}>
-            <option value="system">Same as this computer</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
+          <div class="themes">
+            <select id="theme" class="field short" bind:value={settings.theme} onchange={chooseTheme}>
+              <option value="system">Same as this computer</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              {#each [...PRESETS, ...settings.customThemes] as theme (theme.id)}<option value={theme.id}>{theme.name}</option>{/each}
+            </select>
+            {#if ownTheme}<button class="btn" onclick={() => editTheme(ownTheme)}>Edit</button>{/if}
+            <button class="btn" onclick={newTheme}><Plus size={16} /> New theme</button>
+          </div>
         </div>
         <div class="form-row">
           <label for="language">Language</label>
@@ -243,6 +293,32 @@
   </div>
 </div>
 
+{#if editing}
+  <Modal title={creating ? 'New theme' : 'Edit theme'} width={420} onclose={stopEditing}>
+    <form onsubmit={saveTheme}>
+      <div class="form-row">
+        <label for="theme-name">Name</label>
+        <input id="theme-name" class="field" required bind:value={editing.name} />
+      </div>
+      <div class="form-row">
+        <label for="theme-base">Background</label>
+        <div class="color"><input id="theme-base" type="color" bind:value={editing.base} /><span class="mono">{editing.base}</span></div>
+      </div>
+      <div class="form-row">
+        <label for="theme-accent">Accent</label>
+        <div class="color"><input id="theme-accent" type="color" bind:value={editing.accent} /><span class="mono">{editing.accent}</span></div>
+      </div>
+      <p class="form-hint">The rest of the colors come from these two, and the app shows them as you pick.</p>
+      <div class="buttons">
+        {#if !creating}<button type="button" class="btn danger" onclick={deleteTheme}>Delete</button>{/if}
+        <span class="spacer"></span>
+        <button type="button" class="btn" onclick={stopEditing}>Cancel</button>
+        <button class="btn primary">Save</button>
+      </div>
+    </form>
+  </Modal>
+{/if}
+
 <style>
   .page { height: 100%; overflow-y: auto; padding: 20px var(--gutter) var(--gutter); }
   .column { max-width: 860px; }
@@ -261,6 +337,13 @@
   .slider span { width: 56px; text-align: right; }
   .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; color: var(--text); }
   .short { width: 240px; }
+  .themes { display: flex; align-items: center; gap: 8px; }
+  .color { display: flex; align-items: center; gap: 10px; }
+  .color input { width: 44px; height: 36px; padding: 0; border: 0; background: none; clip-path: var(--stepped); cursor: pointer; }
+  .color input::-webkit-color-swatch-wrapper { padding: 0; }
+  .color input::-webkit-color-swatch { border: 0; }
+  .buttons { display: flex; gap: 8px; padding-top: 14px; }
+  .spacer { flex: 1; }
   .check.top { padding-top: 8px; }
   .version { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .legal { margin-top: 4px; }

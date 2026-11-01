@@ -262,7 +262,15 @@ export interface ExternalInstance {
   loader: Loader;
 }
 
-export type Theme = 'system' | 'dark' | 'light';
+/** `system`, `dark`, `light`, or the id of a built-in or custom theme. */
+export type Theme = string;
+
+export interface CustomTheme {
+  id: string;
+  name: string;
+  base: string;
+  accent: string;
+}
 
 export interface Settings {
   memoryMb: number;
@@ -270,11 +278,25 @@ export interface Settings {
   showSnapshots: boolean;
   closeWhilePlaying: boolean;
   theme: Theme;
+  customThemes: CustomTheme[];
   language: string;
   autoUpdate: boolean;
 }
 
 export interface UpdateStatus { current: string; ready: string | null }
+
+export interface Friend { id: string; username: string; online: boolean; lastSeen: string | null; playing: string | null }
+export interface OtherPlayer { id: string; username: string }
+export interface SharedByFriend { id: string; name: string; from: string; at: string }
+export interface FriendOverview {
+  username: string;
+  showStatus: boolean;
+  friends: Friend[];
+  incoming: OtherPlayer[];
+  outgoing: OtherPlayer[];
+  blocked: OtherPlayer[];
+  shares: SharedByFriend[];
+}
 
 export interface Screenshot { instance: string; instanceName: string; file: string; size: number; modified: number }
 
@@ -435,6 +457,22 @@ export const api = {
   restoreTrashed: (id: string) => call<Trashed>('restore_trashed', { id }),
   eraseTrashed: (id: string) => call<void>('erase_trashed', { id }),
   reclaimSpace: () => call<number>('reclaim_space'),
+  friendsOpen: () => call<boolean>('friends_open'),
+  friendAccount: () => call<string | null>('friend_account'),
+  friendSignIn: (username: string, password: string) => call<string>('friend_sign_in', { username, password }),
+  friendSignUp: (username: string, password: string) => call<string>('friend_sign_up', { username, password }),
+  friendSignOut: () => call<void>('friend_sign_out'),
+  friendDeleteAccount: () => call<void>('friend_delete_account'),
+  friendOverview: () => call<FriendOverview>('friend_overview'),
+  friendRequest: (username: string) => call<void>('friend_request', { username }),
+  friendRespond: (request: string, accept: boolean) => call<void>('friend_respond', { request, accept }),
+  friendRemove: (other: string) => call<void>('friend_remove', { other }),
+  friendBlock: (other: string) => call<void>('friend_block', { other }),
+  friendUnblock: (other: string) => call<void>('friend_unblock', { other }),
+  friendShowStatus: (shown: boolean) => call<void>('friend_show_status', { shown }),
+  friendSendInstance: (friend: string, instance: string) => call<string[]>('friend_send_instance', { friend, instance }),
+  friendInstallShare: (share: string) => call<{ instance: LibraryEntry; failed: string[] }>('friend_install_share', { share }),
+  friendDropShare: (share: string) => call<void>('friend_drop_share', { share }),
   updateStatus: () => call<UpdateStatus>('update_status'),
   checkForUpdate: () => call<string | null>('check_for_update'),
   installUpdate: () => call<void>('install_update'),

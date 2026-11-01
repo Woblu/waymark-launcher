@@ -1,7 +1,9 @@
 import { api, iconUrl, inTauri, onCoreEvent, onFileDrop, onGameLog, onLaunchRequest, onUpdateReady } from './api';
-import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, Join, LibraryEntry, LockedMod, ProjectTarget } from './api';
+import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, FriendOverview, Join, LibraryEntry, LockedMod, ProjectTarget } from './api';
 
-export type View = 'library' | 'discover' | 'skins' | 'screenshots' | 'settings';
+const FRIENDS_EVERY = 60000;
+
+export type View = 'library' | 'discover' | 'skins' | 'screenshots' | 'friends' | 'settings';
 export type InstanceTab = 'mods' | 'resourcepacks' | 'shaders' | 'worlds' | 'trail' | 'logs' | 'server' | 'settings';
 
 export interface TaskState {
@@ -75,6 +77,9 @@ class AppState {
   /** A new version that has downloaded and is waiting to install. */
   update = $state<string | null>(null);
   version = $state('');
+  friendsAvailable = $state(false);
+  friendAccount = $state<string | null>(null);
+  friends = $state<FriendOverview | null>(null);
 
   /** Log text stays out of reactive state; the tick says when it changed. */
   logs = new Map<string, LogLine[]>();
@@ -202,6 +207,7 @@ class AppState {
     });
     await this.launchRequested();
     this.watchUpdates();
+    this.watchFriends();
     if (!inTauri) {
       const { applyPreview } = await import('./mock');
       applyPreview(this);
@@ -250,6 +256,26 @@ class AppState {
     }
     const crash = await api.takePendingCrash();
     if (crash) this.crash = crash;
+  }
+
+  /** What's waiting for the player, for the number beside Friends. */
+  get friendAlerts(): number {
+    return (this.friends?.incoming.length ?? 0) + (this.friends?.shares.length ?? 0);
+  }
+
+  private async watchFriends() {
+    if (!inTauri) return;
+    this.friendsAvailable = await api.friendsOpen();
+    if (!this.friendsAvailable) return;
+    this.friendAccount = await api.friendAccount().catch(() => null);
+    await this.loadFriends();
+    setInterval(() => this.loadFriends(), FRIENDS_EVERY);
+  }
+
+  /** A failed refresh keeps what's on screen, because the server may just be away. */
+  async loadFriends() {
+    if (!this.friendAccount) return;
+    this.friends = await api.friendOverview().catch(() => this.friends);
   }
 
   /** Rust does the checking, so this only hears about it. */

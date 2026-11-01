@@ -775,8 +775,26 @@ await step('changes theme, shows screenshots and browses Feed The Beast', async 
   await shot('33-light-library');
   await nav('Settings');
   await waitFor('the theme setting', `!!document.querySelector('#theme')`);
-  await setValue('#theme', 'dark');
-  await waitFor('the dark theme', `document.documentElement.dataset.theme === 'dark'`);
+  await run(`document.querySelector('#theme').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))`);
+  await waitFor('our own list', `!!document.querySelector('.dropdown')`);
+  await shot('33-dropdown');
+  await run(`[...document.querySelectorAll('.dropdown button')].find((b) => b.innerText.trim() === 'Ember').click()`);
+  await waitFor('a built-in theme', `document.documentElement.style.getPropertyValue('--bg') === '#140c0e' && !document.querySelector('.dropdown')`);
+  await click('New theme');
+  await waitFor('the theme editor', `!!document.querySelector('#theme-name')`);
+  await setValue('#theme-name', 'Test Theme');
+  await setValue('#theme-base', '#203040');
+  await waitFor('the preview', `document.documentElement.style.getPropertyValue('--bg') === '#203040'`);
+  await click('Save');
+  await waitFor('the theme to be saved', `!document.querySelector('#theme-name')`);
+  await sleep(300);
+  expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('Test Theme'), 'the custom theme was not saved');
+  await shot('33-custom-theme');
+  await click('Edit');
+  await click('Delete');
+  await waitFor('the custom theme to go', `document.documentElement.dataset.theme === 'dark' && !document.documentElement.style.getPropertyValue('--bg')`);
+  await sleep(300);
+  expect(!readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('Test Theme'), 'the custom theme was not deleted');
 
   await nav('Discover');
   await click('Modpacks');

@@ -38,6 +38,7 @@ pub mod share;
 pub mod shared;
 pub mod shortcut;
 pub mod skins;
+pub mod social;
 pub mod store;
 pub mod trash;
 pub mod waymarks;
@@ -57,6 +58,16 @@ use net::Net;
 use paths::Paths;
 use store::Store;
 
+/// A theme the player made: two colors the rest of the palette comes from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomTheme {
+    pub id: String,
+    pub name: String,
+    pub base: String,
+    pub accent: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -67,8 +78,9 @@ pub struct Settings {
     /// Closes the launcher's window while a game runs, which frees most of
     /// its memory for the game.
     pub close_while_playing: bool,
-    /// `system`, `dark` or `light`.
+    /// `system`, `dark`, `light`, or the id of a built-in or custom theme.
     pub theme: String,
+    pub custom_themes: Vec<CustomTheme>,
     /// A language code, or `system` to follow the computer.
     pub language: String,
     /// Checks for new versions of Waymark and installs them when it closes.
@@ -83,6 +95,7 @@ impl Default for Settings {
             show_snapshots: false,
             close_while_playing: true,
             theme: "system".to_string(),
+            custom_themes: Vec::new(),
             language: "system".to_string(),
             auto_update: true,
         }
@@ -98,6 +111,7 @@ pub struct Core {
     pub events: Emitter,
     pub(crate) games: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     pub(crate) hosts: Arc<Mutex<HashMap<String, hosting::Host>>>,
+    pub(crate) login: Arc<tokio::sync::Mutex<Option<social::Login>>>,
 }
 
 impl Core {
@@ -111,6 +125,7 @@ impl Core {
             events,
             games: Arc::default(),
             hosts: Arc::default(),
+            login: Arc::default(),
         })
     }
 

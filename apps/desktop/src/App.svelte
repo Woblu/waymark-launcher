@@ -9,10 +9,12 @@
   import NewInstance from './components/NewInstance.svelte';
   import SignIn from './components/SignIn.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
+  import Dropdowns from './components/Dropdowns.svelte';
   import CrashSheet from './components/CrashSheet.svelte';
   import InstanceDialogs from './components/InstanceDialogs.svelte';
   import Library from './pages/Library.svelte';
   import Discover from './pages/Discover.svelte';
+  import Friends from './pages/Friends.svelte';
   import Project from './pages/Project.svelte';
   import Screenshots from './pages/Screenshots.svelte';
   import Settings from './pages/Settings.svelte';
@@ -20,7 +22,7 @@
 
   onMount(async () => {
     await app.start();
-    api.settings().then((settings) => useTheme(settings.theme), () => {});
+    api.settings().then((settings) => useTheme(settings.theme, settings.customThemes), () => {});
     await showWindow();
   });
 </script>
@@ -38,6 +40,8 @@
         <Skins />
       {:else if app.view === 'screenshots'}
         <Screenshots />
+      {:else if app.view === 'friends'}
+        <Friends />
       {:else}
         <Settings />
       {/if}
@@ -53,6 +57,7 @@
   {#if app.instanceDialog}{#key app.instanceDialog}<InstanceDialogs dialog={app.instanceDialog} />{/key}{/if}
   {#if app.crash}<CrashSheet />{/if}
   <ContextMenu />
+  <Dropdowns />
   {#if app.dragging}
     <div class="drop"><p>Drop to install</p></div>
   {/if}

@@ -70,7 +70,8 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 - **Pack files and share codes are untrusted.** Paths are checked with `safe_relative`, download hosts against an allow list, and share codes only carry store ids. Launch commands come from the player's own settings and can never arrive in a pack or a code.
 - **Nothing is deleted straight away.** Instances and worlds go to the trash for 30 days, and anything that collects garbage has to keep what's in there.
 - **Store descriptions are untrusted.** Anyone can publish a project, so bodies go through the allow list in `apps/desktop/src/lib/rich.ts`, and the end-to-end test attacks it. Don't widen that list or the security policy without adding an attack to the test.
-- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first.
+- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first. Friends are opt-in: nothing goes to the friends server unless the player has signed in to a Waymark account.
+- **Friends can't touch the database.** Tables in `supabase/migrations` have no policies, so the app can only call functions that act as the signed-in player. Don't add a policy or a public function without a reason, and keep the Minecraft sign-in out of it.
 - **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
 
 ## Forking

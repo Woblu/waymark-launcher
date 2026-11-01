@@ -195,6 +195,7 @@ const SAMPLE_VERSIONS = ['release', 'beta', 'alpha'].map((channel, index) => ({
 /** Lets a screenshot open any screen directly, like  or . */
 export function applyPreview(app: typeof App) {
   const hash = location.hash.slice(1);
+  if (['mods', 'bisect', 'trail', 'worlds', 'instance-settings', 'logs'].includes(hash)) app.selected = 'emberfall';
   if (hash === 'discover' || hash === 'settings' || hash === 'skins' || hash === 'screenshots') app.go(hash);
   if (hash === 'mods' || hash === 'bisect') app.tab = 'mods';
   if (hash === 'trail') app.tab = 'trail';
@@ -303,7 +304,7 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'external_instances':
       return [{ launcher: 'prism', name: 'Old Survival', gameDir: 'x', minecraft: '1.20.1', loader: { kind: 'fabric' } }];
     case 'settings':
-      return { memoryMb: 6144, releaseDelayHours: 48, showSnapshots: false, closeWhilePlaying: true, theme: 'system', language: 'system' };
+      return { memoryMb: 6144, releaseDelayHours: 48, showSnapshots: false, closeWhilePlaying: true, theme: 'system', customThemes: [], autoUpdate: true, language: 'system' };
     default:
       return null;
   }

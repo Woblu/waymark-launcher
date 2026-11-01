@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>Waymark, a launcher for Minecraft: Java Edition</title>
-    <meta name="description" content="Waymark is a launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone. In development." />
+    <meta name="description" content="Waymark is a launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone." />
     <meta property="og:title" content="Waymark" />
     <meta property="og:description" content="A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone." />
     <meta property="og:image" content="/assets/app-library.webp" />
@@ -20,12 +20,13 @@
       <header>
         <h1>Waymark</h1>
         <p class="lede">A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone.</p>
-        <p class="note">In development. There is no public download yet.</p>
+        <p class="note"><a href="https://github.com/Woblu/waymark-launcher/releases/latest">Download Waymark for Windows</a>, about 6 MB. It updates itself after that.</p>
+        <p class="note">You can install Waymark and look around today, but you can't play yet. Mojang is still reviewing it for Minecraft sign-in, and the game won't start without that. Windows will also warn you about an unknown publisher, because the installer isn't code signed yet.</p>
       </header>
 
       <figure class="wide">
-        <img src="/assets/app-library.webp" alt="The Waymark library, with a list of instances on the left and the selected instance, its Play button and its mods on the right" width="1800" height="1145" />
-        <figcaption>An early build, with sample data.</figcaption>
+        <img src="/assets/app-library.webp" alt="The Waymark library: a pixel art landscape above the last played instance, a world to jump back into, a grid of instances each with its own landscape, and a Play button along the bottom" width="1980" height="1260" />
+        <figcaption>Sample data. Each instance gets its own landscape, generated from its name.</figcaption>
       </figure>
 
       <section>
@@ -35,7 +36,7 @@
           <p>Worlds aren't included. They're too large and change too often, and removing a mod shouldn't rewind your saves.</p>
           <p>Each file is stored once, by hash, and hard-linked into the instances that use it. A second copy of a large modpack takes up almost no extra disk space, and a waymark is only a list of hashes.</p>
           <figure>
-            <img src="/assets/app-trail.webp" alt="The Waymarks tab, listing each recorded change to an instance with the files added, removed and changed" width="1720" height="893" loading="lazy" />
+            <img src="/assets/app-trail.webp" alt="The Waymarks tab, drawn as a trail of stones, with each recorded change to an instance and the files added, removed and changed" width="1980" height="1260" loading="lazy" />
           </figure>
         </div>
       </section>
@@ -58,11 +59,54 @@
       <section>
         <h2>Updates</h2>
         <div>
-          <p>Waymark checks every Modrinth mod in an instance with a single request and applies the updates as one change, so one rollback undoes all of them. CurseForge mods aren't covered by update checks yet.</p>
+          <p>Waymark checks every Modrinth mod in an instance with a single request and applies the updates as one change, so one rollback undoes all of them. CurseForge mods are checked the same way. You can read each changelog and pick a version first.</p>
           <p>New releases are held back for 48 hours by default. In 2023 the Fractureiser malware spread through stolen CurseForge and Bukkit accounts, and a short delay gives people time to catch something like that before it reaches your game. You can change the delay or turn it off.</p>
           <figure>
-            <img src="/assets/app-mods.webp" alt="The Mods tab, showing two updates ready to install, one held back because it is too new, and a searchable list of mods" width="1720" height="893" loading="lazy" />
+            <img src="/assets/app-mods.webp" alt="The Mods tab, showing two updates ready to install, one held back because it is too new, and a searchable list of mods" width="1980" height="1260" loading="lazy" />
           </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Finding things to install</h2>
+        <div>
+          <p>Discover searches Modrinth, CurseForge, Feed The Beast and ATLauncher from one page, with filters for Minecraft version, loader and category. It covers mods, modpacks, shaders, resource packs and data packs, and marks what you already have.</p>
+          <figure>
+            <img src="/assets/app-discover.webp" alt="Discover, showing a grid of modpacks with a picture for each and filters down the left" width="1980" height="1260" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Worlds and servers</h2>
+        <div>
+          <p>Each instance lists its worlds and servers. On Minecraft 1.20 and newer, Play on a world or server goes straight there without the menus. Deleted worlds stay in a trash folder for 30 days.</p>
+          <p>Waymark can also build a server from an instance and run it on your computer. Mods that only work on the client are left out. It stops at the Minecraft EULA until you accept it yourself.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Skins</h2>
+        <div>
+          <p>Try on any skin on a 3D model before you wear it. Waymark keeps a library of your own PNG files alongside the skins Minecraft comes with.</p>
+          <figure>
+            <img src="/assets/app-skins.webp" alt="The Skins page, with a 3D character standing in a night landscape on the left and a grid of default skins on the right" width="1980" height="1260" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Friends</h2>
+        <div>
+          <p>Friends are optional. They use a separate Waymark account, which is a username and a password with no email address. You can see who's online and what they're playing, and send them an instance. Only store ids travel, never the files.</p>
+          <p>The server keeps your username, a hash of your password, your friends list, anything sent to you, when you were last online and the name of the instance you're playing. You can hide your status, block people, or delete the account and all of that from the app. A forgotten password can't be recovered, because there's no email to send a reset to.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Updating Waymark</h2>
+        <div>
+          <p>New versions download in the background and install when you close the app, or sooner if you choose Restart to update. Each one is signed, and Waymark refuses anything that doesn't match. It never updates during a game or while it's hosting a server. You can turn this off in Settings.</p>
         </div>
       </section>
 
@@ -71,12 +115,14 @@
         <div>
           <table>
             <tbody>
-              <tr><th scope="row">Mod loaders</th><td>Fabric, Quilt, Forge, NeoForge</td></tr>
+              <tr><th scope="row">Mod loaders</th><td>Fabric, Quilt, Forge from Minecraft 1.6, NeoForge, Legacy Fabric, Babric and Ornithe</td></tr>
               <tr><th scope="row">Mods</th><td>Modrinth and CurseForge. If a CurseForge author has blocked third-party downloads, Waymark sends you to their page.</td></tr>
-              <tr><th scope="row">Modpacks</th><td><code>.mrpack</code> and CurseForge <code>.zip</code></td></tr>
+              <tr><th scope="row">Modpacks</th><td><code>.mrpack</code>, CurseForge <code>.zip</code>, Feed The Beast and ATLauncher</td></tr>
               <tr><th scope="row">Java</th><td>Mojang's own runtimes, installed automatically for each version</td></tr>
               <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, the CurseForge app and the Modrinth App. Importing makes a copy and leaves the original alone.</td></tr>
-              <tr><th scope="row">Platform</th><td>Windows for now</td></tr>
+              <tr><th scope="row">Platform</th><td>Windows. Builds for macOS and Linux are published too, but they haven't been tested on real machines yet.</td></tr>
+              <tr><th scope="row">Languages</th><td>English, Spanish, Portuguese, French, German, Russian and Chinese</td></tr>
+              <tr><th scope="row">License</th><td><a href="https://github.com/Woblu/waymark-launcher">GPL 3.0, source on GitHub</a></td></tr>
               <tr><th scope="row">Installer</th><td>About 6 MB</td></tr>
             </tbody>
           </table>

@@ -14,3 +14,6 @@ dist/
 *.p8
 *.pfx
 *.pem
+
+# Local agent worktrees
+.claude/

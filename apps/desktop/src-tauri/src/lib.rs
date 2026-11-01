@@ -37,6 +37,7 @@ use waymark_core::screenshots::Screenshot;
 use waymark_core::share::{ShareCode, SharedResult};
 use waymark_core::shortcut::LAUNCH_FLAG;
 use waymark_core::skins::{SavedSkin, SkinLibrary, SkinProfile, SkinVariant, Wear};
+use waymark_core::social::{FriendOverview, friends_available};
 use waymark_core::trash::Trashed;
 use waymark_core::waymarks::{Pending, WaymarkKind, WaymarkSummary};
 use waymark_core::worlds::{Join, RecentWorld, SavedServer, ServerStatus, Worlds};
@@ -49,6 +50,7 @@ type Reply<T> = Result<T, Error>;
 const LOG_FLUSH: Duration = Duration::from_millis(80);
 const MAX_KEPT_LOG_LINES: usize = 8000;
 const MAIN_WINDOW: &str = "main";
+const FRIEND_BEAT: Duration = Duration::from_secs(60);
 
 struct Launcher {
     core: Core,
@@ -894,6 +896,109 @@ async fn take_pending_launch(launcher: State<'_, Launcher>) -> Reply<Option<Stri
 }
 
 #[tauri::command]
+fn friends_open() -> bool {
+    friends_available()
+}
+
+#[tauri::command]
+async fn friend_account(launcher: State<'_, Launcher>) -> Reply<Option<String>> {
+    launcher.core.friend_account().await
+}
+
+#[tauri::command]
+async fn friend_sign_in(
+    launcher: State<'_, Launcher>,
+    username: String,
+    password: String,
+) -> Reply<String> {
+    launcher.core.friend_sign_in(&username, &password).await
+}
+
+#[tauri::command]
+async fn friend_sign_up(
+    launcher: State<'_, Launcher>,
+    username: String,
+    password: String,
+) -> Reply<String> {
+    launcher.core.friend_sign_up(&username, &password).await
+}
+
+#[tauri::command]
+async fn friend_sign_out(launcher: State<'_, Launcher>) -> Reply<()> {
+    launcher.core.friend_sign_out().await
+}
+
+#[tauri::command]
+async fn friend_delete_account(launcher: State<'_, Launcher>) -> Reply<()> {
+    launcher.core.friend_delete_account().await
+}
+
+#[tauri::command]
+async fn friend_overview(launcher: State<'_, Launcher>) -> Reply<FriendOverview> {
+    launcher.core.friend_overview().await
+}
+
+#[tauri::command]
+async fn friend_request(launcher: State<'_, Launcher>, username: String) -> Reply<()> {
+    launcher.core.friend_request(&username).await
+}
+
+#[tauri::command]
+async fn friend_respond(launcher: State<'_, Launcher>, request: String, accept: bool) -> Reply<()> {
+    launcher.core.friend_respond(&request, accept).await
+}
+
+#[tauri::command]
+async fn friend_remove(launcher: State<'_, Launcher>, other: String) -> Reply<()> {
+    launcher.core.friend_remove(&other).await
+}
+
+#[tauri::command]
+async fn friend_block(launcher: State<'_, Launcher>, other: String) -> Reply<()> {
+    launcher.core.friend_block(&other).await
+}
+
+#[tauri::command]
+async fn friend_unblock(launcher: State<'_, Launcher>, other: String) -> Reply<()> {
+    launcher.core.friend_unblock(&other).await
+}
+
+#[tauri::command]
+async fn friend_show_status(launcher: State<'_, Launcher>, shown: bool) -> Reply<()> {
+    launcher.core.friend_show_status(shown).await
+}
+
+#[tauri::command]
+async fn friend_send_instance(
+    launcher: State<'_, Launcher>,
+    friend: String,
+    instance: String,
+) -> Reply<Vec<String>> {
+    launcher.core.friend_send_instance(&friend, &instance).await
+}
+
+#[tauri::command]
+async fn friend_install_share(launcher: State<'_, Launcher>, share: String) -> Reply<SharedResult> {
+    launcher.core.friend_install_share(&share).await
+}
+
+#[tauri::command]
+async fn friend_drop_share(launcher: State<'_, Launcher>, share: String) -> Reply<()> {
+    launcher.core.friend_drop_share(&share).await
+}
+
+/// Tells friends this player is around for as long as the app runs.
+fn watch_friends(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut beat = tokio::time::interval(FRIEND_BEAT);
+        loop {
+            beat.tick().await;
+            let _ = app.state::<Launcher>().core.friend_heartbeat().await;
+        }
+    });
+}
+
+#[tauri::command]
 async fn share_code(launcher: State<'_, Launcher>, id: String) -> Reply<ShareCode> {
     off_thread(&launcher, move |core| core.share_code(&id)).await
 }
@@ -1116,6 +1221,7 @@ pub fn run() {
             forward_events(app.handle().clone(), receiver);
             app.manage(updates::Updates::default());
             updates::watch(app.handle().clone());
+            watch_friends(app.handle().clone());
 
             let show = MenuItem::with_id(app, "show", "Show Waymark", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Waymark", true, None::<&str>)?;
@@ -1228,6 +1334,22 @@ pub fn run() {
             take_pending_launch,
             share_code,
             install_share,
+            friends_open,
+            friend_account,
+            friend_sign_in,
+            friend_sign_up,
+            friend_sign_out,
+            friend_delete_account,
+            friend_overview,
+            friend_request,
+            friend_respond,
+            friend_remove,
+            friend_block,
+            friend_unblock,
+            friend_show_status,
+            friend_send_instance,
+            friend_install_share,
+            friend_drop_share,
             host_status,
             prepare_host,
             accept_eula,
