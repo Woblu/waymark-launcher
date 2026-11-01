@@ -3,6 +3,11 @@
   "cleanUrls": true,
   "redirects": [
     {
+      "source": "/download",
+      "destination": "https://github.com/Woblu/waymark-launcher/releases/download/v0.2.0/Waymark_0.2.0_x64-setup.exe",
+      "permanent": false
+    },
+    {
       "source": "/updates/latest.json",
       "destination": "https://github.com/Woblu/waymark-launcher/releases/latest/download/latest.json",
       "permanent": false
