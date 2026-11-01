@@ -314,7 +314,7 @@ pub fn rows(pack: &Pack) -> Vec<VersionRow> {
 }
 
 /// Ids go in addresses, so only plain ones are accepted.
-fn plain(text: &str) -> Result<&str> {
+pub(crate) fn plain(text: &str) -> Result<&str> {
     let fine = !text.is_empty()
         && text
             .bytes()

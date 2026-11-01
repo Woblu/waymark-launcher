@@ -11,6 +11,7 @@ use waymark_core::event::Event;
 use waymark_core::instance::NewInstance;
 use waymark_core::lock::LoaderKind;
 use waymark_core::paths::Paths;
+use waymark_core::projects::VersionFilter;
 use waymark_core::waymarks::WaymarkKind;
 use waymark_core::{Core, Error, Result};
 
@@ -25,6 +26,10 @@ const USAGE: &str = "waymark <command>
   add <instance> <project>                  add a Modrinth mod and its dependencies
   cf-add <instance> <project-id>            add a CurseForge mod and its dependencies
   pack <project>                            install a Modrinth modpack
+  pack-from <source> <project>              install from ftb, atlauncher, technic, curseforge
+  technic-search [text] [minecraft]         browse or search Technic packs
+  technic-page <project>                    show a Technic pack and its builds
+  pack-check <instance>                     look for a newer version of an instance's pack
   mods <instance>                           list an instance's mods
   updates <instance>                        check for mod updates
   trail <instance>                          show an instance's waymarks
@@ -50,6 +55,9 @@ fn loader_kind(text: &str) -> Result<LoaderKind> {
         "legacyfabric" => Ok(LoaderKind::LegacyFabric),
         "babric" => Ok(LoaderKind::Babric),
         "ornithe" => Ok(LoaderKind::Ornithe),
+        "liteloader" => Ok(LoaderKind::LiteLoader),
+        "rift" => Ok(LoaderKind::Rift),
+        "cleanroom" => Ok(LoaderKind::Cleanroom),
         other => Err(Error::Other(format!("unknown loader: {other}"))),
     }
 }
@@ -245,6 +253,7 @@ async fn run(
             let source = match argument(&args, 1, "source")? {
                 "ftb" => ContentSource::Ftb,
                 "atlauncher" => ContentSource::AtLauncher,
+                "technic" => ContentSource::Technic,
                 "curseforge" => ContentSource::CurseForge,
                 _ => ContentSource::Modrinth,
             };
@@ -253,6 +262,56 @@ async fn run(
                 .await?;
             println!("installed {}", result.instance.id);
         }
+        "technic-search" => {
+            let query = SearchQuery {
+                text: args.get(1).cloned().unwrap_or_default(),
+                kind: ContentKind::Modpack,
+                minecraft: args.get(2).cloned(),
+                loader: None,
+                sort: Sort::default(),
+                categories: Vec::new(),
+                offset: 0,
+                limit: 10,
+            };
+            let page = core.search_content(ContentSource::Technic, &query).await?;
+            println!("{} results", page.total);
+            for hit in page.hits {
+                println!(
+                    "  {:<30} {:>10} installs  {} by {}",
+                    hit.slug, hit.downloads, hit.title, hit.author
+                );
+            }
+        }
+        "technic-page" => {
+            let project = argument(&args, 1, "project")?;
+            let page = core.project_page(ContentSource::Technic, project).await?;
+            println!(
+                "{} by {:?}: Minecraft {:?}, {} installs\n{}\n{}",
+                page.title,
+                page.creators.iter().map(|c| &c.name).collect::<Vec<_>>(),
+                page.game_versions,
+                page.downloads,
+                page.page,
+                page.summary,
+            );
+            let filter = VersionFilter::default();
+            let versions = core
+                .project_versions(ContentSource::Technic, project, &filter)
+                .await?;
+            for row in versions.versions.iter().take(8) {
+                println!(
+                    "  {:<12} {:<8} {:?}",
+                    row.number, row.channel, row.game_versions
+                );
+            }
+        }
+        "pack-check" => match core
+            .check_pack_update(argument(&args, 1, "instance")?)
+            .await?
+        {
+            None => println!("already up to date"),
+            Some(update) => println!("{} {} -> {}", update.name, update.current, update.latest),
+        },
         "pack" => {
             let result = core
                 .install_pack(

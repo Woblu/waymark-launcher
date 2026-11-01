@@ -14,7 +14,7 @@ use crate::Core;
 use crate::error::{Error, Result};
 use crate::event::Task;
 use crate::instance::Instance;
-use crate::loaders::hide_console;
+use crate::loaders::{forge_is_a_jar_mod, hide_console};
 use crate::lock::{LoaderKind, Lockfile, Side};
 use crate::net::{Expected, Fetch};
 use crate::store::Placement;
@@ -220,12 +220,17 @@ impl Core {
                     .downloads
                     .as_ref()
                     .and_then(|d| d.get("server"))
-                    .ok_or_else(|| Error::NotFound(format!("a server for Minecraft {minecraft}")))?;
+                    .ok_or_else(|| {
+                        Error::NotFound(format!("a server for Minecraft {minecraft}"))
+                    })?;
                 self.net
                     .fetch(&Fetch {
                         url: server.url.clone(),
                         dest: folder.join("server.jar"),
-                        hash: server.sha1.clone().map_or(Expected::Nothing, Expected::Sha1),
+                        hash: server
+                            .sha1
+                            .clone()
+                            .map_or(Expected::Nothing, Expected::Sha1),
                         size: server.size,
                     })
                     .await?;
@@ -233,35 +238,82 @@ impl Core {
             }
             LoaderKind::Fabric => {
                 let installers: Vec<FabricInstaller> = self.net.json(FABRIC_INSTALLERS).await?;
-                let installer = installers.iter().find(|i| i.stable).or(installers.first()).ok_or_else(|| Error::NotFound("a Fabric installer".into()))?;
-                let url = format!("{FABRIC_LOADERS}/{minecraft}/{loader_version}/{}/server/jar", installer.version);
+                let installer = installers
+                    .iter()
+                    .find(|i| i.stable)
+                    .or(installers.first())
+                    .ok_or_else(|| Error::NotFound("a Fabric installer".into()))?;
+                let url = format!(
+                    "{FABRIC_LOADERS}/{minecraft}/{loader_version}/{}/server/jar",
+                    installer.version
+                );
                 self.net
-                    .fetch(&Fetch { url, dest: folder.join("fabric-server.jar"), hash: Expected::Nothing, size: None })
+                    .fetch(&Fetch {
+                        url,
+                        dest: folder.join("fabric-server.jar"),
+                        hash: Expected::Nothing,
+                        size: None,
+                    })
                     .await?;
                 Ok(Launch::Jar("fabric-server.jar".into()))
             }
             LoaderKind::Quilt => {
-                let installer = self.paths.cache().join("installers").join("quilt-installer.jar");
+                let installer = self
+                    .paths
+                    .cache()
+                    .join("installers")
+                    .join("quilt-installer.jar");
                 self.net
-                    .fetch(&Fetch { url: QUILT_INSTALLER.to_string(), dest: installer.clone(), hash: Expected::Nothing, size: None })
+                    .fetch(&Fetch {
+                        url: QUILT_INSTALLER.to_string(),
+                        dest: installer.clone(),
+                        hash: Expected::Nothing,
+                        size: None,
+                    })
                     .await?;
                 let target = format!("--install-dir={}", folder.display());
-                let arguments = ["install", "server", minecraft.as_str(), loader_version, "--download-server", target.as_str()];
+                let arguments = [
+                    "install",
+                    "server",
+                    minecraft.as_str(),
+                    loader_version,
+                    "--download-server",
+                    target.as_str(),
+                ];
                 self.run_java(java, &installer, &arguments).await?;
                 Ok(Launch::Jar("quilt-server-launch.jar".into()))
             }
-            LoaderKind::LegacyFabric | LoaderKind::Babric | LoaderKind::Ornithe => {
-                Err(Error::Other("this loader doesn't make server files, so install its server from its own website".into()))
-            }
+            LoaderKind::LegacyFabric
+            | LoaderKind::Babric
+            | LoaderKind::Ornithe
+            | LoaderKind::LiteLoader
+            | LoaderKind::Rift
+            | LoaderKind::Cleanroom => Err(Error::Other(
+                "this loader doesn't make server files, so install its server from its own website"
+                    .into(),
+            )),
+            LoaderKind::Forge if forge_is_a_jar_mod(minecraft) => Err(Error::Other(
+                "Forge this old has no server installer, so its server has to be set up by hand"
+                    .into(),
+            )),
             LoaderKind::Forge | LoaderKind::NeoForge => {
-                let url = self.loader_installer(instance.loader.kind, minecraft, loader_version).await.expect("these loaders ship installers");
+                let url = self
+                    .loader_installer(instance.loader.kind, minecraft, loader_version)
+                    .await
+                    .expect("these loaders ship installers");
                 let name = url.rsplit('/').next().unwrap_or("installer.jar");
                 let installer = self.paths.cache().join("installers").join(name);
                 self.net
-                    .fetch(&Fetch { url: url.clone(), dest: installer.clone(), hash: Expected::Nothing, size: None })
+                    .fetch(&Fetch {
+                        url: url.clone(),
+                        dest: installer.clone(),
+                        hash: Expected::Nothing,
+                        size: None,
+                    })
                     .await?;
                 let target = folder.display().to_string();
-                self.run_java(java, &installer, &["--installServer", target.as_str()]).await?;
+                self.run_java(java, &installer, &["--installServer", target.as_str()])
+                    .await?;
                 let _ = fs::remove_file(folder.join(format!("{name}.log")));
                 if folder.join("run.bat").is_file() || folder.join("run.sh").is_file() {
                     return Ok(Launch::RunScript);
@@ -271,7 +323,9 @@ impl Core {
                     .filter_map(|e| e.ok())
                     .map(|e| e.file_name().to_string_lossy().into_owned())
                     .find(|n| n.starts_with("forge-") && n.ends_with(".jar"))
-                    .ok_or_else(|| Error::Other("the loader installer left no server to run".into()))?;
+                    .ok_or_else(|| {
+                        Error::Other("the loader installer left no server to run".into())
+                    })?;
                 Ok(Launch::Jar(jar))
             }
         }

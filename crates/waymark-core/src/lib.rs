@@ -39,6 +39,7 @@ pub mod shared;
 pub mod shortcut;
 pub mod skins;
 pub mod store;
+pub mod technic;
 pub mod trash;
 pub mod waymarks;
 pub mod worlds;

@@ -45,6 +45,9 @@ export function loaderName(kind: string): string {
     'legacy-fabric': 'Legacy Fabric',
     babric: 'Babric',
     ornithe: 'Ornithe',
+    liteloader: 'LiteLoader',
+    rift: 'Rift',
+    cleanroom: 'Cleanroom',
   };
   return names[kind] ?? titleCase(kind);
 }

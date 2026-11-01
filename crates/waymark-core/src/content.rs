@@ -29,6 +29,8 @@ pub enum ContentSource {
     /// ATLauncher, which only has modpacks too.
     #[serde(rename = "atlauncher")]
     AtLauncher,
+    /// The Technic Platform, which only has modpacks as well.
+    Technic,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,6 +216,7 @@ impl Core {
             ContentSource::CurseForge => curseforge::search(&self.net, query).await,
             ContentSource::Ftb => crate::ftb::search(&self.net, query).await,
             ContentSource::AtLauncher => self.atl_search(query).await,
+            ContentSource::Technic => crate::technic::search(&self.net, query).await,
         }
     }
 
@@ -225,7 +228,9 @@ impl Core {
         match source {
             ContentSource::Modrinth => modrinth::categories(&self.net, kind).await,
             ContentSource::CurseForge => curseforge::categories(&self.net, kind).await,
-            ContentSource::Ftb | ContentSource::AtLauncher => Ok(Vec::new()),
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
+                Ok(Vec::new())
+            }
         }
     }
 
@@ -332,7 +337,7 @@ impl Core {
                 self.plan_curseforge(instance, &already, project, kind, version)
                     .await?
             }
-            ContentSource::Ftb | ContentSource::AtLauncher => {
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
                 return Err(Error::Other("this store only has modpacks".into()));
             }
         };

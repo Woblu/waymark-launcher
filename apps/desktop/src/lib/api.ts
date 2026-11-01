@@ -5,8 +5,8 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'legacyfabric' | 'babric' | 'ornithe';
-export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher';
+export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'legacyfabric' | 'babric' | 'ornithe' | 'liteloader' | 'rift' | 'cleanroom';
+export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher' | 'technic';
 export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack';
 export type Verdict = 'crashes' | 'works';
 

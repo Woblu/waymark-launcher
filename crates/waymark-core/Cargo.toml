@@ -17,6 +17,7 @@ futures-util = "0.3"
 hex = "0.4"
 hickory-resolver = "0.25"
 keyring = "4.2"
+md-5 = "0.11"
 reqwest = { version = "0.13", features = ["form", "json", "multipart", "query", "stream"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

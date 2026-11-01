@@ -48,6 +48,9 @@ pub struct VersionMeta {
     pub arguments: Option<Arguments>,
     #[serde(default)]
     pub libraries: Vec<Library>,
+    /// Zips laid over the game's own jar, for loaders older than Forge's installers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jar_mods: Vec<Library>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_index: Option<AssetIndexRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -225,7 +228,18 @@ fn os_arch() -> &'static str {
 impl OsRule {
     fn matches(&self) -> bool {
         let name = self.name.as_deref().is_none_or(|n| n == os_name());
-        let arch = self.arch.as_deref().is_none_or(|a| a == os_arch());
+        // Profiles from outside Mojang have their own spellings of this one.
+        let arch = self
+            .arch
+            .as_deref()
+            .map(|a| {
+                if matches!(a, "x64" | "amd64") {
+                    "x86_64"
+                } else {
+                    a
+                }
+            })
+            .is_none_or(|a| a == os_arch());
         // Version rules exist for old Windows 10 and pre-Sierra macOS checks.
         // Every system that can run this launcher answers them the same way.
         let version = self
@@ -345,7 +359,11 @@ impl Library {
         };
         let file = downloads.classifiers.as_ref()?.get(&classifier)?;
         Some(LibraryArtifact {
-            path: file.path.clone()?,
+            // Only Mojang's own profiles always spell this out.
+            path: file
+                .path
+                .clone()
+                .or_else(|| maven_path(&format!("{}:{classifier}", self.name)))?,
             url: file.url.clone().filter(|u| !u.is_empty()),
             sha1: file.sha1.clone(),
             size: file.size,
@@ -384,6 +402,11 @@ impl VersionMeta {
             minecraft_arguments: self.minecraft_arguments.or(parent.minecraft_arguments),
             arguments,
             libraries,
+            jar_mods: if self.jar_mods.is_empty() {
+                parent.jar_mods
+            } else {
+                self.jar_mods
+            },
             asset_index: self.asset_index.or(parent.asset_index),
             assets: self.assets.or(parent.assets),
             downloads: self.downloads.or(parent.downloads),
@@ -423,6 +446,40 @@ mod tests {
             r#"[{{"action":"allow","os":{{"name":"{other}"}}}}]"#
         ));
         assert!(!allowed(&rules, Features::default()));
+    }
+
+    #[test]
+    fn other_spellings_of_64_bit_x86_are_understood() {
+        let this_os = os_name();
+        let rules = |arch: &str| {
+            rule(&format!(
+                r#"[{{"action":"allow","os":{{"name":"{this_os}","arch":"{arch}"}}}}]"#
+            ))
+        };
+        let on_x64 = os_arch() == "x86_64";
+        assert_eq!(allowed(&rules("x64"), Features::default()), on_x64);
+        assert_eq!(allowed(&rules("amd64"), Features::default()), on_x64);
+        assert_eq!(allowed(&rules("x86_64"), Features::default()), on_x64);
+        assert!(!allowed(&rules("ppc64le"), Features::default()));
+    }
+
+    #[test]
+    fn jar_mods_come_through_a_merge() {
+        let forge = Library {
+            name: "net.minecraftforge:forge:1.5.2-7.8.1.738:universal@zip".into(),
+            ..Library::default()
+        };
+        let child = VersionMeta {
+            id: "1.5.2-forge-7.8.1.738".into(),
+            jar_mods: vec![forge],
+            ..VersionMeta::default()
+        };
+        let merged = child.merged_over(VersionMeta::default());
+        assert_eq!(merged.jar_mods.len(), 1);
+        assert_eq!(
+            merged.jar_mods[0].artifact().unwrap().path,
+            "net/minecraftforge/forge/1.5.2-7.8.1.738/forge-1.5.2-7.8.1.738-universal.zip"
+        );
     }
 
     #[test]
@@ -561,6 +618,21 @@ mod tests {
             "https://libraries.minecraft.net/net/java/jinput/jinput-platform/2.0.5/jinput-platform-2.0.5-natives-test.jar"
         );
         assert!(library.artifact().is_none());
+    }
+
+    #[test]
+    fn natives_without_a_path_take_it_from_their_name() {
+        let library: Library = serde_json::from_str(&format!(
+            r#"{{"name":"org.lwjgl:lwjgl:3.4.3","natives":{{"{}":"natives-test"}},"downloads":{{"classifiers":{{"natives-test":{{"url":"https://example.com/n.jar","sha1":"abc","size":1}}}}}}}}"#,
+            os_name()
+        ))
+        .unwrap();
+        let native = library.native().unwrap();
+        assert_eq!(
+            native.path,
+            "org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3-natives-test.jar"
+        );
+        assert_eq!(native.url.unwrap(), "https://example.com/n.jar");
     }
 
     #[test]

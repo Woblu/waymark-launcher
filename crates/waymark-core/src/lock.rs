@@ -38,6 +38,10 @@ pub enum LoaderKind {
     LegacyFabric,
     Babric,
     Ornithe,
+    LiteLoader,
+    Rift,
+    /// Runs Forge's 1.12.2 mods on a modern Java.
+    Cleanroom,
 }
 
 impl LoaderKind {
@@ -51,6 +55,9 @@ impl LoaderKind {
             LoaderKind::LegacyFabric => "legacy-fabric",
             LoaderKind::Babric => "babric",
             LoaderKind::Ornithe => "ornithe",
+            LoaderKind::LiteLoader => "liteloader",
+            LoaderKind::Rift => "rift",
+            LoaderKind::Cleanroom => "cleanroom",
         }
     }
 }
@@ -358,8 +365,14 @@ fn reconcile_shelf(
 
 fn is_content_file(name: &str, jars: bool) -> bool {
     let lower = name.to_ascii_lowercase();
-    let ending = if jars { ".jar" } else { ".zip" };
-    lower.ends_with(ending) || lower.ends_with(&format!("{ending}.disabled"))
+    let endings: &[&str] = if jars {
+        &[".jar", ".litemod"]
+    } else {
+        &[".zip"]
+    };
+    endings
+        .iter()
+        .any(|ending| lower.ends_with(ending) || lower.ends_with(&format!("{ending}.disabled")))
 }
 
 pub(crate) fn display_name(file: &str) -> String {

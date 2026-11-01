@@ -325,6 +325,8 @@ impl Core {
         })?;
         let prepared = self.prepare_version(&instance.version_id, task).await?;
         self.add_java_fix(instance).await?;
+        self.add_fml_libraries(instance, task).await?;
+        self.link_resources(instance, &prepared).await?;
 
         task.progress(0, 1, "Setting a waymark");
         let trail = self.trail(&instance.id);
@@ -336,6 +338,16 @@ impl Core {
         let mut args = build_arguments(&self.paths, instance, &prepared, session, memory)?;
         args.extend(window_arguments(&instance.options));
         args.extend(extra);
+        // Before 1.6 the game opens a log in the player's real `.minecraft` before
+        // anything can move it. That folder is found from these, so they're pointed
+        // at the instance. Windows reads the variable, and other systems the property.
+        let appdata = prepared
+            .resources
+            .is_some()
+            .then(|| self.paths.instance(&instance.id));
+        if let Some(folder) = &appdata {
+            args.insert(0, format!("-Duser.home={}", folder.display()));
+        }
         let java: std::path::PathBuf = instance
             .java_path
             .clone()
@@ -377,6 +389,9 @@ impl Core {
             }
             None => Command::new(&java),
         };
+        if let Some(folder) = &appdata {
+            command.env("APPDATA", folder);
+        }
         command
             .args(&args)
             .envs(instance.options.env.iter().map(|(key, value)| (key, value)))
@@ -513,6 +528,7 @@ mod tests {
             natives: "/data/natives/1.21.4".into(),
             log_config: None,
             game_assets: "/data/assets".into(),
+            resources: None,
         };
         (paths, instance, prepared)
     }
