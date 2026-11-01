@@ -14,14 +14,16 @@ use std::thread;
 use sha2::{Digest, Sha512};
 
 use crate::Core;
-use crate::content::side_from;
+use crate::content::{ContentKind, side_from};
 use crate::error::{Error, Result};
-use crate::lock::{LockedMod, Source, display_name};
+use crate::lock::{LockedMod, Lockfile, SHELVES, Source, UNPACKED, content_folder, display_name};
 use crate::modinfo::{self, ModInfo};
 use crate::modrinth;
 
 const IDENTIFIED_FILE: &str = ".waymarks/identified.json";
 const LOOKUP_BATCH: usize = 80;
+/// Where a resource pack or data pack keeps its picture.
+const PACK_ICON: &str = "pack.png";
 
 /// The marker a mod's `icon` carries when the image lives in the icon cache.
 pub const LOCAL_ICON: &str = "local:";
@@ -48,15 +50,22 @@ fn hash_all(files: &[PathBuf]) -> Vec<Option<String>> {
     thread::scope(|scope| {
         let handles: Vec<_> = files
             .chunks(files.len().div_ceil(threads))
-            .map(|batch| scope.spawn(move || batch.iter().map(|p| sha512_of(p)).collect::<Vec<_>>()))
+            .map(|batch| {
+                scope.spawn(move || batch.iter().map(|p| sha512_of(p)).collect::<Vec<_>>())
+            })
             .collect();
-        handles.into_iter().flat_map(|h| h.join().expect("hashing thread panicked")).collect()
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("hashing thread panicked"))
+            .collect()
     })
 }
 
 /// Whether a mod still needs looking up.
 fn unknown(entry: &LockedMod, done: &HashSet<String>) -> bool {
-    !done.contains(&entry.hash) && (matches!(entry.source, Source::Manual) || entry.icon.is_none())
+    !done.contains(&entry.hash)
+        && !entry.hash.starts_with(UNPACKED)
+        && (matches!(entry.source, Source::Manual) || entry.icon.is_none())
 }
 
 /// Uses the jar's own name and version where all we have is the filename.
@@ -78,8 +87,13 @@ fn name_from_jar(entry: &mut LockedMod, info: &ModInfo) -> bool {
 /// Mod ids and Modrinth slugs aren't the same namespace, so a shared id only
 /// counts if the names agree too. Comparing by prefix lets "Sodium 1.16.1
 /// Backport" match "Sodium".
-fn same_mod(name: &str, title: &str) -> bool {
-    let plain = |text: &str| text.chars().filter(char::is_ascii_alphanumeric).collect::<String>().to_ascii_lowercase();
+pub(crate) fn same_mod(name: &str, title: &str) -> bool {
+    let plain = |text: &str| {
+        text.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
+            .to_ascii_lowercase()
+    };
     let (name, title) = (plain(name), plain(title));
     !name.is_empty() && !title.is_empty() && (name.starts_with(&title) || title.starts_with(&name))
 }
@@ -103,12 +117,49 @@ impl Core {
             .unwrap_or_default();
 
         let mut lock = self.lockfile(id)?;
-        let mods_dir = self.paths.game(id).join("mods");
-        let targets: Vec<usize> = (0..lock.mods.len()).filter(|&i| unknown(&lock.mods[i], &done)).collect();
-        if targets.is_empty() {
+        let mut changed = false;
+        let mut looked = false;
+        for kind in SHELVES {
+            let targets: Vec<usize> = (0..lock.shelf(kind).len())
+                .filter(|&i| unknown(&lock.shelf(kind)[i], &done))
+                .collect();
+            if !targets.is_empty() {
+                looked = true;
+                changed |= self
+                    .identify_shelf(id, &mut lock, kind, &targets, &mut done)
+                    .await?;
+            }
+        }
+        if !looked {
             return Ok(false);
         }
-        let files: Vec<PathBuf> = targets.iter().map(|&i| mods_dir.join(lock.mods[i].disk_name())).collect();
+        if changed {
+            lock.save(&instance_dir)?;
+        }
+        if let Some(parent) = done_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&done_path, serde_json::to_vec(&done)?)?;
+        Ok(changed)
+    }
+
+    async fn identify_shelf(
+        &self,
+        id: &str,
+        lock: &mut Lockfile,
+        kind: ContentKind,
+        targets: &[usize],
+        done: &mut HashSet<String>,
+    ) -> Result<bool> {
+        let game = self.paths.game(id);
+        let path_of = |entry: &LockedMod| {
+            game.join(content_folder(kind, entry))
+                .join(entry.disk_name())
+        };
+        let files: Vec<PathBuf> = targets
+            .iter()
+            .map(|&i| path_of(&lock.shelf(kind)[i]))
+            .collect();
 
         let hashing = files.clone();
         let hashes = tokio::task::spawn_blocking(move || hash_all(&hashing))
@@ -124,7 +175,10 @@ impl Core {
                 Err(_) => online = false,
             }
         }
-        let projects: Vec<String> = versions.values().map(|v: &modrinth::Version| v.project_id.clone()).collect();
+        let projects: Vec<String> = versions
+            .values()
+            .map(|v: &modrinth::Version| v.project_id.clone())
+            .collect();
         let mut details = BTreeMap::new();
         for chunk in projects.chunks(LOOKUP_BATCH) {
             if let Ok(found) = modrinth::projects(&self.net, chunk).await {
@@ -136,7 +190,7 @@ impl Core {
         let mut changed = false;
         let mut without_images = Vec::new();
         for (position, &index) in targets.iter().enumerate() {
-            let entry = &mut lock.mods[index];
+            let entry = &mut lock.shelf_mut(kind)[index];
             let remote = hashes[position].as_ref();
             let match_found = remote.and_then(|hash| versions.get(hash));
             if let Some(version) = match_found {
@@ -147,11 +201,20 @@ impl Core {
                 }
                 entry.version = Some(version.version_number.clone());
                 entry.remote_hash = remote.cloned();
-                entry.source = Source::Modrinth { project: version.project_id.clone(), version: version.id.clone() };
+                entry.source = Source::Modrinth {
+                    project: version.project_id.clone(),
+                    version: version.id.clone(),
+                };
                 changed = true;
             }
-            let jar = mods_dir.join(entry.disk_name());
-            let info = modinfo::read(&jar).unwrap_or_default();
+            let jar = path_of(entry);
+            let info = match kind {
+                ContentKind::Mod => modinfo::read(&jar).unwrap_or_default(),
+                _ => ModInfo {
+                    icon: Some(PACK_ICON.to_string()),
+                    ..ModInfo::default()
+                },
+            };
             if match_found.is_none() {
                 changed |= name_from_jar(entry, &info);
             }
@@ -168,16 +231,21 @@ impl Core {
             }
         }
 
-        let slugs: Vec<String> = without_images.iter().map(|(_, mod_id)| mod_id.clone()).collect();
+        let slugs: Vec<String> = without_images
+            .iter()
+            .map(|(_, mod_id)| mod_id.clone())
+            .collect();
         let mut namesakes = BTreeMap::new();
         for chunk in slugs.chunks(LOOKUP_BATCH) {
             match modrinth::projects(&self.net, chunk).await {
-                Ok(found) => namesakes.extend(found.into_iter().filter_map(|p| Some((p.slug.clone()?, p)))),
+                Ok(found) => {
+                    namesakes.extend(found.into_iter().filter_map(|p| Some((p.slug.clone()?, p))))
+                }
                 Err(_) => online = false,
             }
         }
         for (index, mod_id) in without_images {
-            let entry = &mut lock.mods[index];
+            let entry = &mut lock.shelf_mut(kind)[index];
             if let Some(project) = namesakes.get(&mod_id)
                 && project.icon_url.is_some()
                 && same_mod(&entry.name, &project.title)
@@ -188,15 +256,12 @@ impl Core {
         }
 
         if online {
-            done.extend(targets.iter().map(|&index| lock.mods[index].hash.clone()));
+            done.extend(
+                targets
+                    .iter()
+                    .map(|&index| lock.shelf(kind)[index].hash.clone()),
+            );
         }
-        if changed {
-            lock.save(&instance_dir)?;
-        }
-        if let Some(parent) = done_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&done_path, serde_json::to_vec(&done)?)?;
         Ok(changed)
     }
 
@@ -235,7 +300,10 @@ mod tests {
     #[test]
     fn hand_placed_mods_need_identifying_and_store_mods_with_icons_do_not() {
         let done = HashSet::new();
-        let store = Source::Modrinth { project: "p".into(), version: "v".into() };
+        let store = Source::Modrinth {
+            project: "p".into(),
+            version: "v".into(),
+        };
         assert!(unknown(&entry(Source::Manual, None), &done));
         assert!(unknown(&entry(store.clone(), None), &done));
         assert!(!unknown(&entry(store, Some("https://x/icon.png")), &done));
@@ -249,7 +317,11 @@ mod tests {
 
     #[test]
     fn a_jars_name_replaces_a_filename_but_not_a_proper_title() {
-        let info = ModInfo { name: Some("Sodium".into()), version: Some("2.5".into()), ..ModInfo::default() };
+        let info = ModInfo {
+            name: Some("Sodium".into()),
+            version: Some("2.5".into()),
+            ..ModInfo::default()
+        };
 
         let mut from_file = entry(Source::Manual, None);
         from_file.file = "sodium-2.5.jar".into();
@@ -301,15 +373,21 @@ mod tests {
         fs::create_dir_all(core.paths.icons()).unwrap();
         let jar = dir.path().join("m.jar");
         let mut zip = zip::ZipWriter::new(fs::File::create(&jar).unwrap());
-        zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(br#"{"name":"M","icon":"icon.png"}"#).unwrap();
-        zip.start_file("icon.png", zip::write::SimpleFileOptions::default()).unwrap();
-        zip.write_all(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2]).unwrap();
+        zip.start_file("icon.png", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2])
+            .unwrap();
         zip.finish().unwrap();
 
         let hash = "a".repeat(64);
         let info = modinfo::read(&jar).unwrap();
-        assert_eq!(core.icon_from_jar(&jar, &info, &hash).unwrap(), format!("local:{hash}"));
+        assert_eq!(
+            core.icon_from_jar(&jar, &info, &hash).unwrap(),
+            format!("local:{hash}")
+        );
         assert!(core.cached_icon(&hash).is_some());
     }
 }

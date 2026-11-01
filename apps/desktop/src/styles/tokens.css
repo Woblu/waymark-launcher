@@ -1,40 +1,85 @@
-/* The whole visual language. Components use these names and never raw values. */
+/* The whole visual language. Components use these names and never raw values.
+   The colors come from the dusk in lib/art.ts, so the pages and the artwork are one place. */
 :root {
-  --bg: #0d0f12;
-  --panel: #111418;
-  --raised: #181b20;
-  --control: #1e2227;
-  --control-hover: #262a31;
+  color-scheme: dark;
+  --console: #080c12;
+  --bg: #0c1118;
+  --panel: #121923;
+  --raised: #1a2330;
+  --control: #222d3c;
+  --control-hover: #2c394b;
 
-  --line: #24272d;
-  --line-strong: #363a42;
+  --line: #1e2835;
+  --line-strong: #344354;
 
-  --text: #e8e6e1;
-  --text-2: #a5a6a9;
-  --text-3: #808287;
+  --text: #f0ebe1;
+  --text-2: #aab3bf;
+  --text-3: #7c8896;
 
-  --accent: #e6ad62;
-  --accent-hover: #efbd79;
-  --on-accent: #1a1207;
-  --selected: #20242a;
+  --accent: #efb36c;
+  --accent-hover: #f7c78a;
+  --accent-soft: rgb(239 179 108 / 13%);
+  --on-accent: #1c1206;
+  --selected: rgb(239 179 108 / 9%);
 
-  --good: #8bc9a0;
-  --warn: #dfc27c;
-  --bad: #e88f84;
-  --info: #93b3d8;
+  --good: #86d0a3;
+  --warn: #e5c77c;
+  --bad: #ef8a7d;
+  --info: #8fb8e4;
+
+  --shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  --scrim: 12 17 24;
 
   --font: 'Libre Franklin Variable', 'Segoe UI', system-ui, sans-serif;
   --mono: Consolas, ui-monospace, Menlo, monospace;
 
   --text-xs: 12px;
-  --text-s: 13px;
-  --text-m: 14px;
-  --text-l: 16px;
+  --text-s: 14px;
+  --text-m: 15px;
+  --text-l: 17px;
   --text-xl: 26px;
 
-  --radius: 3px;
+  /* Corners are cut in pixel steps rather than rounded, like the artwork. */
+  --step: 2px;
+  --stepped: polygon(
+    0 var(--step), var(--step) var(--step), var(--step) 0,
+    calc(100% - var(--step)) 0, calc(100% - var(--step)) var(--step), 100% var(--step),
+    100% calc(100% - var(--step)), calc(100% - var(--step)) calc(100% - var(--step)), calc(100% - var(--step)) 100%,
+    var(--step) 100%, var(--step) calc(100% - var(--step)), 0 calc(100% - var(--step))
+  );
 
-  --titlebar: 40px;
-  --statusbar: 26px;
-  --sidebar: 262px;
+  --titlebar: 52px;
+  --playbar: 72px;
+  --gutter: 28px;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --console: #fbf8f2;
+  --bg: #f3efe7;
+  --panel: #e9e3d8;
+  --raised: #fbf8f2;
+  --control: #e3dccf;
+  --control-hover: #d8d0c1;
+
+  --line: #e0d9cb;
+  --line-strong: #c8bfae;
+
+  --text: #1a1f27;
+  --text-2: #4c5460;
+  --text-3: #6c7480;
+
+  --accent: #a85f10;
+  --accent-hover: #8f4f0b;
+  --accent-soft: rgb(168 95 16 / 12%);
+  --on-accent: #ffffff;
+  --selected: rgb(168 95 16 / 8%);
+
+  --good: #27704a;
+  --warn: #7f6010;
+  --bad: #ad3226;
+  --info: #2a5a90;
+
+  --shadow: 0 12px 32px rgb(60 50 30 / 18%);
+  --scrim: 243 239 231;
 }

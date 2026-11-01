@@ -19,7 +19,14 @@ use crate::error::{Error, Result};
 use crate::lock::Lockfile;
 use crate::store::{Placement, Store, Stored};
 
-pub const TRACKED_DIRS: [&str; 6] = ["mods", "config", "defaultconfigs", "kubejs", "resourcepacks", "shaderpacks"];
+pub const TRACKED_DIRS: [&str; 6] = [
+    "mods",
+    "config",
+    "defaultconfigs",
+    "kubejs",
+    "resourcepacks",
+    "shaderpacks",
+];
 pub const TRACKED_FILES: [&str; 3] = ["options.txt", "optionsof.txt", "optionsshaders.txt"];
 
 const TRAIL_DIR: &str = ".waymarks";
@@ -128,7 +135,11 @@ impl Trail {
         }
 
         let at = OffsetDateTime::now_utc();
-        let id = format!("{}-{}", at.unix_timestamp_nanos() / 1_000_000, &uuid::Uuid::new_v4().simple().to_string()[..8]);
+        let id = format!(
+            "{}-{}",
+            at.unix_timestamp_nanos() / 1_000_000,
+            &uuid::Uuid::new_v4().simple().to_string()[..8]
+        );
         let summary = WaymarkSummary {
             id: id.clone(),
             at,
@@ -167,11 +178,17 @@ impl Trail {
             .ok_or_else(|| Error::NotFound(format!("waymark {id}")))?;
         for stored in target.files.values() {
             if !self.store.contains(&stored.hash) {
-                return Err(Error::Other(format!("a file from this waymark is missing from the store: {}", stored.hash)));
+                return Err(Error::Other(format!(
+                    "a file from this waymark is missing from the store: {}",
+                    stored.hash
+                )));
             }
         }
 
-        self.mark(&format!("Before returning to \"{label}\""), WaymarkKind::Automatic)?;
+        self.mark(
+            &format!("Before returning to \"{label}\""),
+            WaymarkKind::Automatic,
+        )?;
         let current = self.scan()?;
 
         for path in current.keys() {
@@ -184,8 +201,15 @@ impl Trail {
             if is_linked(&self.game.join(top)) {
                 continue;
             }
-            if current.get(path).is_none_or(|have| have.hash != stored.hash) {
-                self.store.place(&stored.hash, &self.game.join(path), Placement::for_path(path))?;
+            if current
+                .get(path)
+                .is_none_or(|have| have.hash != stored.hash)
+            {
+                self.store.place(
+                    &stored.hash,
+                    &self.game.join(path),
+                    Placement::for_path(path),
+                )?;
             }
         }
         self.prune_empty_dirs()?;
@@ -194,7 +218,10 @@ impl Trail {
         let returned = self.mark(&format!("Returned to \"{label}\""), WaymarkKind::Return)?;
         match returned {
             Some(summary) => Ok(summary),
-            None => self.list()?.pop().ok_or_else(|| Error::NotFound("trail".into())),
+            None => self
+                .list()?
+                .pop()
+                .ok_or_else(|| Error::NotFound("trail".into())),
         }
     }
 
@@ -202,7 +229,12 @@ impl Trail {
     pub fn live_hashes(&self) -> Result<Vec<String>> {
         let mut hashes = Vec::new();
         for waymark in self.list()? {
-            hashes.extend(self.snapshot(&waymark.id)?.files.into_values().map(|f| f.hash));
+            hashes.extend(
+                self.snapshot(&waymark.id)?
+                    .files
+                    .into_values()
+                    .map(|f| f.hash),
+            );
         }
         Ok(hashes)
     }
@@ -229,7 +261,10 @@ impl Trail {
         for root in TRACKED_DIRS {
             let dir = self.game.join(root);
             if dir.is_dir() && !is_linked(&dir) {
-                for entry in WalkDir::new(&dir).into_iter().filter_entry(|e| !is_noise(e.file_name())) {
+                for entry in WalkDir::new(&dir)
+                    .into_iter()
+                    .filter_entry(|e| !is_noise(e.file_name()))
+                {
                     let entry = entry.map_err(std::io::Error::from)?;
                     if entry.file_type().is_file() {
                         found.push(entry.into_path());
@@ -250,10 +285,23 @@ impl Trail {
         for path in found {
             let relative = self.relative(&path);
             let meta = fs::metadata(&path)?;
-            let modified = meta.modified()?.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis());
+            let modified = meta
+                .modified()?
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
             match cache.get(&relative) {
-                Some(hit) if hit.size == meta.len() && hit.modified == modified && self.store.contains(&hit.hash) => {
-                    files.insert(relative.clone(), Stored { hash: hit.hash.clone(), size: hit.size });
+                Some(hit)
+                    if hit.size == meta.len()
+                        && hit.modified == modified
+                        && self.store.contains(&hit.hash) =>
+                {
+                    files.insert(
+                        relative.clone(),
+                        Stored {
+                            hash: hit.hash.clone(),
+                            size: hit.size,
+                        },
+                    );
                     fresh_cache.insert(relative, hit.clone());
                 }
                 _ => to_hash.push((relative, path, modified)),
@@ -261,7 +309,14 @@ impl Trail {
         }
 
         for (relative, stored, modified) in self.hash_all(to_hash)? {
-            fresh_cache.insert(relative.clone(), CachedFile { size: stored.size, modified, hash: stored.hash.clone() });
+            fresh_cache.insert(
+                relative.clone(),
+                CachedFile {
+                    size: stored.size,
+                    modified,
+                    hash: stored.hash.clone(),
+                },
+            );
             files.insert(relative, stored);
         }
         write_json(&cache_path, &fresh_cache)?;
@@ -336,9 +391,15 @@ fn is_noise(name: &std::ffi::OsStr) -> bool {
     name.ends_with(".part") || name.ends_with(".tmp") || name == ".cache" || name == "__pycache__"
 }
 
-fn diff(previous: Option<&BTreeMap<String, Stored>>, current: &BTreeMap<String, Stored>) -> Pending {
+fn diff(
+    previous: Option<&BTreeMap<String, Stored>>,
+    current: &BTreeMap<String, Stored>,
+) -> Pending {
     let Some(previous) = previous else {
-        return Pending { added: current.keys().cloned().collect(), ..Pending::default() };
+        return Pending {
+            added: current.keys().cloned().collect(),
+            ..Pending::default()
+        };
     };
     let mut pending = Pending::default();
     for (path, stored) in current {
@@ -348,7 +409,11 @@ fn diff(previous: Option<&BTreeMap<String, Stored>>, current: &BTreeMap<String, 
             _ => {}
         }
     }
-    pending.removed = previous.keys().filter(|p| !current.contains_key(*p)).cloned().collect();
+    pending.removed = previous
+        .keys()
+        .filter(|p| !current.contains_key(*p))
+        .cloned()
+        .collect();
     pending
 }
 
@@ -376,17 +441,39 @@ mod tests {
         let game = instance.join("game");
         fs::create_dir_all(game.join("mods")).unwrap();
         fs::create_dir_all(game.join("config")).unwrap();
-        Lockfile::new("1.21.4", Loader { kind: LoaderKind::Fabric, version: None }).save(&instance).unwrap();
+        Lockfile::new(
+            "1.21.4",
+            Loader {
+                kind: LoaderKind::Fabric,
+                version: None,
+            },
+        )
+        .save(&instance)
+        .unwrap();
         let trail = Trail::new(&instance, Store::new(dir.path().join("store")));
-        Fixture { _dir: dir, game, trail }
+        Fixture {
+            _dir: dir,
+            game,
+            trail,
+        }
     }
 
     #[test]
     fn nothing_new_means_no_new_waymark() {
         let f = fixture();
         fs::write(f.game.join("mods/a.jar"), b"a").unwrap();
-        assert!(f.trail.mark("first", WaymarkKind::Created).unwrap().is_some());
-        assert!(f.trail.mark("again", WaymarkKind::Launch).unwrap().is_none());
+        assert!(
+            f.trail
+                .mark("first", WaymarkKind::Created)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            f.trail
+                .mark("again", WaymarkKind::Launch)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(f.trail.list().unwrap().len(), 1);
     }
 
@@ -400,7 +487,11 @@ mod tests {
         fs::write(f.game.join("mods/b.jar"), b"b").unwrap();
         fs::write(f.game.join("config/a.toml"), b"two!").unwrap();
         fs::remove_file(f.game.join("mods/a.jar")).unwrap();
-        let second = f.trail.mark("second", WaymarkKind::Install).unwrap().unwrap();
+        let second = f
+            .trail
+            .mark("second", WaymarkKind::Install)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(second.added, ["mods/b.jar"]);
         assert_eq!(second.removed, ["mods/a.jar"]);
@@ -412,7 +503,11 @@ mod tests {
         let f = fixture();
         fs::write(f.game.join("mods/good.jar"), b"good").unwrap();
         fs::write(f.game.join("config/game.toml"), b"before").unwrap();
-        let good = f.trail.mark("working", WaymarkKind::Manual).unwrap().unwrap();
+        let good = f
+            .trail
+            .mark("working", WaymarkKind::Manual)
+            .unwrap()
+            .unwrap();
 
         fs::write(f.game.join("mods/bad.jar"), b"bad").unwrap();
         fs::remove_file(f.game.join("mods/good.jar")).unwrap();
@@ -421,7 +516,10 @@ mod tests {
         f.trail.restore(&good.id).unwrap();
 
         assert_eq!(fs::read(f.game.join("mods/good.jar")).unwrap(), b"good");
-        assert_eq!(fs::read(f.game.join("config/game.toml")).unwrap(), b"before");
+        assert_eq!(
+            fs::read(f.game.join("config/game.toml")).unwrap(),
+            b"before"
+        );
         assert!(!f.game.join("mods/bad.jar").exists());
     }
 
@@ -451,7 +549,13 @@ mod tests {
 
         f.trail.restore(&first.id).unwrap();
 
-        let before = f.trail.list().unwrap().into_iter().find(|w| w.kind == WaymarkKind::Automatic).unwrap();
+        let before = f
+            .trail
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|w| w.kind == WaymarkKind::Automatic)
+            .unwrap();
         assert_eq!(before.added, ["mods/unsaved.jar"]);
         f.trail.restore(&before.id).unwrap();
         assert!(f.game.join("mods/unsaved.jar").exists());

@@ -18,12 +18,27 @@
   let useDefaultMemory = $state(original.memoryMb === undefined);
   let javaPath = $state(original.javaPath ?? '');
   let jvmArgs = $state((original.jvmArgs ?? []).join(' '));
+  let width = $state(original.width ? String(original.width) : '');
+  let height = $state(original.height ? String(original.height) : '');
+  let fullscreen = $state(original.fullscreen ?? false);
+  let env = $state((original.env ?? []).map(([key, value]) => `${key}=${value}`).join('\n'));
+  let preLaunch = $state(original.preLaunch ?? '');
+  let wrapper = $state(original.wrapper ?? '');
+  let postExit = $state(original.postExit ?? '');
   let confirming = $state(false);
   let copyFrom = $state('');
   let exporting = $state(false);
 
   const others = $derived(app.library.filter((other) => other.id !== entry.id));
   const shared = $derived(new Set(entry.shared ?? []));
+
+  function parseEnv(text: string): [string, string][] {
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.includes('='))
+      .map((line) => [line.slice(0, line.indexOf('=')).trim(), line.slice(line.indexOf('=') + 1)]);
+  }
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
@@ -33,6 +48,15 @@
         memoryMb: useDefaultMemory ? null : memory,
         javaPath: javaPath.trim() || null,
         jvmArgs: jvmArgs.trim() ? jvmArgs.trim().split(/\s+/) : [],
+        options: {
+          width: Number(width) || null,
+          height: Number(height) || null,
+          fullscreen,
+          env: parseEnv(env),
+          preLaunch: preLaunch.trim() || null,
+          wrapper: wrapper.trim() || null,
+          postExit: postExit.trim() || null,
+        },
       });
       await app.refresh();
       app.toast('good', 'Settings saved');
@@ -80,9 +104,10 @@
 
   async function remove() {
     try {
-      await api.deleteInstance(entry.id);
+      const item = await api.deleteInstance(entry.id);
       await app.refresh();
       app.selected = null;
+      app.toast('good', `Deleted ${entry.name}`, 'You can restore it from Settings for 30 days.', { label: 'Undo', run: () => app.restore(item.id) });
     } catch (error) {
       app.fail(error, 'Could not delete this instance');
     }
@@ -90,6 +115,7 @@
 </script>
 
 <div class="tab">
+  <div class="sheet">
   <form onsubmit={save}>
     <div class="form-row">
       <label for="instance-name">Name</label>
@@ -117,6 +143,42 @@
     <div class="form-row">
       <label for="args">Java arguments</label>
       <input id="args" class="field mono" bind:value={jvmArgs} />
+    </div>
+    <div class="form-row">
+      <span class="form-label">Game window</span>
+      <div>
+        <div class="size">
+          <input class="field tabular" inputmode="numeric" placeholder="Width" aria-label="Window width" disabled={fullscreen} bind:value={width} />
+          <span class="faint">by</span>
+          <input class="field tabular" inputmode="numeric" placeholder="Height" aria-label="Window height" disabled={fullscreen} bind:value={height} />
+        </div>
+        <label class="check"><input type="checkbox" bind:checked={fullscreen} /> Start in fullscreen</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="env">Environment variables</label>
+      <div>
+        <textarea id="env" class="field mono area" rows="3" placeholder="NAME=value" bind:value={env}></textarea>
+        <p class="form-hint">One on each line.</p>
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="pre-launch">Before launching</label>
+      <input id="pre-launch" class="field mono" bind:value={preLaunch} />
+    </div>
+    <div class="form-row">
+      <label for="wrapper">Wrapper command</label>
+      <div>
+        <input id="wrapper" class="field mono" bind:value={wrapper} />
+        <p class="form-hint">Runs the game through another program, like mangohud.</p>
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="post-exit">After the game closes</label>
+      <div>
+        <input id="post-exit" class="field mono" bind:value={postExit} />
+        <p class="form-hint">Commands run on your computer, so only use ones you trust. They can read INST_NAME, INST_DIR, INST_MC_DIR and INST_MC_VER.</p>
+      </div>
     </div>
     <div class="form-row">
       <span></span>
@@ -165,7 +227,7 @@
     <span class="form-label">Delete instance</span>
     <div>
       {#if confirming}
-        <p class="confirm">This removes its worlds and files from your computer and can't be undone.</p>
+        <p class="confirm">This removes it from your library, with its worlds. You can restore it from Settings for 30 days.</p>
         <button class="btn" onclick={() => (confirming = false)}>Cancel</button>
         <button class="btn danger" onclick={remove}>Delete {entry.name}</button>
       {:else}
@@ -173,13 +235,16 @@
       {/if}
     </div>
   </div>
+  </div>
 </div>
 
 <style>
-  .tab { height: 100%; overflow-y: auto; padding: 4px 24px 16px; }
-  form, .tab > .form-row { max-width: 640px; }
-  .tab > .form-row:first-of-type { border-top: 1px solid var(--line); }
-  .check { display: flex; align-items: center; gap: 7px; padding-top: 7px; }
+  .tab { height: 100%; overflow-y: auto; padding: 8px var(--gutter) var(--gutter); }
+  .sheet { max-width: 720px; }
+  .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
+  .size { display: flex; align-items: center; gap: 8px; }
+  .size .field { width: 96px; }
+  .area { height: auto; padding: 8px 12px; resize: vertical; }
   .line { display: flex; gap: 8px; }
   .slider { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
   .slider input { flex: 1; }

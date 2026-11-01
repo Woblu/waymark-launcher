@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use crate::Core;
 use crate::bisect::{Bisect, Step, Verdict};
 use crate::error::{Error, Result};
-use crate::instance::Instance;
+use crate::instance::{Instance, LaunchOptions};
 use crate::lock::Lockfile;
 use crate::waymarks::WaymarkKind;
 
@@ -27,6 +27,8 @@ pub struct LibraryEntry {
     pub last_waymark: Option<OffsetDateTime>,
     pub running: bool,
     pub bisecting: bool,
+    /// The store project this instance's modpack came from, as `source:id`.
+    pub pack_project: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -36,14 +38,26 @@ pub struct InstancePatch {
     pub memory_mb: Option<Option<u32>>,
     pub java_path: Option<Option<String>>,
     pub jvm_args: Option<Vec<String>>,
+    pub options: Option<LaunchOptions>,
 }
 
 /// One point in a bisect, in terms the player can act on.
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum BisectView {
-    Testing { round: u32, estimate: u32, enabled: usize, total: usize },
-    Found { culprits: Vec<String> },
+    Testing {
+        round: u32,
+        estimate: u32,
+        enabled: usize,
+        total: usize,
+    },
+    Found {
+        culprits: Vec<String>,
+    },
     NotAMod,
 }
 
@@ -65,7 +79,12 @@ impl Core {
                 waymarks: trail.len(),
                 last_waymark: trail.last().map(|w| w.at),
                 running: self.game_running(&instance.id),
-                bisecting: self.paths.instance(&instance.id).join(BISECT_FILE).is_file(),
+                bisecting: self
+                    .paths
+                    .instance(&instance.id)
+                    .join(BISECT_FILE)
+                    .is_file(),
+                pack_project: self.pack_project(&instance.id),
                 instance,
             });
         }
@@ -86,6 +105,9 @@ impl Core {
         if let Some(args) = patch.jvm_args {
             instance.jvm_args = args;
         }
+        if let Some(options) = patch.options {
+            instance.options = options;
+        }
         self.save_instance(&instance)?;
         Ok(instance)
     }
@@ -105,27 +127,50 @@ impl Core {
         lock.save(&self.paths.instance(id))
     }
 
-    fn apply_step(&self, id: &str, step: &Step, total: usize, lock: &Lockfile) -> Result<BisectView> {
+    fn apply_step(
+        &self,
+        id: &str,
+        step: &Step,
+        total: usize,
+        lock: &Lockfile,
+    ) -> Result<BisectView> {
         match step {
-            Step::Test { enabled, round, estimate, .. } => {
+            Step::Test {
+                enabled,
+                round,
+                estimate,
+                ..
+            } => {
                 self.apply_mod_set(id, &enabled.iter().map(String::as_str).collect())?;
-                Ok(BisectView::Testing { round: *round, estimate: *estimate, enabled: enabled.len(), total })
+                Ok(BisectView::Testing {
+                    round: *round,
+                    estimate: *estimate,
+                    enabled: enabled.len(),
+                    total,
+                })
             }
             Step::Found { culprits } => Ok(BisectView::Found {
-                culprits: culprits.iter().filter_map(|hash| lock.find(hash).map(|m| m.name.clone())).collect(),
+                culprits: culprits
+                    .iter()
+                    .filter_map(|hash| lock.find(hash).map(|m| m.name.clone()))
+                    .collect(),
             }),
             Step::NotAMod => Ok(BisectView::NotAMod),
         }
     }
 
     pub fn start_bisect(&self, id: &str) -> Result<BisectView> {
-        self.trail(id).mark("Before searching for a crash", WaymarkKind::Automatic)?;
+        self.trail(id)
+            .mark("Before searching for a crash", WaymarkKind::Automatic)?;
         let lock = self.lockfile(id)?;
         let active: Vec<_> = lock.mods.iter().filter(|m| m.enabled).collect();
         if active.is_empty() {
             return Err(Error::Other("this instance has no mods switched on".into()));
         }
-        let requires: BTreeMap<String, Vec<String>> = active.iter().map(|m| (m.hash.clone(), m.requires.clone())).collect();
+        let requires: BTreeMap<String, Vec<String>> = active
+            .iter()
+            .map(|m| (m.hash.clone(), m.requires.clone()))
+            .collect();
         let original: Vec<String> = active.iter().map(|m| m.hash.clone()).collect();
         let search = Bisect::new(original.clone(), requires);
         let view = self.apply_step(id, &search.step(), original.len(), &lock)?;
@@ -168,18 +213,28 @@ impl Core {
         let saved = self.load_bisect(id)?;
         let lock = self.lockfile(id)?;
         match saved.search.step() {
-            Step::Test { enabled, round, estimate, .. } => Ok(Some(BisectView::Testing {
+            Step::Test {
+                enabled,
+                round,
+                estimate,
+                ..
+            } => Ok(Some(BisectView::Testing {
                 round,
                 estimate,
                 enabled: enabled.len(),
                 total: saved.original.len(),
             })),
-            step => self.apply_step(id, &step, saved.original.len(), &lock).map(Some),
+            step => self
+                .apply_step(id, &step, saved.original.len(), &lock)
+                .map(Some),
         }
     }
 
     fn save_bisect(&self, id: &str, saved: &SavedBisect) -> Result<()> {
-        fs::write(self.paths.instance(id).join(BISECT_FILE), serde_json::to_vec(saved)?)?;
+        fs::write(
+            self.paths.instance(id).join(BISECT_FILE),
+            serde_json::to_vec(saved)?,
+        )?;
         Ok(())
     }
 
@@ -219,7 +274,18 @@ mod tests {
     fn setup(names: &[&str]) -> (tempfile::TempDir, Core, String) {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path(), crate::event::silent()).unwrap();
-        let instance = core.register_instance("Test", "1.21.4", Loader { kind: LoaderKind::Fabric, version: None }, "x".into(), None).unwrap();
+        let instance = core
+            .register_instance(
+                "Test",
+                "1.21.4",
+                Loader {
+                    kind: LoaderKind::Fabric,
+                    version: None,
+                },
+                "x".into(),
+                None,
+            )
+            .unwrap();
         let mods_dir = core.paths.game(&instance.id).join("mods");
         let mut lock = core.lockfile(&instance.id).unwrap();
         for name in names {
@@ -231,7 +297,13 @@ mod tests {
     }
 
     fn enabled(core: &Core, id: &str) -> Vec<String> {
-        core.lockfile(id).unwrap().mods.into_iter().filter(|m| m.enabled).map(|m| m.name).collect()
+        core.lockfile(id)
+            .unwrap()
+            .mods
+            .into_iter()
+            .filter(|m| m.enabled)
+            .map(|m| m.name)
+            .collect()
     }
 
     #[test]
@@ -239,10 +311,16 @@ mod tests {
         let (_dir, core, id) = setup(&["a", "b", "bad", "d"]);
         let mut view = core.start_bisect(&id).unwrap();
         while let BisectView::Testing { .. } = view {
-            let verdict = if enabled(&core, &id).contains(&"bad".to_string()) { Verdict::Crashes } else { Verdict::Works };
+            let verdict = if enabled(&core, &id).contains(&"bad".to_string()) {
+                Verdict::Crashes
+            } else {
+                Verdict::Works
+            };
             view = core.report_bisect(&id, verdict).unwrap();
         }
-        let BisectView::Found { culprits } = view else { panic!("expected a culprit") };
+        let BisectView::Found { culprits } = view else {
+            panic!("expected a culprit")
+        };
         assert_eq!(culprits, ["bad"]);
         assert_eq!(enabled(&core, &id), ["a", "b", "d"]);
         assert!(core.bisect_status(&id).unwrap().is_none());
@@ -262,7 +340,10 @@ mod tests {
         let (dir, core, id) = setup(&["a", "b"]);
         core.start_bisect(&id).unwrap();
         let reopened = Core::new(dir.path(), crate::event::silent()).unwrap();
-        assert!(matches!(reopened.bisect_status(&id).unwrap(), Some(BisectView::Testing { .. })));
+        assert!(matches!(
+            reopened.bisect_status(&id).unwrap(),
+            Some(BisectView::Testing { .. })
+        ));
     }
 
     #[test]

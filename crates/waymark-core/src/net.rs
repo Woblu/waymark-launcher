@@ -58,8 +58,12 @@ impl Hashing {
 
     fn matches(self, expected: &Expected) -> bool {
         match (self, expected) {
-            (Hashing::Sha1(h), Expected::Sha1(want)) => hex::encode(h.finalize()).eq_ignore_ascii_case(want),
-            (Hashing::Sha512(h), Expected::Sha512(want)) => hex::encode(h.finalize()).eq_ignore_ascii_case(want),
+            (Hashing::Sha1(h), Expected::Sha1(want)) => {
+                hex::encode(h.finalize()).eq_ignore_ascii_case(want)
+            }
+            (Hashing::Sha512(h), Expected::Sha512(want)) => {
+                hex::encode(h.finalize()).eq_ignore_ascii_case(want)
+            }
             _ => true,
         }
     }
@@ -104,10 +108,9 @@ impl Net {
             .ok()
             .and_then(|at| SystemTime::now().duration_since(at).ok())
             .is_some_and(|age| age < max_age);
-        if fresh
-            && let Some(value) = read_json(cache).await {
-                return Ok(value);
-            }
+        if fresh && let Some(value) = read_json(cache).await {
+            return Ok(value);
+        }
         match self.json::<T>(url).await {
             Ok(value) => {
                 write_atomic(cache, &serde_json::to_vec(&value)?).await?;
@@ -154,7 +157,12 @@ impl Net {
         }
     }
 
-    async fn stream_to(&self, item: &Fetch, part: &Path, on_bytes: &(dyn Fn(u64) + Sync)) -> Result<()> {
+    async fn stream_to(
+        &self,
+        item: &Fetch,
+        part: &Path,
+        on_bytes: &(dyn Fn(u64) + Sync),
+    ) -> Result<()> {
         let response = self.client.get(&item.url).send().await?;
         check(&item.url, &response)?;
         let mut file = tokio::fs::File::create(part).await?;
@@ -168,15 +176,24 @@ impl Net {
         file.flush().await?;
         drop(file);
         if !hashing.matches(&item.hash) {
-            return Err(Error::HashMismatch { url: item.url.clone() });
+            return Err(Error::HashMismatch {
+                url: item.url.clone(),
+            });
         }
         Ok(())
     }
 
     /// Fetches a batch at once and reports `(bytes done, bytes total)`.
-    pub async fn fetch_all(&self, items: Vec<Fetch>, progress: impl Fn(u64, u64) + Sync) -> Result<()> {
+    pub async fn fetch_all(
+        &self,
+        items: Vec<Fetch>,
+        progress: impl Fn(u64, u64) + Sync,
+    ) -> Result<()> {
         let mut seen = HashSet::new();
-        let items: Vec<Fetch> = items.into_iter().filter(|i| seen.insert(i.dest.clone())).collect();
+        let items: Vec<Fetch> = items
+            .into_iter()
+            .filter(|i| seen.insert(i.dest.clone()))
+            .collect();
         let total: u64 = items.iter().filter_map(|i| i.size).sum();
         let done = AtomicU64::new(0);
         let on_bytes = |n: u64| {
@@ -196,7 +213,10 @@ fn check(url: &str, response: &reqwest::Response) -> Result<()> {
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(Error::Status { url: url.to_string(), status: response.status().as_u16() })
+        Err(Error::Status {
+            url: url.to_string(),
+            status: response.status().as_u16(),
+        })
     }
 }
 
@@ -218,7 +238,10 @@ async fn already_there(item: &Fetch) -> bool {
 }
 
 fn temp_beside(dest: &Path) -> PathBuf {
-    let name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("download");
+    let name = dest
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
     dest.with_file_name(format!("{name}.{}.part", uuid::Uuid::new_v4().simple()))
 }
 

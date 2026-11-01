@@ -26,11 +26,19 @@ The repository is `Woblu/waymark-launcher`. Its Actions secrets are `TAURI_SIGNI
 
 The app checks `https://waymark-launcher.vercel.app/updates/latest.json`, and `apps/site/vercel.json` redirects that to the newest published GitHub release. Using our own address means the repository can move without breaking installed copies. If it moves, change the redirect and deploy the site. Until a release is published, the redirect ends in a 404, which the app treats as no update.
 
+## How updates reach people
+
+The app checks 20 seconds after it starts and every 6 hours after that, unless the player has turned off **Keep Waymark up to date** in Settings. A newer version downloads in the background, and its signature is checked before it's kept and again before it installs. It then installs silently when the app closes, or straight away from **Restart to update**.
+
+An update never installs while a game or a hosted server is running, because the installer has to stop the app, and the app is what watches the game. All of this is in `apps/desktop/src-tauri/src/updates.rs`. The window can only ask for an install, and has no access to the updater itself.
+
 ## Making a release
 
-1. Set the version in `apps/desktop/src-tauri/tauri.conf.json` and the root `Cargo.toml`.
+1. Set the version in `apps/desktop/src-tauri/tauri.conf.json` and the root `Cargo.toml`. It has to be higher than the version people have, or the app won't offer it.
 2. Push a tag like `v0.2.0`. GitHub builds Windows, macOS (Apple silicon and Intel) and Linux, and creates a draft release.
-3. Test the draft, then publish it. Published releases are what installed copies update to.
+3. Test the draft, then publish it. Drafts are invisible to the app, and publishing is the moment every installed copy starts updating, so a bad release reaches people within hours.
+
+To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
 
 ## Signing the installers
 

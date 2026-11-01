@@ -35,6 +35,68 @@ export function count(value: number): string {
 }
 
 export function loaderName(kind: string): string {
-  const names: Record<string, string> = { vanilla: 'Vanilla', fabric: 'Fabric', quilt: 'Quilt', forge: 'Forge', neoforge: 'NeoForge' };
-  return names[kind] ?? kind;
+  const names: Record<string, string> = {
+    vanilla: 'Vanilla',
+    fabric: 'Fabric',
+    quilt: 'Quilt',
+    forge: 'Forge',
+    neoforge: 'NeoForge',
+    legacyfabric: 'Legacy Fabric',
+    'legacy-fabric': 'Legacy Fabric',
+    babric: 'Babric',
+    ornithe: 'Ornithe',
+  };
+  return names[kind] ?? titleCase(kind);
+}
+
+export function day(date: string): string {
+  return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function titleCase(slug: string): string {
+  return slug.replace(/[-_]/g, ' ').replace(/^./, (first) => first.toUpperCase());
+}
+
+const RELEASE = /^\d+\.\d+(\.\d+)?$/;
+
+function parts(version: string): number[] {
+  return version.split('.').map(Number);
+}
+
+function newestFirst(a: string, b: string): number {
+  const [x, y] = [parts(a), parts(b)];
+  return y[0] - x[0] || y[1] - x[1] || (y[2] ?? 0) - (x[2] ?? 0);
+}
+
+/** Full releases, newest first. Minecraft moved from 1.21 to year numbers like 26.3. */
+export function sortMinecraft(versions: string[]): string[] {
+  return versions.filter((version) => RELEASE.test(version)).sort(newestFirst);
+}
+
+/** Collapses a long list into something like `1.16 to 1.21, 26.1 to 26.3`. */
+export function minecraftRange(versions: string[]): string {
+  const releases = sortMinecraft(versions).reverse();
+  if (!releases.length) return versions.length ? `${versions.length} snapshots` : 'Unknown';
+  const lines = [...new Set(releases.map((version) => parts(version).slice(0, 2).join('.')))];
+  if (versions.length <= 2) return releases.join(', ');
+  const spans: [string, string][] = [];
+  for (const line of lines) {
+    const last = spans.at(-1);
+    const [major, minor] = parts(line);
+    if (last && parts(last[1])[0] === major && parts(last[1])[1] + 1 === minor) last[1] = line;
+    else spans.push([line, line]);
+  }
+  return spans.map(([from, to]) => (from === to ? from : `${from} to ${to}`)).join(', ');
+}
+
+/** Modrinth's client and server support, in words. */
+export function environment(client?: string | null, server?: string | null): string | null {
+  const known = ['required', 'optional', 'unsupported'];
+  if (!client || !server || !known.includes(client) || !known.includes(server)) return null;
+  if (server === 'unsupported') return client === 'unsupported' ? null : 'Client only';
+  if (client === 'unsupported') return 'Server only';
+  if (client === 'required' && server === 'required') return 'Client and server';
+  if (client === 'required') return 'Client, optional on server';
+  if (server === 'required') return 'Server, optional on client';
+  return 'Client or server';
 }

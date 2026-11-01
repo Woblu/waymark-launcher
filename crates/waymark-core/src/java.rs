@@ -12,8 +12,7 @@ use crate::error::{Error, Result};
 use crate::event::Task;
 use crate::net::{Expected, Fetch};
 
-const RUNTIME_INDEX_URL: &str =
-    "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+const RUNTIME_INDEX_URL: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
 const INSTALLED_MARKER: &str = ".waymark-installed";
 
 type RuntimeIndex = BTreeMap<String, BTreeMap<String, Vec<RuntimeListing>>>;
@@ -92,12 +91,20 @@ impl Core {
 
         task.progress(0, 1, &format!("Finding Java ({component})"));
         let cache = self.paths.cache().join("java-runtimes.json");
-        let index: RuntimeIndex = self.net.cached_json(RUNTIME_INDEX_URL, &cache, Duration::from_secs(6 * 3600)).await?;
+        let index: RuntimeIndex = self
+            .net
+            .cached_json(RUNTIME_INDEX_URL, &cache, Duration::from_secs(6 * 3600))
+            .await?;
         let listing = index
             .get(platform())
             .and_then(|components| components.get(component))
             .and_then(|listings| listings.first())
-            .ok_or_else(|| Error::Other(format!("Mojang has no {component} runtime for {}", platform())))?;
+            .ok_or_else(|| {
+                Error::Other(format!(
+                    "Mojang has no {component} runtime for {}",
+                    platform()
+                ))
+            })?;
 
         let manifest: RuntimeManifest = self.net.json(&listing.manifest.url).await?;
         let mut fetches = Vec::new();
@@ -107,7 +114,10 @@ impl Core {
             let path = home.join(relative);
             match entry {
                 RuntimeEntry::Directory => tokio::fs::create_dir_all(&path).await?,
-                RuntimeEntry::File { executable, downloads } => {
+                RuntimeEntry::File {
+                    executable,
+                    downloads,
+                } => {
                     fetches.push(Fetch {
                         url: downloads.raw.url.clone(),
                         dest: path.clone(),
@@ -123,7 +133,9 @@ impl Core {
         }
 
         self.net
-            .fetch_all(fetches, |done, total| task.progress(done, total, "Downloading Java"))
+            .fetch_all(fetches, |done, total| {
+                task.progress(done, total, "Downloading Java")
+            })
             .await?;
         finish_runtime(&executables, &links)?;
         tokio::fs::write(home.join(INSTALLED_MARKER), b"").await?;

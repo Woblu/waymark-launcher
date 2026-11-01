@@ -5,9 +5,9 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge';
-export type ContentSource = 'modrinth' | 'curseforge';
-export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader';
+export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'legacyfabric' | 'babric' | 'ornithe';
+export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher';
+export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack';
 export type Verdict = 'crashes' | 'works';
 
 export interface Loader { kind: LoaderKind; version?: string }
@@ -27,11 +27,20 @@ export interface LibraryEntry {
   icon?: string;
   pack?: string;
   shared?: string[];
+  group?: string;
+  width?: number;
+  height?: number;
+  fullscreen?: boolean;
+  env?: [string, string][];
+  preLaunch?: string;
+  wrapper?: string;
+  postExit?: string;
   mods: number;
   waymarks: number;
   lastWaymark: string | null;
   running: boolean;
   bisecting: boolean;
+  packProject?: string | null;
 }
 
 export type Origin = { kind: 'manual' } | { kind: 'pack'; name: string } | { kind: 'dependency'; of: string[] };
@@ -48,7 +57,7 @@ export interface LockedMod {
   icon?: string;
   group?: string;
   tags?: string[];
-  source: { kind: 'modrinth' | 'curseforge' | 'manual' };
+  source: { kind: 'modrinth'; project: string } | { kind: 'curseforge'; project: number } | { kind: 'manual'; project?: undefined };
 }
 
 export type WaymarkKind = 'created' | 'manual' | 'install' | 'remove' | 'update' | 'launch' | 'import' | 'return' | 'automatic';
@@ -84,30 +93,190 @@ export interface ContentHit {
 
 export interface ContentPage { hits: ContentHit[]; total: number }
 
+export type Sort = 'relevance' | 'downloads' | 'follows' | 'newest' | 'updated';
+
 export interface SearchQuery {
   text: string;
   kind: ContentKind;
   minecraft?: string;
   loader?: LoaderKind;
+  sort?: Sort;
+  categories?: string[];
   offset: number;
   limit: number;
 }
 
-export interface ModUpdate { hash: string; name: string; current?: string; latest: string; held: boolean }
+export interface SearchCategory { id: string; name: string; group: string }
+
+export interface Link { label: string; url: string }
+export interface Shot { url: string; full: string; title?: string | null; description?: string | null }
+export interface Creator { name: string; role?: string | null; avatar?: string | null; url?: string | null }
+
+export interface ProjectPage {
+  source: ContentSource;
+  id: string;
+  slug: string;
+  kind: ContentKind;
+  title: string;
+  summary: string;
+  body: string;
+  format: 'markdown' | 'html';
+  icon?: string | null;
+  downloads: number;
+  followers: number;
+  published?: string | null;
+  updated?: string | null;
+  categories: string[];
+  loaders: string[];
+  gameVersions: string[];
+  client?: string | null;
+  server?: string | null;
+  license?: Link | null;
+  links: Link[];
+  gallery: Shot[];
+  creators: Creator[];
+  page: string;
+}
+
+export interface VersionRow {
+  id: string;
+  name: string;
+  number: string;
+  channel: string;
+  published: string;
+  downloads: number;
+  loaders: string[];
+  gameVersions: string[];
+  file: string;
+  size: number;
+  available: boolean;
+}
+
+export interface VersionList { versions: VersionRow[]; total: number }
+export interface VersionFilter { minecraft?: string; loader?: string; offset: number }
+export interface Needed { source: ContentSource; id: string; title: string; icon?: string | null }
+export interface Fit { version: string; requires: Needed[] }
+
+export interface LocalMod {
+  name: string;
+  version?: string | null;
+  description?: string | null;
+  authors: string[];
+  license?: string | null;
+  links: Link[];
+  file: string;
+  size: number;
+  icon?: string | null;
+}
+
+export type InstalledPage =
+  | { kind: 'store'; source: ContentSource; project: string }
+  | { kind: 'namesake'; source: ContentSource; project: string; file: string; version?: string }
+  | ({ kind: 'local' } & LocalMod);
+
+export interface ProjectPreview { title: string; icon?: string | null; summary?: string }
+
+/** A page to open: a store project, or a mod file in an instance. */
+export type ProjectTarget =
+  | { source: ContentSource; id: string; kind?: ContentKind; instance?: string; preview?: ProjectPreview }
+  | { hash: string; instance: string; preview?: ProjectPreview };
+
+export type SkinVariant = 'classic' | 'slim';
+export interface SavedSkin { id: string; name: string; variant: SkinVariant }
+export interface DefaultSkin { name: string; variant: SkinVariant; url: string }
+export interface SkinLibrary { saved: SavedSkin[]; defaults: DefaultSkin[] }
+export type Wear = { kind: 'saved'; id: string } | { kind: 'default'; url: string; variant: SkinVariant };
+
+export interface SkinProfile {
+  name: string;
+  skins: { url: string; variant: string; state: string }[];
+  capes: { id: string; url: string; alias?: string | null; state: string }[];
+}
+
+export type Join = { kind: 'world'; folder: string } | { kind: 'server'; address: string };
+
+export interface World {
+  folder: string;
+  name: string;
+  lastPlayed?: number | null;
+  mode: string;
+  version?: string | null;
+  hasIcon: boolean;
+}
+
+export interface Worlds { worlds: World[]; canJoin: boolean }
+export interface RecentWorld extends World { instance: string; instanceName: string }
+export interface SavedServer { index: number; name: string; address: string; icon?: string | null }
+
+export interface ServerStatus {
+  online: boolean;
+  players?: number | null;
+  capacity?: number | null;
+  version?: string | null;
+  motd: string;
+  latencyMs?: number | null;
+  icon?: string | null;
+}
+
+export interface Trashed { id: string; kind: 'instance' | 'world' | 'screenshot'; name: string; instance: string; folder: string; at: string }
+
+export interface ModUpdate {
+  kind: ContentKind;
+  hash: string;
+  name: string;
+  source: ContentSource;
+  project: string;
+  current?: string;
+  latest: string;
+  held: boolean;
+}
+
+export interface UpdatePick { hash: string; version?: string }
+export interface PackExport { linked: number; bundled: string[] }
+export interface LogFile { path: string; size: number; modified: number }
+
+export interface ShareCode { code: string; leftOut: string[] }
+export interface HostStatus { ready: boolean; eulaAccepted: boolean; running: boolean; address?: string | null; port: number }
+
+export interface ManualFile { name: string; page: string; file: string; size: number; sha1?: string | null; project: number; fileId: number }
+
+export interface LaunchOptions {
+  width?: number | null;
+  height?: number | null;
+  fullscreen?: boolean;
+  env?: [string, string][];
+  preLaunch?: string | null;
+  wrapper?: string | null;
+  postExit?: string | null;
+}
 
 export interface Account { uuid: string; name: string; ownsGame: boolean; verifiedAt: string; skinUrl?: string; active: boolean }
 
 export interface DeviceLogin { userCode: string; verificationUri: string; expiresIn: number }
 
 export interface ExternalInstance {
-  launcher: 'prism' | 'multimc' | 'curseforge' | 'modrinth';
+  launcher: 'prism' | 'multimc' | 'curseforge' | 'modrinth' | 'atlauncher' | 'gdlauncher';
   name: string;
   gameDir: string;
   minecraft: string;
   loader: Loader;
 }
 
-export interface Settings { memoryMb: number; releaseDelayHours: number; showSnapshots: boolean; closeWhilePlaying: boolean }
+export type Theme = 'system' | 'dark' | 'light';
+
+export interface Settings {
+  memoryMb: number;
+  releaseDelayHours: number;
+  showSnapshots: boolean;
+  closeWhilePlaying: boolean;
+  theme: Theme;
+  language: string;
+  autoUpdate: boolean;
+}
+
+export interface UpdateStatus { current: string; ready: string | null }
+
+export interface Screenshot { instance: string; instanceName: string; file: string; size: number; modified: number }
 
 export interface PackUpdate { name: string; current: string; latest: string }
 
@@ -119,7 +288,7 @@ export interface PackUpdateReport {
   kept: string[];
   stayedRemoved: string[];
   minecraftChanged: boolean;
-  manual: { name: string; page: string }[];
+  manual: ManualFile[];
 }
 
 export interface ServerExport { folder: string; mods: number; skipped: string[] }
@@ -146,7 +315,8 @@ export type CoreEvent =
   | { type: 'taskFinished'; id: string }
   | { type: 'taskFailed'; id: string; message: string }
   | { type: 'gameStarted'; instance: string; pid: number }
-  | { type: 'gameExited'; instance: string; code: number | null; playedSecs: number; crash: CrashReport | null };
+  | { type: 'gameExited'; instance: string; code: number | null; playedSecs: number; crash: CrashReport | null }
+  | { type: 'serverStopped'; instance: string };
 
 export interface LogBatch { instance: string; lines: { text: string; error: boolean }[] }
 
@@ -167,16 +337,17 @@ export const api = {
     call<{ version: string; stable: boolean }[]>('loader_versions', { kind, minecraft }),
   createInstance: (request: { name: string; minecraft: string; loader: LoaderKind }) => call<LibraryEntry>('create_instance', { request }),
   updateInstance: (id: string, patch: Record<string, unknown>) => call<LibraryEntry>('update_instance', { id, patch }),
-  deleteInstance: (id: string) => call<void>('delete_instance', { id }),
+  deleteInstance: (id: string) => call<Trashed>('delete_instance', { id }),
   gameDirectory: (id: string) => call<string>('game_directory', { id }),
-  mods: (id: string) => call<LockedMod[]>('instance_mods', { id }),
-  setModEnabled: (id: string, hash: string, enabled: boolean) => call<LockedMod[]>('set_mod_enabled', { id, hash, enabled }),
-  removeMod: (id: string, hash: string) => call<Waymark | null>('remove_mod', { id, hash }),
+  content: (id: string, kind: ContentKind) => call<LockedMod[]>('instance_content', { id, kind }),
+  installedProjects: (id: string) => call<string[]>('installed_projects', { id }),
+  setContentEnabled: (id: string, kind: ContentKind, hash: string, enabled: boolean, world?: string) =>
+    call<LockedMod[]>('set_content_enabled', { id, kind, hash, enabled, world }),
+  removeContent: (id: string, kind: ContentKind, hashes: string[], world?: string) => call<Waymark | null>('remove_content', { id, kind, hashes, world }),
   setModsEnabled: (id: string, hashes: string[], enabled: boolean) => call<LockedMod[]>('set_mods_enabled', { id, hashes, enabled }),
   setModsGroup: (id: string, hashes: string[], group: string | null) => call<LockedMod[]>('set_mods_group', { id, hashes, group }),
   toggleModsTag: (id: string, hashes: string[], tag: string) => call<LockedMod[]>('toggle_mods_tag', { id, hashes, tag }),
-  removeMods: (id: string, hashes: string[]) => call<Waymark | null>('remove_mods', { id, hashes }),
-  identifyMods: (id: string) => call<LockedMod[] | null>('identify_mods', { id }),
+  identifyContent: (id: string, kind: ContentKind) => call<LockedMod[] | null>('identify_content', { id, kind }),
   checkPackUpdate: (id: string) => call<PackUpdate | null>('check_pack_update', { id }),
   updatePack: (id: string) => call<PackUpdateReport>('update_pack', { id }),
   setFolderShared: (id: string, folder: string, shared: boolean) => call<LibraryEntry>('set_folder_shared', { id, folder, shared }),
@@ -189,19 +360,26 @@ export const api = {
   setWaymark: (id: string, label: string) => call<Waymark | null>('set_waymark', { id, label }),
   returnTo: (id: string, waymark: string) => call<Waymark>('return_to_waymark', { id, waymark }),
   search: (source: ContentSource, query: SearchQuery) => call<ContentPage>('search_content', { source, query }),
+  searchCategories: (source: ContentSource, kind: ContentKind) => call<SearchCategory[]>('search_categories', { source, kind }),
   curseforgeAvailable: () => call<boolean>('curseforge_available'),
-  installContent: (id: string, source: ContentSource, project: string, kind: ContentKind) =>
-    call<Waymark | null>('install_content', { id, source, project, kind }),
-  installPack: (source: ContentSource, project: string) => call<{ instance: LibraryEntry; manual: { name: string; page: string }[] }>('install_pack', { source, project }),
-  installPackFile: (path: string) => call<{ instance: LibraryEntry; manual: { name: string; page: string }[] }>('install_pack_file', { path }),
+  projectPage: (source: ContentSource, project: string) => call<ProjectPage>('project_page', { source, project }),
+  projectVersions: (source: ContentSource, project: string, filter: VersionFilter) =>
+    call<VersionList>('project_versions', { source, project, filter }),
+  versionChangelog: (source: ContentSource, project: string, version: string) => call<string>('version_changelog', { source, project, version }),
+  projectFit: (id: string, source: ContentSource, project: string, kind: ContentKind) => call<Fit | null>('project_fit', { id, source, project, kind }),
+  installedModPage: (id: string, hash: string) => call<InstalledPage>('installed_mod_page', { id, hash }),
+  installContent: (id: string, source: ContentSource, project: string, kind: ContentKind, version?: string, world?: string) =>
+    call<Waymark | null>('install_content', { id, source, project, kind, version, world }),
+  installPack: (source: ContentSource, project: string) => call<{ instance: LibraryEntry; manual: ManualFile[] }>('install_pack', { source, project }),
+  installPackFile: (path: string) => call<{ instance: LibraryEntry; manual: ManualFile[] }>('install_pack_file', { path }),
   checkUpdates: (id: string) => call<ModUpdate[]>('check_updates', { id }),
-  applyUpdates: (id: string, hashes: string[]) => call<Waymark | null>('apply_updates', { id, hashes }),
+  applyUpdates: (id: string, picks: UpdatePick[]) => call<Waymark | null>('apply_updates', { id, picks }),
   accounts: () => call<Account[]>('accounts'),
   beginSignIn: () => call<DeviceLogin>('begin_sign_in'),
   finishSignIn: () => call<Account>('finish_sign_in'),
   setActiveAccount: (uuid: string) => call<Account[]>('set_active_account', { uuid }),
   removeAccount: (uuid: string) => call<Account[]>('remove_account', { uuid }),
-  launch: (id: string) => call<void>('launch', { id }),
+  launch: (id: string, join?: Join) => call<void>('launch', { id, join }),
   stopGame: (id: string) => call<void>('stop_game', { id }),
   externalInstances: () => call<ExternalInstance[]>('external_instances'),
   importExternal: (instance: ExternalInstance) => call<LibraryEntry>('import_external', { instance }),
@@ -211,7 +389,55 @@ export const api = {
   bisectStatus: (id: string) => call<BisectView | null>('bisect_status', { id }),
   settings: () => call<Settings>('settings'),
   saveSettings: (settings: Settings) => call<void>('save_settings', { settings }),
+  worlds: (id: string) => call<Worlds>('worlds', { id }),
+  recentWorlds: () => call<RecentWorld[]>('recent_worlds'),
+  deleteWorld: (id: string, folder: string) => call<Trashed>('delete_world', { id, folder }),
+  backUpWorld: (id: string, folder: string) => call<string>('back_up_world', { id, folder }),
+  dataPacks: (id: string, world: string) => call<LockedMod[]>('data_packs', { id, world }),
+  servers: (id: string) => call<SavedServer[]>('servers', { id }),
+  addServer: (id: string, name: string, address: string) => call<SavedServer[]>('add_server', { id, name, address }),
+  editServer: (id: string, index: number, name: string, address: string) => call<SavedServer[]>('edit_server', { id, index, name, address }),
+  removeServer: (id: string, index: number) => call<SavedServer[]>('remove_server', { id, index }),
+  serverStatus: (address: string) => call<ServerStatus>('server_status', { address }),
+  copyInstance: (id: string, name: string, worlds: boolean) => call<LibraryEntry>('copy_instance', { id, name, worlds }),
+  setInstanceGroup: (id: string, group: string | null) => call<LibraryEntry>('set_instance_group', { id, group }),
+  setInstanceIcon: (id: string, picture: string | null) => call<LibraryEntry>('set_instance_icon', { id, picture }),
+  createShortcut: (id: string) => call<string>('create_shortcut', { id }),
+  exportPack: (id: string, target: string, format: 'modrinth' | 'curseforge', name: string, version: string) =>
+    call<PackExport>('export_pack', { id, target, format, name, version }),
+  modList: (id: string, format: 'text' | 'markdown' | 'csv') => call<string>('mod_list', { id, format }),
+  addLocalFiles: (id: string, kind: ContentKind, paths: string[]) => call<Waymark | null>('add_local_files', { id, kind, paths }),
+  logFiles: (id: string) => call<LogFile[]>('log_files', { id }),
+  readLog: (id: string, path: string) => call<string>('read_log', { id, path }),
+  uploadLog: (text: string) => call<string>('upload_log', { text }),
+  manualFiles: (id: string) => call<ManualFile[]>('manual_files', { id }),
+  collectManualFiles: (id: string) => call<ManualFile[]>('collect_manual_files', { id }),
+  takePendingLaunch: () => call<string | null>('take_pending_launch'),
+  shareCode: (id: string) => call<ShareCode>('share_code', { id }),
+  installShare: (code: string) => call<{ instance: LibraryEntry; failed: string[] }>('install_share', { code }),
+  hostStatus: (id: string) => call<HostStatus>('host_status', { id }),
+  prepareHost: (id: string) => call<HostStatus>('prepare_host', { id }),
+  acceptEula: (id: string) => call<void>('accept_eula', { id }),
+  startHost: (id: string) => call<void>('start_host', { id }),
+  stopHost: (id: string) => call<void>('stop_host', { id }),
+  hostCommand: (id: string, line: string) => call<void>('host_command', { id, line }),
+  hostFolder: (id: string) => call<string>('host_folder', { id }),
+  screenshots: () => call<Screenshot[]>('screenshots'),
+  deleteScreenshot: (id: string, file: string) => call<Trashed>('delete_screenshot', { id, file }),
+  skinLibrary: () => call<SkinLibrary>('skin_library'),
+  addSkin: (path: string) => call<SavedSkin>('add_skin', { path }),
+  updateSkin: (id: string, name: string, variant: SkinVariant) => call<SavedSkin[]>('update_skin', { id, name, variant }),
+  removeSkin: (id: string) => call<SavedSkin[]>('remove_skin', { id }),
+  skinProfile: () => call<SkinProfile>('skin_profile'),
+  wearSkin: (wear: Wear) => call<SkinProfile>('wear_skin', { wear }),
+  wearCape: (cape: string | null) => call<SkinProfile>('wear_cape', { cape }),
+  trashed: () => call<Trashed[]>('trashed'),
+  restoreTrashed: (id: string) => call<Trashed>('restore_trashed', { id }),
+  eraseTrashed: (id: string) => call<void>('erase_trashed', { id }),
   reclaimSpace: () => call<number>('reclaim_space'),
+  updateStatus: () => call<UpdateStatus>('update_status'),
+  checkForUpdate: () => call<string | null>('check_for_update'),
+  installUpdate: () => call<void>('install_update'),
 };
 
 export function onCoreEvent(handler: (event: CoreEvent) => void) {
@@ -220,6 +446,28 @@ export function onCoreEvent(handler: (event: CoreEvent) => void) {
 
 export function onGameLog(handler: (batch: LogBatch) => void) {
   if (inTauri) listen<LogBatch>('waymark://log', (e) => handler(e.payload));
+}
+
+/** A new version finished downloading. */
+export function onUpdateReady(handler: (version: string) => void) {
+  if (inTauri) listen<string>('waymark://update', (e) => handler(e.payload));
+}
+
+/** A desktop shortcut was used while the launcher was already open. */
+export function onLaunchRequest(handler: () => void) {
+  if (inTauri) listen('waymark://launch', handler);
+}
+
+export type DropEvent = { kind: 'over' } | { kind: 'leave' } | { kind: 'drop'; paths: string[] };
+
+export async function onFileDrop(handler: (event: DropEvent) => void) {
+  if (!inTauri) return;
+  const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+  await getCurrentWebview().onDragDropEvent(({ payload }) => {
+    if (payload.type === 'drop') handler({ kind: 'drop', paths: payload.paths });
+    else if (payload.type === 'leave') handler({ kind: 'leave' });
+    else handler({ kind: 'over' });
+  });
 }
 
 export async function openExternal(url: string) {
@@ -232,10 +480,7 @@ export async function openExternal(url: string) {
 }
 
 export async function openFolder(path: string) {
-  if (inTauri) {
-    const { openPath } = await import('@tauri-apps/plugin-opener');
-    await openPath(path);
-  }
+  if (inTauri) await invoke('open_folder', { path });
 }
 
 /** Icons from inside jars are served by the app, and the rest are ordinary URLs. */
@@ -245,10 +490,42 @@ export function iconUrl(icon: string | undefined | null): string | null {
   return inTauri ? convertFileSrc(icon.slice('local:'.length), 'waymark-icon') : null;
 }
 
+/** A picture from the data folder, like `world/<instance>/<folder>`. */
+export function localImage(path: string): string | undefined {
+  return inTauri ? convertFileSrc(path, 'waymark-icon') : undefined;
+}
+
+/** An instance's picture, or undefined to use its generated art. */
+export function instanceIcon(entry: LibraryEntry, tick = 0): string | undefined {
+  if (entry.icon !== 'custom') return entry.icon;
+  const url = localImage(`instance/${entry.id}`);
+  return url && `${url}?v=${tick}`;
+}
+
+export async function pickSavePath(defaultPath: string, name: string, extension: string): Promise<string | null> {
+  if (!inTauri) return null;
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  return save({ defaultPath, filters: [{ name, extensions: [extension] }] });
+}
+
+export async function pickImage(): Promise<string | null> {
+  if (!inTauri) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg'] }] });
+  return typeof picked === 'string' ? picked : null;
+}
+
 export async function pickFolder(): Promise<string | null> {
   if (!inTauri) return null;
   const { open } = await import('@tauri-apps/plugin-dialog');
   const picked = await open({ directory: true });
+  return typeof picked === 'string' ? picked : null;
+}
+
+export async function pickSkinFile(): Promise<string | null> {
+  if (!inTauri) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ filters: [{ name: 'Skin', extensions: ['png'] }] });
   return typeof picked === 'string' ? picked : null;
 }
 

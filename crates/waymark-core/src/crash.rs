@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Fix {
     UseJava { major: u32 },
     RaiseMemory,
@@ -36,7 +40,10 @@ pub struct CrashReport {
 /// Looks at the newest crash report and the latest log for this game directory.
 pub fn inspect(game_dir: &Path, since: std::time::SystemTime) -> CrashReport {
     let report = newest_report(&game_dir.join("crash-reports"), since);
-    let mut text = report.as_ref().and_then(|p| fs::read_to_string(p).ok()).unwrap_or_default();
+    let mut text = report
+        .as_ref()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
     if let Ok(log) = fs::read_to_string(game_dir.join("logs/latest.log")) {
         text.push('\n');
         text.push_str(&log);
@@ -91,7 +98,9 @@ fn wrong_java(text: &str, out: &mut Vec<Finding>) {
         let major = class_version.saturating_sub(44);
         out.push(Finding {
             title: format!("This needs Java {major}"),
-            detail: format!("A mod was built for Java {major}, which is newer than the Java this instance uses."),
+            detail: format!(
+                "A mod was built for Java {major}, which is newer than the Java this instance uses."
+            ),
             suspects: Vec::new(),
             fix: Fix::UseJava { major },
         });
@@ -120,9 +129,10 @@ fn missing_mods(text: &str, out: &mut Vec<Finding>) {
         }
         // NeoForge and Forge: "Mod ID: 'sodium', Requested by: 'iris', Expected range: ..."
         if line.contains("Requested by:")
-            && let Some(id) = between(line, "Mod ID: '", "'") {
-                missing.push(id.to_string());
-            }
+            && let Some(id) = between(line, "Mod ID: '", "'")
+        {
+            missing.push(id.to_string());
+        }
     }
     missing.sort();
     missing.dedup();
@@ -153,14 +163,24 @@ fn between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
 }
 
 fn duplicate_mods(text: &str, out: &mut Vec<Finding>) {
-    if !(text.contains("Found duplicate mods") || text.contains("Duplicate mods found") || text.contains("Multiple versions of")) {
+    if !(text.contains("Found duplicate mods")
+        || text.contains("Duplicate mods found")
+        || text.contains("Multiple versions of"))
+    {
         return;
     }
-    let id = text.lines().find_map(|l| between(l, "Mod ID: '", "'").map(String::from)).unwrap_or_default();
+    let id = text
+        .lines()
+        .find_map(|l| between(l, "Mod ID: '", "'").map(String::from))
+        .unwrap_or_default();
     out.push(Finding {
         title: "The same mod is installed twice".into(),
         detail: "Two files provide the same mod, so the game refuses to start.".into(),
-        suspects: if id.is_empty() { Vec::new() } else { vec![id.clone()] },
+        suspects: if id.is_empty() {
+            Vec::new()
+        } else {
+            vec![id.clone()]
+        },
         fix: Fix::RemoveDuplicate { id },
     });
 }
@@ -172,10 +192,17 @@ fn mixin_failure(text: &str, out: &mut Vec<Finding>) {
         .collect();
     suspects.sort();
     suspects.dedup();
-    if suspects.is_empty() && !text.contains("MixinApplyError") && !text.contains("InvalidInjectionException") {
+    if suspects.is_empty()
+        && !text.contains("MixinApplyError")
+        && !text.contains("InvalidInjectionException")
+    {
         return;
     }
-    let who = if suspects.is_empty() { "A mod".to_string() } else { suspects.join(", ") };
+    let who = if suspects.is_empty() {
+        "A mod".to_string()
+    } else {
+        suspects.join(", ")
+    };
     out.push(Finding {
         title: format!("{who} failed to load"),
         detail: "It changes game code that another mod or this game version doesn't match, which usually means it needs an update.".into(),
@@ -194,11 +221,15 @@ fn graphics_driver(text: &str, out: &mut Vec<Finding>) {
         ("amdvlk64", "AMD"),
     ];
     let crashed_natively = text.contains("EXCEPTION_ACCESS_VIOLATION") || text.contains("SIGSEGV");
-    let vendor = DRIVERS.iter().find(|(file, _)| crashed_natively && text.contains(file)).map(|(_, v)| *v);
+    let vendor = DRIVERS
+        .iter()
+        .find(|(file, _)| crashed_natively && text.contains(file))
+        .map(|(_, v)| *v);
     if let Some(vendor) = vendor {
         out.push(Finding {
             title: format!("The {vendor} graphics driver crashed"),
-            detail: "The crash happened inside the driver, so updating it is the most likely fix.".into(),
+            detail: "The crash happened inside the driver, so updating it is the most likely fix."
+                .into(),
             suspects: Vec::new(),
             fix: Fix::UpdateDrivers,
         });
@@ -218,7 +249,10 @@ fn suspected_mods(text: &str, out: &mut Vec<Finding>) {
         .lines()
         .filter_map(|line| {
             let line = line.trim();
-            let rest = line.strip_prefix("Suspected Mod:").or_else(|| line.strip_prefix("Suspected Mods:"))?.trim();
+            let rest = line
+                .strip_prefix("Suspected Mod:")
+                .or_else(|| line.strip_prefix("Suspected Mods:"))?
+                .trim();
             let name = rest.split([',', '(']).next()?.trim();
             (!name.is_empty() && name != "NONE").then(|| name.to_string())
         })
@@ -250,13 +284,21 @@ mod tests {
 
     #[test]
     fn explains_running_out_of_memory() {
-        assert_eq!(analyze("java.lang.OutOfMemoryError: Java heap space")[0].fix, Fix::RaiseMemory);
+        assert_eq!(
+            analyze("java.lang.OutOfMemoryError: Java heap space")[0].fix,
+            Fix::RaiseMemory
+        );
     }
 
     #[test]
     fn names_a_missing_fabric_dependency() {
         let log = " - Mod 'Iris' (iris) 1.8.0 requires any version of 'Sodium' (sodium), which is missing!";
-        assert_eq!(analyze(log)[0].fix, Fix::InstallMod { id: "sodium".into() });
+        assert_eq!(
+            analyze(log)[0].fix,
+            Fix::InstallMod {
+                id: "sodium".into()
+            }
+        );
     }
 
     #[test]
@@ -264,14 +306,24 @@ mod tests {
         // Copied from a real Fabric Loader 0.20.1 crash.
         let log = "[main/ERROR] \t - Mod 'Iris' (iris) 1.8.8+mc1.21.4 requires any 0.6.x version of sodium, which is missing!";
         let found = analyze(log);
-        assert_eq!(found[0].fix, Fix::InstallMod { id: "sodium".into() });
+        assert_eq!(
+            found[0].fix,
+            Fix::InstallMod {
+                id: "sodium".into()
+            }
+        );
         assert_eq!(found[0].title, "Missing mod: sodium");
     }
 
     #[test]
     fn names_a_missing_neoforge_dependency() {
         let log = "Mod ID: 'geckolib', Requested by: 'mowziesmobs', Expected range: '[4.0,)', Actual version: '[MISSING]'";
-        assert_eq!(analyze(log)[0].fix, Fix::InstallMod { id: "geckolib".into() });
+        assert_eq!(
+            analyze(log)[0].fix,
+            Fix::InstallMod {
+                id: "geckolib".into()
+            }
+        );
     }
 
     #[test]

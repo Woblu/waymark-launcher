@@ -53,6 +53,10 @@ Run this before calling a feature done. Unit tests have missed real bugs here, l
 
 `apps/desktop/e2e/playing.mjs` covers the window closing during play and coming back afterwards, including after a crash.
 
+## Translations
+
+The strings live in `apps/desktop/src/lib/catalog.ts`, one row each, and `i18n.ts` swaps them in as text is drawn. New UI text needs a row, or it stays in English. Text the player or a store wrote is left alone, so mark it `selectable` or keep it inside `.rich`. Messages from the Rust core are English only.
+
 ## Building a release
 
 See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing both come from environment variables, so no key ever enters the repository. The Azure client ID in `crates/waymark-core/src/brand.rs` is public by design.
@@ -60,9 +64,13 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 ## Rules this project keeps
 
 - **No gameplay without verified ownership.** A launch needs a `Session`. Release builds only get one through a signed-in account whose ownership was confirmed. `Session::development` exists in debug builds only. Mojang won't approve an app that bypasses this.
-- **Game files are never redistributed.** Sync and sharing move the lockfile, and the game comes from Mojang's servers. Server exports stay on the player's machine, and the player accepts the EULA themselves.
+- **Game files are never redistributed.** Sync and sharing move the lockfile, and the game comes from Mojang's servers. Default skins load from Mojang's texture server, so none are bundled. Server exports stay on the player's machine.
+- **The EULA is the player's to accept.** A hosted server won't start until they tick the box themselves. Nothing in the app or its tests may tick it for them.
 - **Respect CurseForge authors.** When a file has no download URL, the author has opted out of third-party apps, so the player is sent to CurseForge.
-- **Pack files are untrusted.** Paths are checked with `safe_relative` and download hosts against the `.mrpack` allow list.
+- **Pack files and share codes are untrusted.** Paths are checked with `safe_relative`, download hosts against an allow list, and share codes only carry store ids. Launch commands come from the player's own settings and can never arrive in a pack or a code.
+- **Nothing is deleted straight away.** Instances and worlds go to the trash for 30 days, and anything that collects garbage has to keep what's in there.
+- **Store descriptions are untrusted.** Anyone can publish a project, so bodies go through the allow list in `apps/desktop/src/lib/rich.ts`, and the end-to-end test attacks it. Don't widen that list or the security policy without adding an attack to the test.
+- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first.
 - **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
 
 ## Forking
@@ -76,4 +84,4 @@ Forks need their own identity:
 
 ## License
 
-Waymark is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt).
+Waymark is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt), and so is the Monocraft font used for skin name tags ([license](apps/desktop/public/licenses/monocraft-OFL.txt)).

@@ -42,11 +42,11 @@ async function open() {
 if (phase === 'start') {
   const { socket, run } = await open();
   await sleep(1500);
-  await run(`[...document.querySelectorAll('header nav button')].find((b) => b.innerText === 'Settings').click()`);
+  await run(`document.querySelector('header [aria-label="Settings"]').click()`);
   await sleep(600);
   await run(`(() => { const box = [...document.querySelectorAll('label')].find((l) => l.innerText.includes('Close the window')).querySelector('input'); if (!box.checked) box.click(); })()`);
   await sleep(500);
-  await run(`[...document.querySelectorAll('header nav button')].find((b) => b.innerText === 'Library').click()`);
+  await run(`[...document.querySelectorAll('.main-nav button')].find((b) => b.innerText === 'Library').click()`);
   await sleep(800);
   await run(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Play').click()`);
   console.log('clicked play');
@@ -62,7 +62,7 @@ if (phase === 'return') {
   for (let i = 0; i < 60; i++) {
     await sleep(500);
     const crashed = await run(`document.body.innerText.includes('crashed')`);
-    const library = await run(`document.querySelectorAll('aside .row').length`);
+    const library = await run(`document.querySelectorAll('[data-instance]').length`);
     if (library) {
       console.log(`window is back, ${library} instances, crash report showing: ${crashed}`);
       break;

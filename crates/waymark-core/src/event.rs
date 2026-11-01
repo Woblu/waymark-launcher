@@ -9,15 +9,47 @@ use serde::Serialize;
 use crate::crash::CrashReport;
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Event {
-    TaskStarted { id: String, title: String },
-    TaskProgress { id: String, done: u64, total: u64, detail: String },
-    TaskFinished { id: String },
-    TaskFailed { id: String, message: String },
-    GameStarted { instance: String, pid: u32 },
-    GameLog { instance: String, line: String, error: bool },
-    GameExited { instance: String, code: Option<i32>, played_secs: u64, crash: Option<CrashReport> },
+    TaskStarted {
+        id: String,
+        title: String,
+    },
+    TaskProgress {
+        id: String,
+        done: u64,
+        total: u64,
+        detail: String,
+    },
+    TaskFinished {
+        id: String,
+    },
+    TaskFailed {
+        id: String,
+        message: String,
+    },
+    GameStarted {
+        instance: String,
+        pid: u32,
+    },
+    GameLog {
+        instance: String,
+        line: String,
+        error: bool,
+    },
+    GameExited {
+        instance: String,
+        code: Option<i32>,
+        played_secs: u64,
+        crash: Option<CrashReport>,
+    },
+    ServerStopped {
+        instance: String,
+    },
 }
 
 pub type Emitter = Arc<dyn Fn(Event) + Send + Sync>;
@@ -39,7 +71,10 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(66);
 impl Task {
     pub fn start(emit: &Emitter, title: impl Into<String>) -> Self {
         let id = uuid::Uuid::new_v4().simple().to_string();
-        emit(Event::TaskStarted { id: id.clone(), title: title.into() });
+        emit(Event::TaskStarted {
+            id: id.clone(),
+            title: title.into(),
+        });
         Task {
             id,
             emit: emit.clone(),
@@ -66,6 +101,9 @@ impl Task {
     }
 
     pub fn fail(self, message: impl Into<String>) {
-        (self.emit)(Event::TaskFailed { id: self.id, message: message.into() });
+        (self.emit)(Event::TaskFailed {
+            id: self.id,
+            message: message.into(),
+        });
     }
 }

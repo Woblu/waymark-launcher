@@ -1,6 +1,7 @@
 //! The launcher, with no UI attached. The desktop app and the CLI are both thin
 //! layers over this crate, so everything here can be tested on its own.
 
+pub mod atlauncher;
 pub mod auth;
 pub mod bisect;
 pub mod brand;
@@ -11,7 +12,9 @@ pub mod error;
 pub mod event;
 pub mod export;
 pub mod external;
+pub mod ftb;
 pub mod gamelog;
+pub mod hosting;
 pub mod identify;
 pub mod install;
 pub mod instance;
@@ -20,16 +23,25 @@ pub mod launch;
 pub mod library;
 pub mod loaders;
 pub mod lock;
+pub mod logs;
 pub mod modinfo;
 pub mod modrinth;
 pub mod mojang;
 pub mod net;
 pub mod organize;
+pub mod pack_export;
 pub mod packs;
 pub mod paths;
+pub mod projects;
+pub mod screenshots;
+pub mod share;
 pub mod shared;
+pub mod shortcut;
+pub mod skins;
 pub mod store;
+pub mod trash;
 pub mod waymarks;
+pub mod worlds;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -55,11 +67,25 @@ pub struct Settings {
     /// Closes the launcher's window while a game runs, which frees most of
     /// its memory for the game.
     pub close_while_playing: bool,
+    /// `system`, `dark` or `light`.
+    pub theme: String,
+    /// A language code, or `system` to follow the computer.
+    pub language: String,
+    /// Checks for new versions of Waymark and installs them when it closes.
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { memory_mb: 4096, release_delay_hours: 48, show_snapshots: false, close_while_playing: true }
+        Settings {
+            memory_mb: 4096,
+            release_delay_hours: 48,
+            show_snapshots: false,
+            close_while_playing: true,
+            theme: "system".to_string(),
+            language: "system".to_string(),
+            auto_update: true,
+        }
     }
 }
 
@@ -71,6 +97,7 @@ pub struct Core {
     pub store: Store,
     pub events: Emitter,
     pub(crate) games: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    pub(crate) hosts: Arc<Mutex<HashMap<String, hosting::Host>>>,
 }
 
 impl Core {
@@ -83,6 +110,7 @@ impl Core {
             net: Net::new()?,
             events,
             games: Arc::default(),
+            hosts: Arc::default(),
         })
     }
 
@@ -104,8 +132,14 @@ impl Core {
         let mut live = HashSet::new();
         for instance in self.instances()? {
             live.extend(self.trail(&instance.id).live_hashes()?);
-            live.extend(self.lockfile(&instance.id)?.mods.into_iter().map(|m| m.hash));
+            live.extend(
+                self.lockfile(&instance.id)?
+                    .everything()
+                    .map(|(_, entry)| entry.hash.clone()),
+            );
         }
+        live.extend(self.trash_hashes()?);
+        self.purge_trash()?;
         self.store.collect_garbage(&live)
     }
 }
@@ -125,7 +159,10 @@ mod tests {
     fn settings_survive_a_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path(), event::silent()).unwrap();
-        let settings = Settings { memory_mb: 8192, ..Settings::default() };
+        let settings = Settings {
+            memory_mb: 8192,
+            ..Settings::default()
+        };
         core.save_settings(&settings).unwrap();
         assert_eq!(core.settings().unwrap(), settings);
     }

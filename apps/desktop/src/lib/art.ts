@@ -37,7 +37,7 @@ const PALETTES: Palette[] = [
   },
 ];
 
-const PAGE = '#0d0f12';
+const PAGE = '#0c1118';
 const LIT = '#ffc36e';
 const CORE = '#fff1d6';
 

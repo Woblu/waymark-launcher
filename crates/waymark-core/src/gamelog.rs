@@ -44,7 +44,10 @@ impl LogReader {
                 });
                 return Vec::new();
             }
-            return vec![LogLine { text: line.to_string(), is_error: false }];
+            return vec![LogLine {
+                text: line.to_string(),
+                is_error: false,
+            }];
         }
 
         let event = self.event.as_mut().expect("checked above");
@@ -83,7 +86,10 @@ impl LogReader {
             return event
                 .body
                 .lines()
-                .map(|body| LogLine { text: format!("{prefix}{body}"), is_error })
+                .map(|body| LogLine {
+                    text: format!("{prefix}{body}"),
+                    is_error,
+                })
                 .collect();
         }
         Vec::new()
@@ -106,7 +112,13 @@ mod tests {
             "  <log4j:Message><![CDATA[Setting user: Steve]]></log4j:Message>",
             "</log4j:Event>",
         ]);
-        assert_eq!(found, [LogLine { text: "[main/INFO] Setting user: Steve".into(), is_error: false }]);
+        assert_eq!(
+            found,
+            [LogLine {
+                text: "[main/INFO] Setting user: Steve".into(),
+                is_error: false
+            }]
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, X } from '@lucide/svelte';
+  import { Bug, ChevronDown, ChevronRight, Download, Search, Trash2 } from '@lucide/svelte';
+  import UpdateDialog from '../components/UpdateDialog.svelte';
   import VirtualList from '../components/VirtualList.svelte';
   import { api, iconUrl } from '../lib/api';
   import type { LockedMod, ModUpdate } from '../lib/api';
@@ -12,15 +13,15 @@
   type Row = { kind: 'group'; name: string; mods: LockedMod[] } | { kind: 'mod'; mod: LockedMod };
 
   const UNGROUPED = 'Ungrouped';
-  const MOD_ROW = 58;
-  const GROUP_ROW = 34;
+  const MOD_ROW = 60;
+  const GROUP_ROW = 40;
 
   let mods = $state<LockedMod[]>([]);
   let updates = $state<ModUpdate[]>([]);
   let query = $state('');
   let filter = $state<Filter>('all');
   let loaded = $state(false);
-  let updating = $state(false);
+  let reviewing = $state(false);
   let picked = $state(new Set<string>());
   let collapsed = $state(new Set<string>());
   let anchor = $state<string | null>(null);
@@ -60,13 +61,13 @@
 
   async function load() {
     try {
-      mods = await api.mods(id);
-      updates = await api.checkUpdates(id);
+      mods = await api.content(id, 'mod');
+      updates = (await api.checkUpdates(id)).filter((update) => update.kind === 'mod');
     } catch (error) {
       if (!mods.length) app.fail(error, 'Could not read this instance');
     }
     loaded = true;
-    const identified = await api.identifyMods(id).catch(() => null);
+    const identified = await api.identifyContent(id, 'mod').catch(() => null);
     if (identified) mods = identified;
   }
 
@@ -75,15 +76,19 @@
     load();
   });
 
+  function pickAll() {
+    picked = picked.size === order.length ? new Set() : new Set(order);
+  }
+
   function clearPicked() {
     picked = new Set();
     anchor = null;
     naming = false;
   }
 
-  /** Click picks one, Ctrl adds to the selection, and Shift picks a range. */
+  /** Ctrl picks one and Shift picks a range. Once some are picked, clicks keep picking. */
   function pick(event: MouseEvent, mod: LockedMod) {
-    const next = new Set(event.ctrlKey || event.metaKey ? picked : []);
+    const next = new Set(picked);
     if (event.shiftKey && anchor) {
       const [from, to] = [order.indexOf(anchor), order.indexOf(mod.hash)].sort((a, b) => a - b);
       for (const hash of order.slice(from, to + 1)) next.add(hash);
@@ -96,6 +101,11 @@
     picked = next;
   }
 
+  function clicked(event: MouseEvent, mod: LockedMod) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || picked.size) pick(event, mod);
+    else app.openMod(id, mod);
+  }
+
   async function run(work: () => Promise<LockedMod[]>) {
     try {
       mods = await work();
@@ -104,7 +114,7 @@
     }
   }
 
-  const toggle = (mod: LockedMod, enabled: boolean) => run(() => api.setModEnabled(id, mod.hash, enabled));
+  const toggle = (mod: LockedMod, enabled: boolean) => run(() => api.setContentEnabled(id, 'mod', mod.hash, enabled));
   const setEnabled = (hashes: string[], enabled: boolean) => run(() => api.setModsEnabled(id, hashes, enabled));
 
   async function setGroup(group: string | null) {
@@ -138,7 +148,7 @@
 
   async function remove(hashes: string[]) {
     try {
-      const mark = await api.removeMods(id, hashes);
+      const mark = await api.removeContent(id, 'mod', hashes);
       if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
       clearPicked();
       app.contentTick++;
@@ -146,18 +156,6 @@
     } catch (error) {
       app.fail(error);
     }
-  }
-
-  async function updateAll() {
-    updating = true;
-    try {
-      const mark = await api.applyUpdates(id, ready.map((u) => u.hash));
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
-      app.contentTick++;
-    } catch (error) {
-      app.fail(error, 'Could not update those mods');
-    }
-    updating = false;
   }
 
   async function findCrash() {
@@ -173,7 +171,7 @@
   function origin(mod: LockedMod): string {
     if (mod.origin.kind === 'pack') return `From ${mod.origin.name}`;
     if (mod.origin.kind === 'dependency') return `Needed by ${mod.origin.of[0] ?? 'another mod'}`;
-    return 'Added by you';
+    return 'Installed by you';
   }
 
   const rowHeight = (row: Row) => (row.kind === 'group' ? GROUP_ROW : MOD_ROW);
@@ -181,8 +179,8 @@
 
 <div class="tab">
   {#if picked.size}
-    <div class="tools selection" aria-label="Selected mods">
-      <span>{picked.size} selected</span>
+    <div class="content-tools" aria-label="Selected mods">
+      <strong>{picked.size} selected</strong>
       {#if naming}
         <form class="inline" onsubmit={(event) => { event.preventDefault(); setGroup(newGroup); }}>
           <!-- svelte-ignore a11y_autofocus -->
@@ -208,11 +206,11 @@
       <button class="btn" onclick={clearPicked}>Clear</button>
     </div>
   {:else}
-    <div class="tools">
-      <input class="field search" placeholder="Search {mods.length} {mods.length === 1 ? 'mod' : 'mods'}" aria-label="Search mods" bind:value={query} />
+    <div class="content-tools">
+      <label class="search-box"><Search size={16} /><input class="field" placeholder="Search {mods.length} {mods.length === 1 ? 'mod' : 'mods'}" aria-label="Search mods" bind:value={query} /></label>
       <select class="field filter" aria-label="Show" bind:value={filter}>
         <option value="all">All mods</option>
-        <option value="manual">Added by you</option>
+        <option value="manual">Installed by you</option>
         <option value="pack">From the pack</option>
         <option value="dependency">Dependencies</option>
         <option value="disabled">Switched off</option>
@@ -220,16 +218,21 @@
       <span class="spacer"></span>
       {#if held}<span class="faint small">{held} held back as too new</span>{/if}
       {#if ready.length}
-        <button class="btn" disabled={updating} onclick={updateAll}>Update {ready.length} {ready.length === 1 ? 'mod' : 'mods'}</button>
+        <button class="btn primary" onclick={() => (reviewing = true)}><Download size={16} /> Update {ready.length} {ready.length === 1 ? 'mod' : 'mods'}</button>
       {/if}
       {#if mods.length > 1}
-        <button class="btn" title="Tests your mods in groups to find the one causing a crash" onclick={findCrash}>Find a crash</button>
+        <button class="btn" title="Tests your mods in groups to find the one causing a crash" onclick={findCrash}><Bug size={16} /> Find a crash</button>
       {/if}
     </div>
   {/if}
 
   {#if rows.length}
-    <div class="list">
+    <div class="content-list">
+      <div class="content-head">
+        <input type="checkbox" checked={picked.size > 0 && picked.size === order.length} indeterminate={picked.size > 0 && picked.size < order.length} aria-label="Select all" onchange={pickAll} />
+        <span class="content-cells"><span>Name</span><span>Version</span><span class="right">Size</span></span>
+      </div>
+      <div class="content-rows">
       <VirtualList items={rows} {rowHeight}>
         {#snippet row(item: Row)}
           {#if item.kind === 'group'}
@@ -237,6 +240,7 @@
             <div class="group">
               <input
                 type="checkbox"
+                class="switch"
                 checked={on === item.mods.length}
                 indeterminate={on > 0 && on < item.mods.length}
                 aria-label="All mods in {item.name} on"
@@ -251,10 +255,10 @@
           {:else}
             {@const mod = item.mod}
             {@const image = iconUrl(mod.icon)}
-            <div class="mod" class:off={!mod.enabled} class:picked={picked.has(mod.hash)}>
-              <input type="checkbox" checked={mod.enabled} aria-label="{mod.name} enabled" onchange={(event) => toggle(mod, event.currentTarget.checked)} />
-              <button class="body" aria-pressed={picked.has(mod.hash)} onclick={(event) => pick(event, mod)}>
-                <span class="icon">{#if image}<img src={image} alt="" loading="lazy" />{:else}{mod.name.charAt(0).toUpperCase()}{/if}</span>
+            <div class="content-row mod" class:off={!mod.enabled} class:picked={picked.has(mod.hash)}>
+              <input type="checkbox" class="pick" checked={picked.has(mod.hash)} aria-label="Select {mod.name}" onclick={(event) => pick(event, mod)} />
+              <button class="content-cells body" aria-pressed={picked.has(mod.hash)} onclick={(event) => clicked(event, mod)}>
+                <span class="content-icon">{#if image}<img src={image} alt="" loading="lazy" />{:else}{mod.name.charAt(0).toUpperCase()}{/if}</span>
                 <span class="text">
                   <span class="name truncate">{mod.name}</span>
                   <span class="sub truncate">
@@ -266,97 +270,57 @@
                 </span>
                 <span class="size tabular">{bytes(mod.size)}</span>
               </button>
-              <button class="remove" aria-label="Remove {mod.name}" title="Remove" onclick={() => remove([mod.hash])}><X size={15} /></button>
+              <input type="checkbox" class="switch" checked={mod.enabled} aria-label="{mod.name} enabled" title={mod.enabled ? 'Turn off' : 'Turn on'} onchange={(event) => toggle(mod, event.currentTarget.checked)} />
+              <button class="content-remove" aria-label="Remove {mod.name}" title="Remove" onclick={() => remove([mod.hash])}><Trash2 size={15} /></button>
             </div>
           {/if}
         {/snippet}
       </VirtualList>
+      </div>
     </div>
   {:else if loaded}
-    <div class="none">
+    <div class="blank">
       {#if mods.length}
         <p class="muted">No mods match.</p>
       {:else}
-        <p class="muted">This instance has no mods.</p>
-        <button class="btn" onclick={() => app.go('discover', id)}>Browse mods</button>
+        <h2>No mods yet</h2>
+        <p class="muted">Mods you install show up here.</p>
+        <button class="btn primary" onclick={() => app.go('discover', id)}>Browse mods</button>
       {/if}
     </div>
   {/if}
 </div>
 
+{#if reviewing && app.entry(id)}
+  <UpdateDialog entry={app.entry(id)!} {updates} onclose={() => (reviewing = false)} />
+{/if}
+
 <style>
   .tab { display: flex; flex-direction: column; height: 100%; }
-  .tools {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 50px;
-    padding: 0 24px;
-    border-bottom: 1px solid var(--line);
-  }
-  .selection { background: var(--raised); }
   .inline { display: flex; gap: 8px; }
-  .search { width: 240px; }
-  .filter { width: 150px; }
+  .filter { width: 160px; }
   .short { width: 170px; }
-  .group-select { width: 150px; }
+  .group-select { width: 160px; }
   .spacer { flex: 1; }
-  .list { flex: 1; min-height: 0; }
+  strong { font-weight: 600; }
 
   .group {
     display: flex;
     align-items: center;
-    gap: 10px;
-    height: 34px;
-    padding: 0 18px 0 24px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--line);
-  }
-  .fold { display: flex; align-items: center; gap: 4px; font-weight: 600; }
-
-  .mod {
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) 26px;
-    gap: 10px;
-    align-items: center;
-    height: 58px;
-    padding: 0 18px 0 24px;
-    border-bottom: 1px solid var(--line);
-  }
-  .mod:hover { background: var(--panel); }
-  .mod.picked { background: var(--selected); }
-  .body {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1.6fr) minmax(0, 1fr) 74px;
     gap: 12px;
-    align-items: center;
-    height: 100%;
-    text-align: left;
+    height: 40px;
+    box-shadow: inset 0 -1px var(--line);
   }
-  .icon {
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    overflow: hidden;
-    background: var(--control);
-    color: var(--text-3);
-    font-size: 17px;
-    font-weight: 600;
-  }
-  .icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .fold { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+
+  .mod.picked { background: var(--selected); }
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .name { font-size: var(--text-m); font-weight: 600; }
+  .body:hover .name { text-decoration: underline; text-underline-offset: 2px; }
   .sub { color: var(--text-3); font-size: var(--text-xs); }
   .tag { margin-left: 8px; color: var(--info); }
   .version { color: var(--text-2); }
-  .size { color: var(--text-3); text-align: right; }
-  .off .body { opacity: 0.45; }
+  .size { color: var(--text-3); }
+  .off .body { opacity: 0.5; }
   .update { display: block; color: var(--accent); font-size: var(--text-xs); }
-  .remove { display: grid; place-items: center; width: 24px; height: 24px; color: var(--text-3); opacity: 0; }
-  .mod:hover .remove, .remove:focus-visible { opacity: 1; }
-  .remove:hover { color: var(--bad); }
-  .none { padding: 20px 24px; }
-  .none .btn { margin-top: 10px; }
 </style>

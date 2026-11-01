@@ -14,7 +14,7 @@ use crate::Core;
 use crate::error::{Error, Result};
 use crate::event::Task;
 use crate::instance::Instance;
-use crate::loaders::{hide_console, installer_url};
+use crate::loaders::hide_console;
 use crate::lock::{LoaderKind, Lockfile, Side};
 use crate::net::{Expected, Fetch};
 use crate::store::Placement;
@@ -48,11 +48,15 @@ enum Launch {
 
 /// The console Java next to the windowless one the game uses.
 fn console_java(java: &Path) -> PathBuf {
-    if cfg!(windows) { java.with_file_name("java.exe") } else { java.to_path_buf() }
+    if cfg!(windows) {
+        java.with_file_name("java.exe")
+    } else {
+        java.to_path_buf()
+    }
 }
 
 /// Mods worth copying, and the client-only ones left behind.
-fn split_mods(lock: &Lockfile) -> (Vec<&crate::lock::LockedMod>, Vec<String>) {
+pub(crate) fn split_mods(lock: &Lockfile) -> (Vec<&crate::lock::LockedMod>, Vec<String>) {
     let mut kept = Vec::new();
     let mut skipped = Vec::new();
     for entry in lock.mods.iter().filter(|m| m.enabled) {
@@ -69,12 +73,22 @@ fn scripts(launch: &Launch, java: &Path, memory_mb: u32) -> (String, String) {
     let folder = java.parent().unwrap_or(Path::new("")).display();
     match launch {
         Launch::Jar(jar) => (
-            format!("@echo off\r\ncd /d \"%~dp0\"\r\n\"{}\" -Xmx{memory_mb}M -jar {jar} nogui\r\npause\r\n", java.display()),
-            format!("#!/bin/sh\ncd \"$(dirname \"$0\")\"\nexec \"{}\" -Xmx{memory_mb}M -jar {jar} nogui\n", java.display()),
+            format!(
+                "@echo off\r\ncd /d \"%~dp0\"\r\n\"{}\" -Xmx{memory_mb}M -jar {jar} nogui\r\npause\r\n",
+                java.display()
+            ),
+            format!(
+                "#!/bin/sh\ncd \"$(dirname \"$0\")\"\nexec \"{}\" -Xmx{memory_mb}M -jar {jar} nogui\n",
+                java.display()
+            ),
         ),
         Launch::RunScript => (
-            format!("@echo off\r\ncd /d \"%~dp0\"\r\nset \"PATH={folder};%PATH%\"\r\ncall \"%~dp0run.bat\" nogui\r\npause\r\n"),
-            format!("#!/bin/sh\ncd \"$(dirname \"$0\")\"\nexport PATH=\"{folder}:$PATH\"\nexec sh run.sh nogui\n"),
+            format!(
+                "@echo off\r\ncd /d \"%~dp0\"\r\nset \"PATH={folder};%PATH%\"\r\ncall \"%~dp0run.bat\" nogui\r\npause\r\n"
+            ),
+            format!(
+                "#!/bin/sh\ncd \"$(dirname \"$0\")\"\nexport PATH=\"{folder}:$PATH\"\nexec sh run.sh nogui\n"
+            ),
         ),
     }
 }
@@ -98,8 +112,15 @@ fn notes(instance: &Instance, skipped: &[String]) -> String {
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
-    for entry in WalkDir::new(from).into_iter().filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()) {
-        let relative = entry.path().strip_prefix(from).map_err(|e| Error::Other(e.to_string()))?;
+    for entry in WalkDir::new(from)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let relative = entry
+            .path()
+            .strip_prefix(from)
+            .map_err(|e| Error::Other(e.to_string()))?;
         let target = to.join(relative);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
@@ -113,7 +134,10 @@ impl Core {
     /// Builds a server folder inside `parent` and returns where it went.
     pub async fn export_server(&self, id: &str, parent: &Path) -> Result<ServerExport> {
         let instance = self.instance(id)?;
-        let task = Task::start(&self.events, format!("Exporting {} as a server", instance.name));
+        let task = Task::start(
+            &self.events,
+            format!("Exporting {} as a server", instance.name),
+        );
         match self.build_server(&instance, parent, &task).await {
             Ok(export) => {
                 task.finish();
@@ -126,7 +150,12 @@ impl Core {
         }
     }
 
-    async fn build_server(&self, instance: &Instance, parent: &Path, task: &Task) -> Result<ServerExport> {
+    pub(crate) async fn build_server(
+        &self,
+        instance: &Instance,
+        parent: &Path,
+        task: &Task,
+    ) -> Result<ServerExport> {
         let folder = parent.join(format!("{}-server", instance.id));
         if folder.exists() {
             return Err(Error::Other(format!("{} already exists", folder.display())));
@@ -148,7 +177,8 @@ impl Core {
         let (kept, skipped) = split_mods(&lock);
         let mods_dir = folder.join("mods");
         for entry in &kept {
-            self.store.place(&entry.hash, &mods_dir.join(&entry.file), Placement::Copy)?;
+            self.store
+                .place(&entry.hash, &mods_dir.join(&entry.file), Placement::Copy)?;
         }
         let game = self.paths.game(&instance.id);
         for name in COPIED_FOLDERS {
@@ -168,10 +198,19 @@ impl Core {
         }
         fs::write(folder.join("README.txt"), notes(instance, &skipped))?;
 
-        Ok(ServerExport { mods: kept.len(), skipped, folder })
+        Ok(ServerExport {
+            mods: kept.len(),
+            skipped,
+            folder,
+        })
     }
 
-    async fn install_server(&self, instance: &Instance, folder: &Path, java: &Path) -> Result<Launch> {
+    async fn install_server(
+        &self,
+        instance: &Instance,
+        folder: &Path,
+        java: &Path,
+    ) -> Result<Launch> {
         let minecraft = &instance.minecraft;
         let loader_version = instance.loader.version.as_deref().unwrap_or("");
         match instance.loader.kind {
@@ -211,8 +250,11 @@ impl Core {
                 self.run_java(java, &installer, &arguments).await?;
                 Ok(Launch::Jar("quilt-server-launch.jar".into()))
             }
+            LoaderKind::LegacyFabric | LoaderKind::Babric | LoaderKind::Ornithe => {
+                Err(Error::Other("this loader doesn't make server files, so install its server from its own website".into()))
+            }
             LoaderKind::Forge | LoaderKind::NeoForge => {
-                let url = installer_url(instance.loader.kind, minecraft, loader_version).expect("these loaders ship installers");
+                let url = self.loader_installer(instance.loader.kind, minecraft, loader_version).await.expect("these loaders ship installers");
                 let name = url.rsplit('/').next().unwrap_or("installer.jar");
                 let installer = self.paths.cache().join("installers").join(name);
                 self.net
@@ -251,7 +293,10 @@ impl Core {
             return Ok(());
         }
         let detail = String::from_utf8_lossy(&output.stderr);
-        Err(Error::Other(format!("the server installer failed: {}", detail.lines().last().unwrap_or("no error output"))))
+        Err(Error::Other(format!(
+            "the server installer failed: {}",
+            detail.lines().last().unwrap_or("no error output")
+        )))
     }
 }
 
@@ -282,15 +327,26 @@ mod tests {
     #[test]
     fn client_only_and_switched_off_mods_stay_out_of_a_server() {
         let mut lock = Lockfile::new("1.21.4", Loader::default());
-        lock.mods = vec![locked("sodium", Side::Client, true), locked("lithium", Side::Both, true), locked("off", Side::Both, false)];
+        lock.mods = vec![
+            locked("sodium", Side::Client, true),
+            locked("lithium", Side::Both, true),
+            locked("off", Side::Both, false),
+        ];
         let (kept, skipped) = split_mods(&lock);
-        assert_eq!(kept.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["lithium"]);
+        assert_eq!(
+            kept.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+            ["lithium"]
+        );
         assert_eq!(skipped, ["sodium"]);
     }
 
     #[test]
     fn start_scripts_run_the_right_jar_with_the_chosen_memory() {
-        let (bat, sh) = scripts(&Launch::Jar("fabric-server.jar".into()), Path::new("/java/bin/java"), 6144);
+        let (bat, sh) = scripts(
+            &Launch::Jar("fabric-server.jar".into()),
+            Path::new("/java/bin/java"),
+            6144,
+        );
         assert!(bat.contains("-Xmx6144M -jar fabric-server.jar nogui"));
         assert!(sh.contains("-Xmx6144M -jar fabric-server.jar nogui"));
     }
@@ -319,6 +375,8 @@ mod tests {
             icon: None,
             pack: None,
             shared: Vec::new(),
+            group: None,
+            options: crate::instance::LaunchOptions::default(),
         };
         let text = notes(&instance, &["Sodium".to_string()]);
         assert!(text.contains("eula=true"));

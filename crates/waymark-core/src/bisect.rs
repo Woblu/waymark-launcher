@@ -18,10 +18,21 @@ pub enum Verdict {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Step {
-    Test { enabled: Vec<String>, disabled: Vec<String>, round: u32, estimate: u32 },
-    Found { culprits: Vec<String> },
+    Test {
+        enabled: Vec<String>,
+        disabled: Vec<String>,
+        round: u32,
+        estimate: u32,
+    },
+    Found {
+        culprits: Vec<String>,
+    },
     NotAMod,
 }
 
@@ -31,10 +42,14 @@ enum Stage {
     /// Everything off, to prove the crash comes from a mod at all.
     Baseline,
     /// First half under test, second half waiting.
-    FirstHalf { rest: Vec<String> },
+    FirstHalf {
+        rest: Vec<String>,
+    },
     /// First half passed, so the second half is under test. `first` holds
     /// every suspect from before the split.
-    SecondHalf { first: Vec<String> },
+    SecondHalf {
+        first: Vec<String>,
+    },
     Done(Vec<String>),
     NotAMod,
 }
@@ -73,11 +88,18 @@ impl Bisect {
     /// The current instruction.
     pub fn step(&self) -> Step {
         match &self.stage {
-            Stage::Done(culprits) => Step::Found { culprits: culprits.clone() },
+            Stage::Done(culprits) => Step::Found {
+                culprits: culprits.clone(),
+            },
             Stage::NotAMod => Step::NotAMod,
             _ => {
                 let enabled = self.closure();
-                let disabled = self.all.iter().filter(|m| !enabled.contains(*m)).cloned().collect();
+                let disabled = self
+                    .all
+                    .iter()
+                    .filter(|m| !enabled.contains(*m))
+                    .cloned()
+                    .collect();
                 Step::Test {
                     enabled: enabled.into_iter().collect(),
                     disabled,
@@ -94,20 +116,32 @@ impl Bisect {
         match (std::mem::replace(&mut self.stage, Stage::NotAMod), verdict) {
             (Stage::Baseline, Verdict::Crashes) => self.stage = Stage::NotAMod,
             (Stage::Baseline, Verdict::Works) => self.split(),
-            (Stage::FirstHalf { .. }, Verdict::Crashes) | (Stage::SecondHalf { .. }, Verdict::Crashes) => {
+            (Stage::FirstHalf { .. }, Verdict::Crashes)
+            | (Stage::SecondHalf { .. }, Verdict::Crashes) => {
                 self.suspects = std::mem::take(&mut self.trial);
                 self.split();
             }
             (Stage::FirstHalf { rest }, Verdict::Works) => {
                 self.trial = rest;
-                self.stage = Stage::SecondHalf { first: self.suspects.clone() };
+                self.stage = Stage::SecondHalf {
+                    first: self.suspects.clone(),
+                };
             }
             (Stage::SecondHalf { first }, Verdict::Works) => {
                 // Each half works alone, so the crash needs something from both.
-                let second: Vec<String> = self.suspects.iter().filter(|m| !first_half_of(&first, m)).cloned().collect();
+                let second: Vec<String> = self
+                    .suspects
+                    .iter()
+                    .filter(|m| !first_half_of(&first, m))
+                    .cloned()
+                    .collect();
                 self.partner_pool = second.clone();
                 self.anchored.extend(second);
-                self.suspects = first.iter().take(first.len().div_ceil(2)).cloned().collect();
+                self.suspects = first
+                    .iter()
+                    .take(first.len().div_ceil(2))
+                    .cloned()
+                    .collect();
                 self.split();
             }
             (done @ (Stage::Done(_) | Stage::NotAMod), _) => self.stage = done,
@@ -130,7 +164,9 @@ impl Bisect {
         }
         let middle = self.suspects.len().div_ceil(2);
         self.trial = self.suspects[..middle].to_vec();
-        self.stage = Stage::FirstHalf { rest: self.suspects[middle..].to_vec() };
+        self.stage = Stage::FirstHalf {
+            rest: self.suspects[middle..].to_vec(),
+        };
     }
 
     /// The mods on trial plus everything they need.
@@ -139,16 +175,20 @@ impl Bisect {
         let mut queue: Vec<&String> = self.trial.iter().chain(&self.anchored).collect();
         while let Some(name) = queue.pop() {
             if enabled.insert(name.clone())
-                && let Some(needs) = self.requires.get(name) {
-                    queue.extend(needs);
-                }
+                && let Some(needs) = self.requires.get(name)
+            {
+                queue.extend(needs);
+            }
         }
         enabled
     }
 }
 
 fn first_half_of(first: &[String], name: &str) -> bool {
-    first.iter().take(first.len().div_ceil(2)).any(|m| m == name)
+    first
+        .iter()
+        .take(first.len().div_ceil(2))
+        .any(|m| m == name)
 }
 
 fn rounds_left(suspects: usize) -> u32 {
@@ -170,7 +210,11 @@ mod tests {
         while let Step::Test { enabled, .. } = &step {
             launches += 1;
             assert!(launches < 40, "search did not converge");
-            let verdict = if crashes(enabled) { Verdict::Crashes } else { Verdict::Works };
+            let verdict = if crashes(enabled) {
+                Verdict::Crashes
+            } else {
+                Verdict::Works
+            };
             step = search.report(verdict);
         }
         (step, launches)
@@ -179,7 +223,12 @@ mod tests {
     #[test]
     fn starts_by_testing_with_every_mod_off() {
         let search = Bisect::new(names(4), BTreeMap::new());
-        let Step::Test { enabled, disabled, .. } = search.step() else { panic!() };
+        let Step::Test {
+            enabled, disabled, ..
+        } = search.step()
+        else {
+            panic!()
+        };
         assert!(enabled.is_empty());
         assert_eq!(disabled.len(), 4);
     }
@@ -195,15 +244,29 @@ mod tests {
     fn finds_every_possible_single_culprit() {
         for culprit in 0..33 {
             let target = format!("mod-{culprit}");
-            let (step, _) = run(Bisect::new(names(33), BTreeMap::new()), |on| on.contains(&target));
-            assert_eq!(step, Step::Found { culprits: vec![target.clone()] });
+            let (step, _) = run(Bisect::new(names(33), BTreeMap::new()), |on| {
+                on.contains(&target)
+            });
+            assert_eq!(
+                step,
+                Step::Found {
+                    culprits: vec![target.clone()]
+                }
+            );
         }
     }
 
     #[test]
     fn a_large_pack_needs_few_launches() {
-        let (step, launches) = run(Bisect::new(names(300), BTreeMap::new()), |on| on.contains(&"mod-217".to_string()));
-        assert_eq!(step, Step::Found { culprits: vec!["mod-217".to_string()] });
+        let (step, launches) = run(Bisect::new(names(300), BTreeMap::new()), |on| {
+            on.contains(&"mod-217".to_string())
+        });
+        assert_eq!(
+            step,
+            Step::Found {
+                culprits: vec!["mod-217".to_string()]
+            }
+        );
         assert!(launches <= 18, "took {launches} launches");
     }
 
@@ -212,18 +275,28 @@ mod tests {
         let (step, _) = run(Bisect::new(names(16), BTreeMap::new()), |on| {
             on.contains(&"mod-2".to_string()) && on.contains(&"mod-11".to_string())
         });
-        let Step::Found { mut culprits } = step else { panic!("expected culprits, got {step:?}") };
+        let Step::Found { mut culprits } = step else {
+            panic!("expected culprits, got {step:?}")
+        };
         culprits.sort();
         assert_eq!(culprits, ["mod-11", "mod-2"]);
     }
 
     #[test]
     fn dependencies_stay_on_with_the_mods_that_need_them() {
-        let mut search = Bisect::new(vec!["iris".into(), "sodium".into(), "other".into(), "more".into()], BTreeMap::from([
-            ("iris".to_string(), vec!["sodium".to_string()]),
-        ]));
+        let mut search = Bisect::new(
+            vec![
+                "iris".into(),
+                "sodium".into(),
+                "other".into(),
+                "more".into(),
+            ],
+            BTreeMap::from([("iris".to_string(), vec!["sodium".to_string()])]),
+        );
         search.suspects = vec!["iris".into(), "other".into()];
-        let Step::Test { enabled, .. } = search.report(Verdict::Works) else { panic!() };
+        let Step::Test { enabled, .. } = search.report(Verdict::Works) else {
+            panic!()
+        };
         assert!(enabled.contains(&"iris".to_string()));
         assert!(enabled.contains(&"sodium".to_string()));
     }

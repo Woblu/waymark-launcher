@@ -29,23 +29,24 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: https://cdn.modrinth.com https://media.forgecdn.net waymark-icon: http://waymark-icon.localhost",
+        "img-src": "'self' data: https: waymark-icon: http://waymark-icon.localhost",
         "font-src": "'self'",
         "connect-src": "ipc: http://ipc.localhost",
         "object-src": "'none'",
         "base-uri": "'none'",
         "form-action": "'none'",
-        "frame-src": "'none'"
+        "frame-src": "https://www.youtube-nocookie.com"
       },
       "devCsp": {
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data: https://cdn.modrinth.com https://media.forgecdn.net waymark-icon: http://waymark-icon.localhost",
+        "img-src": "'self' data: https: waymark-icon: http://waymark-icon.localhost",
         "font-src": "'self'",
         "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:1420",
         "object-src": "'none'",
-        "base-uri": "'none'"
+        "base-uri": "'none'",
+        "frame-src": "https://www.youtube-nocookie.com"
       },
       "dangerousDisableAssetCspModification": [
         "style-src"
@@ -74,7 +75,10 @@
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEyQjI5OTAxOTg2NzA0RDYKUldUV0JHZVlBWm15b2x4U1d1QjVJQS9CUGN5dEQ2TTdaYlM4b2xxMGpLdXB6UHAxZGppZHpqQUIK",
       "endpoints": [
         "https://waymark-launcher.vercel.app/updates/latest.json"
-      ]
+      ],
+      "windows": {
+        "installMode": "quiet"
+      }
     }
   }
 }

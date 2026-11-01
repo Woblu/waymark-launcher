@@ -47,7 +47,9 @@ struct AssetObject {
 impl Core {
     pub async fn version_manifest(&self) -> Result<VersionManifest> {
         let cache = self.paths.cache().join("version-manifest.json");
-        self.net.cached_json(VERSION_MANIFEST_URL, &cache, Duration::from_secs(600)).await
+        self.net
+            .cached_json(VERSION_MANIFEST_URL, &cache, Duration::from_secs(600))
+            .await
     }
 
     async fn load_meta(&self, id: &str) -> Result<VersionMeta> {
@@ -60,7 +62,14 @@ impl Core {
                 .find(|v| v.id == id)
                 .ok_or_else(|| Error::NotFound(format!("Minecraft {id}")))?;
             let hash = entry.sha1.clone().map_or(Expected::Nothing, Expected::Sha1);
-            self.net.fetch(&Fetch { url: entry.url.clone(), dest: path.clone(), hash, size: None }).await?;
+            self.net
+                .fetch(&Fetch {
+                    url: entry.url.clone(),
+                    dest: path.clone(),
+                    hash,
+                    size: None,
+                })
+                .await?;
         }
         Ok(serde_json::from_slice(&tokio::fs::read(&path).await?)?)
     }
@@ -91,7 +100,10 @@ impl Core {
             fetches.push(Fetch {
                 url: client.url.clone(),
                 dest: client_jar.clone(),
-                hash: client.sha1.clone().map_or(Expected::Nothing, Expected::Sha1),
+                hash: client
+                    .sha1
+                    .clone()
+                    .map_or(Expected::Nothing, Expected::Sha1),
                 size: client.size,
             });
         }
@@ -103,14 +115,22 @@ impl Core {
             }
             if let Some(native) = library.native() {
                 push_library(&mut fetches, &self.paths.libraries(), &native);
-                let exclude = library.extract.as_ref().map(|e| e.exclude.clone()).unwrap_or_default();
+                let exclude = library
+                    .extract
+                    .as_ref()
+                    .map(|e| e.exclude.clone())
+                    .unwrap_or_default();
                 native_jars.push((self.paths.libraries().join(&native.path), exclude));
             }
         }
 
         let log_config = match meta.logging.as_ref().and_then(|l| l.client.as_ref()) {
             Some(logging) => {
-                let dest = self.paths.assets().join("log_configs").join(&logging.file.id);
+                let dest = self
+                    .paths
+                    .assets()
+                    .join("log_configs")
+                    .join(&logging.file.id);
                 fetches.push(Fetch {
                     url: logging.file.url.clone(),
                     dest: dest.clone(),
@@ -125,7 +145,11 @@ impl Core {
         let mut game_assets = self.paths.assets();
         let mut legacy_assets = None;
         if let Some(reference) = &meta.asset_index {
-            let dest = self.paths.assets().join("indexes").join(format!("{}.json", reference.id));
+            let dest = self
+                .paths
+                .assets()
+                .join("indexes")
+                .join(format!("{}.json", reference.id));
             self.net
                 .fetch(&Fetch {
                     url: reference.url.clone(),
@@ -139,7 +163,12 @@ impl Core {
                 let prefix = &object.hash[..2];
                 fetches.push(Fetch {
                     url: format!("{RESOURCES_URL}/{prefix}/{}", object.hash),
-                    dest: self.paths.assets().join("objects").join(prefix).join(&object.hash),
+                    dest: self
+                        .paths
+                        .assets()
+                        .join("objects")
+                        .join(prefix)
+                        .join(&object.hash),
                     hash: Expected::Sha1(object.hash.clone()),
                     size: Some(object.size),
                 });
@@ -151,7 +180,9 @@ impl Core {
         }
 
         self.net
-            .fetch_all(fetches, |done, total| task.progress(done, total, "Downloading Minecraft"))
+            .fetch_all(fetches, |done, total| {
+                task.progress(done, total, "Downloading Minecraft")
+            })
             .await?;
 
         if let Some(index) = legacy_assets {
@@ -170,10 +201,20 @@ impl Core {
 
         let client_jar = self.named_client_jar(id, &base, client_jar).await?;
 
-        let component = meta.java_version.as_ref().map_or(DEFAULT_JAVA, |j| j.component.as_str());
+        let component = meta
+            .java_version
+            .as_ref()
+            .map_or(DEFAULT_JAVA, |j| j.component.as_str());
         let java = self.ensure_java(component, task).await?;
 
-        Ok(Prepared { meta, client_jar, java, natives, log_config, game_assets })
+        Ok(Prepared {
+            meta,
+            client_jar,
+            java,
+            natives,
+            log_config,
+            game_assets,
+        })
     }
 
     /// Forge and NeoForge find the vanilla jar by the modded version's name so
@@ -203,7 +244,12 @@ impl Core {
             if let Some(parent) = target.parent() {
                 tokio::fs::create_dir_all(parent).await?;
             }
-            let source = self.paths.assets().join("objects").join(&object.hash[..2]).join(&object.hash);
+            let source = self
+                .paths
+                .assets()
+                .join("objects")
+                .join(&object.hash[..2])
+                .join(&object.hash);
             tokio::fs::copy(source, target).await?;
         }
         Ok(())
@@ -215,7 +261,10 @@ fn push_library(fetches: &mut Vec<Fetch>, root: &Path, artifact: &crate::mojang:
         fetches.push(Fetch {
             url: url.clone(),
             dest: root.join(&artifact.path),
-            hash: artifact.sha1.clone().map_or(Expected::Nothing, Expected::Sha1),
+            hash: artifact
+                .sha1
+                .clone()
+                .map_or(Expected::Nothing, Expected::Sha1),
             size: artifact.size,
         });
     }
@@ -231,7 +280,9 @@ fn extract_natives(jars: &[(PathBuf, Vec<String>)], target: &Path) -> Result<()>
             if entry.is_dir() || name.ends_with(".git") || name.ends_with(".sha1") {
                 continue;
             }
-            if name.starts_with("META-INF/") || exclude.iter().any(|prefix| name.starts_with(prefix)) {
+            if name.starts_with("META-INF/")
+                || exclude.iter().any(|prefix| name.starts_with(prefix))
+            {
                 continue;
             }
             let dest = target.join(safe_relative(&name)?);
@@ -251,7 +302,9 @@ pub fn safe_relative(path: &str) -> Result<PathBuf> {
     let candidate = Path::new(path);
     let safe = !path.is_empty()
         && !path.contains('\\')
-        && candidate.components().all(|part| matches!(part, Component::Normal(_)));
+        && candidate
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)));
     if safe {
         Ok(candidate.to_path_buf())
     } else {
@@ -271,7 +324,14 @@ mod tests {
 
     #[test]
     fn refuses_paths_that_escape() {
-        for path in ["../evil.exe", "mods/../../evil.exe", "/etc/passwd", "C:\\Windows\\evil.exe", "..\\evil.exe", ""] {
+        for path in [
+            "../evil.exe",
+            "mods/../../evil.exe",
+            "/etc/passwd",
+            "C:\\Windows\\evil.exe",
+            "..\\evil.exe",
+            "",
+        ] {
             assert!(safe_relative(path).is_err(), "{path} should be refused");
         }
     }

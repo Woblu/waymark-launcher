@@ -39,7 +39,10 @@ pub struct Session {
 
 impl std::fmt::Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Session").field("name", &self.name).field("uuid", &self.uuid).finish_non_exhaustive()
+        f.debug_struct("Session")
+            .field("name", &self.name)
+            .field("uuid", &self.uuid)
+            .finish_non_exhaustive()
     }
 }
 
@@ -174,7 +177,10 @@ fn xbox_problem(code: Option<u64>) -> Error {
 /// Decides ownership from the entitlement list. Game Pass counts, which is why
 /// this reads `game_minecraft` and `product_minecraft` rather than a store receipt.
 fn owns_minecraft(entitlements: &Entitlements) -> bool {
-    entitlements.items.iter().any(|item| item.name == "game_minecraft" || item.name == "product_minecraft")
+    entitlements
+        .items
+        .iter()
+        .any(|item| item.name == "game_minecraft" || item.name == "product_minecraft")
 }
 
 fn keychain(uuid: &str) -> Result<keyring::Entry> {
@@ -220,9 +226,10 @@ impl Core {
         let mut accounts = self.accounts()?;
         accounts.retain(|a| a.uuid != uuid);
         if !accounts.iter().any(|a| a.active)
-            && let Some(first) = accounts.first_mut() {
-                first.active = true;
-            }
+            && let Some(first) = accounts.first_mut()
+        {
+            first.active = true;
+        }
         self.save_accounts(&accounts)?;
         if let Ok(entry) = keychain(uuid) {
             let _ = entry.delete_credential();
@@ -256,7 +263,9 @@ impl Core {
         let tokens = loop {
             tokio::time::sleep(Duration::from_secs(login.interval.max(1))).await;
             if tokio::time::Instant::now() > deadline {
-                return Err(Error::Auth("The sign-in code expired. Please try again.".into()));
+                return Err(Error::Auth(
+                    "The sign-in code expired. Please try again.".into(),
+                ));
             }
             let response: TokenResponse = self
                 .net
@@ -277,14 +286,21 @@ impl Core {
             match response.error.as_deref() {
                 Some("authorization_pending" | "slow_down") => {}
                 _ => {
-                    let detail = response.error_description.or(response.error).unwrap_or_default();
+                    let detail = response
+                        .error_description
+                        .or(response.error)
+                        .unwrap_or_default();
                     return Err(Error::Auth(detail));
                 }
             }
         };
 
-        let access = tokens.access_token.ok_or_else(|| Error::Auth("Microsoft sent no token".into()))?;
-        let refresh = tokens.refresh_token.ok_or_else(|| Error::Auth("Microsoft sent no refresh token".into()))?;
+        let access = tokens
+            .access_token
+            .ok_or_else(|| Error::Auth("Microsoft sent no token".into()))?;
+        let refresh = tokens
+            .refresh_token
+            .ok_or_else(|| Error::Auth("Microsoft sent no refresh token".into()))?;
         let verified = self.minecraft_session(&access).await?;
 
         keychain(&verified.session.uuid)?
@@ -336,7 +352,11 @@ impl Core {
             return Err(xbox_problem(body.code));
         }
         let xsts: XboxResponse = xsts.json().await?;
-        let user = xsts.display_claims.xui.first().ok_or_else(|| Error::Auth("Xbox Live sent no user".into()))?;
+        let user = xsts
+            .display_claims
+            .xui
+            .first()
+            .ok_or_else(|| Error::Auth("Xbox Live sent no user".into()))?;
 
         let login = client
             .post(MINECRAFT_LOGIN)
@@ -346,7 +366,10 @@ impl Core {
             .await?;
         if login.status().as_u16() == 403 {
             let body = login.text().await.unwrap_or_default();
-            if body.to_ascii_lowercase().contains("invalid app registration") {
+            if body
+                .to_ascii_lowercase()
+                .contains("invalid app registration")
+            {
                 return Err(Error::AppNotApproved);
             }
             return Err(Error::Auth("Minecraft refused the sign-in.".into()));
@@ -366,12 +389,22 @@ impl Core {
             return Err(Error::NotOwned);
         }
 
-        let profile = client.get(PROFILE).bearer_auth(&login.access_token).send().await?;
+        let profile = client
+            .get(PROFILE)
+            .bearer_auth(&login.access_token)
+            .send()
+            .await?;
         if profile.status().as_u16() == 404 {
-            return Err(Error::Auth("Choose a Minecraft username at minecraft.net first.".into()));
+            return Err(Error::Auth(
+                "Choose a Minecraft username at minecraft.net first.".into(),
+            ));
         }
         let profile: Profile = profile.error_for_status()?.json().await?;
-        let skin_url = profile.skins.iter().find(|s| s.state == "ACTIVE").map(|s| s.url.clone());
+        let skin_url = profile
+            .skins
+            .iter()
+            .find(|s| s.state == "ACTIVE")
+            .map(|s| s.url.clone());
 
         Ok(Verified {
             account: Account {
@@ -395,7 +428,11 @@ impl Core {
     /// online. With no internet, an account verified within the grace period
     /// can still play, which never lets a new or unverified account through.
     pub async fn session(&self) -> Result<Session> {
-        let account = self.accounts()?.into_iter().find(|a| a.active).ok_or(Error::SignInRequired)?;
+        let account = self
+            .accounts()?
+            .into_iter()
+            .find(|a| a.active)
+            .ok_or(Error::SignInRequired)?;
         if !account.owns_game {
             return Err(Error::NotOwned);
         }
@@ -407,7 +444,9 @@ impl Core {
                 access_token: "0".into(),
                 xuid: "0".into(),
             }),
-            Err(Error::Http(_)) => Err(Error::Auth("Connect to the internet so we can confirm your account.".into())),
+            Err(Error::Http(_)) => Err(Error::Auth(
+                "Connect to the internet so we can confirm your account.".into(),
+            )),
             Err(error) => Err(error),
         }
     }
@@ -440,7 +479,10 @@ impl Core {
         let mut accounts = self.accounts()?;
         if let Some(stored) = accounts.iter_mut().find(|a| a.uuid == account.uuid) {
             let active = stored.active;
-            *stored = Account { active, ..verified.account };
+            *stored = Account {
+                active,
+                ..verified.account
+            };
             self.save_accounts(&accounts)?;
         }
         Ok(verified.session)
@@ -479,13 +521,19 @@ mod tests {
 
     #[test]
     fn unrelated_entitlements_are_not_ownership() {
-        assert!(!owns_minecraft(&entitlements(r#"{"items":[{"name":"game_dungeons"}]}"#)));
+        assert!(!owns_minecraft(&entitlements(
+            r#"{"items":[{"name":"game_dungeons"}]}"#
+        )));
     }
 
     #[test]
     fn store_purchases_and_game_pass_both_count() {
-        assert!(owns_minecraft(&entitlements(r#"{"items":[{"name":"game_minecraft"}]}"#)));
-        assert!(owns_minecraft(&entitlements(r#"{"items":[{"name":"product_minecraft"}]}"#)));
+        assert!(owns_minecraft(&entitlements(
+            r#"{"items":[{"name":"game_minecraft"}]}"#
+        )));
+        assert!(owns_minecraft(&entitlements(
+            r#"{"items":[{"name":"product_minecraft"}]}"#
+        )));
     }
 
     #[test]
@@ -497,8 +545,16 @@ mod tests {
 
     #[test]
     fn explains_xbox_errors() {
-        assert!(xbox_problem(Some(2148916233)).to_string().contains("Xbox profile"));
-        assert!(xbox_problem(Some(2148916238)).to_string().contains("child account"));
+        assert!(
+            xbox_problem(Some(2148916233))
+                .to_string()
+                .contains("Xbox profile")
+        );
+        assert!(
+            xbox_problem(Some(2148916238))
+                .to_string()
+                .contains("child account")
+        );
     }
 
     #[tokio::test]

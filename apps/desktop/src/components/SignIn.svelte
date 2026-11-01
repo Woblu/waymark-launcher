@@ -61,9 +61,8 @@
     justify-content: space-between;
     margin: 12px 0;
     padding: 10px 12px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius);
     background: var(--bg);
+    clip-path: var(--stepped);
   }
   .code span { font-size: 20px; letter-spacing: 0.08em; }
   .actions { margin-top: 12px; }

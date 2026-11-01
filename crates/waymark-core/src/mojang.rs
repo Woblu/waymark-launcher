@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-pub const VERSION_MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+pub const VERSION_MANIFEST_URL: &str =
+    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 pub const RESOURCES_URL: &str = "https://resources.download.minecraft.net";
 const LIBRARIES_URL: &str = "https://libraries.minecraft.net/";
 
@@ -227,7 +228,10 @@ impl OsRule {
         let arch = self.arch.as_deref().is_none_or(|a| a == os_arch());
         // Version rules exist for old Windows 10 and pre-Sierra macOS checks.
         // Every system that can run this launcher answers them the same way.
-        let version = self.version.as_deref().is_none_or(|v| os_name() == "windows" && v.starts_with("^10"));
+        let version = self
+            .version
+            .as_deref()
+            .is_none_or(|v| os_name() == "windows" && v.starts_with("^10"));
         name && arch && version
     }
 }
@@ -320,8 +324,26 @@ impl Library {
     /// as classifiers. Newer versions list natives as ordinary libraries.
     pub fn native(&self) -> Option<LibraryArtifact> {
         let classifier = self.natives.as_ref()?.get(os_name())?;
-        let classifier = classifier.replace("${arch}", if cfg!(target_pointer_width = "64") { "64" } else { "32" });
-        let file = self.downloads.as_ref()?.classifiers.as_ref()?.get(&classifier)?;
+        let classifier = classifier.replace(
+            "${arch}",
+            if cfg!(target_pointer_width = "64") {
+                "64"
+            } else {
+                "32"
+            },
+        );
+        let Some(downloads) = &self.downloads else {
+            // Old Forge profiles name their natives without saying where they are.
+            let path = maven_path(&format!("{}:{classifier}", self.name))?;
+            let base = self.url.as_deref().unwrap_or(LIBRARIES_URL);
+            return Some(LibraryArtifact {
+                url: Some(format!("{}/{path}", base.trim_end_matches('/'))),
+                path,
+                sha1: None,
+                size: None,
+            });
+        };
+        let file = downloads.classifiers.as_ref()?.get(&classifier)?;
         Some(LibraryArtifact {
             path: file.path.clone()?,
             url: file.url.clone().filter(|u| !u.is_empty()),
@@ -335,13 +357,16 @@ impl VersionMeta {
     /// Lays this version over the one it inherits from. The child wins, and
     /// its libraries come first so they take priority on the classpath.
     pub fn merged_over(self, parent: VersionMeta) -> VersionMeta {
-        let mut seen = HashSet::new();
-        let libraries = self
-            .libraries
-            .into_iter()
-            .chain(parent.libraries)
-            .filter(|library| seen.insert(library.identity()))
-            .collect();
+        // A version can list a library twice, once per system, so only the child replaces one.
+        let replaced: HashSet<String> = self.libraries.iter().map(Library::identity).collect();
+        // Old versions ship one big ASM jar, which clashes with a loader's newer split ones.
+        let split_asm = replaced.contains("org.ow2.asm:asm");
+        let inherited = parent.libraries.into_iter().filter(|library| {
+            let identity = library.identity();
+            let clashes = split_asm && identity == "org.ow2.asm:asm-all";
+            !replaced.contains(&identity) && !clashes
+        });
+        let libraries = self.libraries.into_iter().chain(inherited).collect();
 
         let arguments = match (parent.arguments, self.arguments) {
             (Some(mut base), Some(extra)) => {
@@ -385,14 +410,18 @@ mod tests {
     #[test]
     fn the_last_matching_rule_wins() {
         let this_os = os_name();
-        let rules = rule(&format!(r#"[{{"action":"allow"}},{{"action":"disallow","os":{{"name":"{this_os}"}}}}]"#));
+        let rules = rule(&format!(
+            r#"[{{"action":"allow"}},{{"action":"disallow","os":{{"name":"{this_os}"}}}}]"#
+        ));
         assert!(!allowed(&rules, Features::default()));
     }
 
     #[test]
     fn a_rule_for_another_os_does_not_apply() {
         let other = if os_name() == "linux" { "osx" } else { "linux" };
-        let rules = rule(&format!(r#"[{{"action":"allow","os":{{"name":"{other}"}}}}]"#));
+        let rules = rule(&format!(
+            r#"[{{"action":"allow","os":{{"name":"{other}"}}}}]"#
+        ));
         assert!(!allowed(&rules, Features::default()));
     }
 
@@ -400,23 +429,39 @@ mod tests {
     fn feature_rules_only_match_when_the_feature_is_on() {
         let rules = rule(r#"[{"action":"allow","features":{"has_custom_resolution":true}}]"#);
         assert!(!allowed(&rules, Features::default()));
-        assert!(allowed(&rules, Features { custom_resolution: true }));
+        assert!(allowed(
+            &rules,
+            Features {
+                custom_resolution: true
+            }
+        ));
     }
 
     #[test]
     fn unknown_features_stay_off() {
         let rules = rule(r#"[{"action":"allow","features":{"is_demo_user":true}}]"#);
-        assert!(!allowed(&rules, Features { custom_resolution: true }));
+        assert!(!allowed(
+            &rules,
+            Features {
+                custom_resolution: true
+            }
+        ));
     }
 
     #[test]
     fn builds_maven_paths() {
-        assert_eq!(maven_path("org.ow2.asm:asm:9.7").unwrap(), "org/ow2/asm/asm/9.7/asm-9.7.jar");
+        assert_eq!(
+            maven_path("org.ow2.asm:asm:9.7").unwrap(),
+            "org/ow2/asm/asm/9.7/asm-9.7.jar"
+        );
         assert_eq!(
             maven_path("org.lwjgl:lwjgl:3.3.3:natives-windows").unwrap(),
             "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar"
         );
-        assert_eq!(maven_path("net.example:thing:1@zip").unwrap(), "net/example/thing/1/thing-1.zip");
+        assert_eq!(
+            maven_path("net.example:thing:1@zip").unwrap(),
+            "net/example/thing/1/thing-1.zip"
+        );
     }
 
     #[test]
@@ -442,41 +487,101 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_library_listed_once_per_system_stays_whole() {
+        let parent = VersionMeta {
+            id: "1.16.5".into(),
+            libraries: vec![
+                Library {
+                    name: "org.lwjgl:lwjgl-glfw:3.2.1".into(),
+                    ..Library::default()
+                },
+                Library {
+                    name: "org.lwjgl:lwjgl-glfw:3.2.2".into(),
+                    ..Library::default()
+                },
+            ],
+            ..VersionMeta::default()
+        };
+        let child = VersionMeta {
+            id: "1.16.5-forge".into(),
+            ..VersionMeta::default()
+        };
+
+        assert_eq!(child.merged_over(parent).libraries.len(), 2);
+    }
+
+    #[test]
     fn a_child_library_replaces_the_parent_copy() {
         let parent = VersionMeta {
             id: "1.21.4".into(),
             main_class: Some("net.minecraft.client.main.Main".into()),
             libraries: vec![
-                Library { name: "org.ow2.asm:asm:9.3".into(), ..Library::default() },
-                Library { name: "com.mojang:brigadier:1.3".into(), ..Library::default() },
+                Library {
+                    name: "org.ow2.asm:asm:9.3".into(),
+                    ..Library::default()
+                },
+                Library {
+                    name: "com.mojang:brigadier:1.3".into(),
+                    ..Library::default()
+                },
             ],
             ..VersionMeta::default()
         };
         let child = VersionMeta {
             id: "fabric-loader-0.16.9-1.21.4".into(),
             main_class: Some("net.fabricmc.loader.impl.launch.knot.KnotClient".into()),
-            libraries: vec![Library { name: "org.ow2.asm:asm:9.7".into(), ..Library::default() }],
+            libraries: vec![Library {
+                name: "org.ow2.asm:asm:9.7".into(),
+                ..Library::default()
+            }],
             ..VersionMeta::default()
         };
 
         let merged = child.merged_over(parent);
 
         assert_eq!(merged.id, "fabric-loader-0.16.9-1.21.4");
-        assert_eq!(merged.main_class.unwrap(), "net.fabricmc.loader.impl.launch.knot.KnotClient");
+        assert_eq!(
+            merged.main_class.unwrap(),
+            "net.fabricmc.loader.impl.launch.knot.KnotClient"
+        );
         let names: Vec<&str> = merged.libraries.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["org.ow2.asm:asm:9.7", "com.mojang:brigadier:1.3"]);
+    }
+
+    #[test]
+    fn natives_named_without_an_address_come_from_mojang() {
+        let library: Library = serde_json::from_str(&format!(
+            r#"{{"name":"net.java.jinput:jinput-platform:2.0.5","natives":{{"{}":"natives-test"}}}}"#,
+            os_name()
+        ))
+        .unwrap();
+        let native = library.native().unwrap();
+        assert_eq!(
+            native.url.unwrap(),
+            "https://libraries.minecraft.net/net/java/jinput/jinput-platform/2.0.5/jinput-platform-2.0.5-natives-test.jar"
+        );
+        assert!(library.artifact().is_none());
     }
 
     #[test]
     fn natives_with_classifiers_in_the_name_stay_separate() {
         let parent = VersionMeta {
             libraries: vec![
-                Library { name: "org.lwjgl:lwjgl:3.3.3".into(), ..Library::default() },
-                Library { name: "org.lwjgl:lwjgl:3.3.3:natives-windows".into(), ..Library::default() },
+                Library {
+                    name: "org.lwjgl:lwjgl:3.3.3".into(),
+                    ..Library::default()
+                },
+                Library {
+                    name: "org.lwjgl:lwjgl:3.3.3:natives-windows".into(),
+                    ..Library::default()
+                },
             ],
             ..VersionMeta::default()
         };
-        assert_eq!(VersionMeta::default().merged_over(parent).libraries.len(), 2);
+        assert_eq!(
+            VersionMeta::default().merged_over(parent).libraries.len(),
+            2
+        );
     }
 
     #[test]
@@ -485,7 +590,19 @@ mod tests {
             r#"{"game":["--demo",{"rules":[{"action":"allow"}],"value":["--width","1"]}],"jvm":[{"rules":[{"action":"allow"}],"value":"-Dx=y"}]}"#,
         )
         .unwrap();
-        assert!(matches!(arguments.game[1], Argument::Ruled { value: OneOrMany::Many(_), .. }));
-        assert!(matches!(arguments.jvm[0], Argument::Ruled { value: OneOrMany::One(_), .. }));
+        assert!(matches!(
+            arguments.game[1],
+            Argument::Ruled {
+                value: OneOrMany::Many(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            arguments.jvm[0],
+            Argument::Ruled {
+                value: OneOrMany::One(_),
+                ..
+            }
+        ));
     }
 }

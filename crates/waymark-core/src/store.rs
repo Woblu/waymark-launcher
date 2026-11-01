@@ -49,7 +49,10 @@ pub fn hash_file(path: &Path) -> Result<Stored> {
     let mut file = fs::File::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let size = hasher.update_reader(&mut file)?.count();
-    Ok(Stored { hash: hasher.finalize().to_hex().to_string(), size })
+    Ok(Stored {
+        hash: hasher.finalize().to_hex().to_string(),
+        size,
+    })
 }
 
 impl Store {
@@ -106,7 +109,9 @@ impl Store {
         let mut freed = 0;
         for entry in WalkDir::new(&self.root).min_depth(2).max_depth(2) {
             let entry = entry.map_err(io::Error::from)?;
-            let Some(name) = entry.file_name().to_str() else { continue };
+            let Some(name) = entry.file_name().to_str() else {
+                continue;
+            };
             if entry.file_type().is_file() && !live.contains(name) {
                 freed += entry.metadata().map_err(io::Error::from)?.len();
                 fs::remove_file(entry.path())?;
@@ -117,7 +122,10 @@ impl Store {
 }
 
 fn copy_atomic(source: &Path, target: &Path) -> Result<()> {
-    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
     let part = target.with_file_name(format!("{name}.{}.part", uuid::Uuid::new_v4().simple()));
     if let Err(error) = fs::copy(source, &part).and_then(|_| fs::rename(&part, target)) {
         let _ = fs::remove_file(&part);
@@ -142,7 +150,10 @@ mod tests {
         let (a, b) = (dir.path().join("a.jar"), dir.path().join("b.jar"));
         fs::write(&a, b"same bytes").unwrap();
         fs::write(&b, b"same bytes").unwrap();
-        assert_eq!(store.add(&a, Placement::Link).unwrap(), store.add(&b, Placement::Link).unwrap());
+        assert_eq!(
+            store.add(&a, Placement::Link).unwrap(),
+            store.add(&b, Placement::Link).unwrap()
+        );
     }
 
     #[test]
@@ -177,7 +188,9 @@ mod tests {
         fs::write(&b, b"drop").unwrap();
         let keep = store.add(&a, Placement::Copy).unwrap();
         let drop = store.add(&b, Placement::Copy).unwrap();
-        let freed = store.collect_garbage(&HashSet::from([keep.hash.clone()])).unwrap();
+        let freed = store
+            .collect_garbage(&HashSet::from([keep.hash.clone()]))
+            .unwrap();
         assert_eq!(freed, 4);
         assert!(store.contains(&keep.hash));
         assert!(!store.contains(&drop.hash));
@@ -186,7 +199,10 @@ mod tests {
     #[test]
     fn placement_follows_file_type() {
         assert_eq!(Placement::for_path("mods/sodium.jar"), Placement::Link);
-        assert_eq!(Placement::for_path("mods/sodium.jar.disabled"), Placement::Link);
+        assert_eq!(
+            Placement::for_path("mods/sodium.jar.disabled"),
+            Placement::Link
+        );
         assert_eq!(Placement::for_path("config/sodium.json"), Placement::Copy);
     }
 }

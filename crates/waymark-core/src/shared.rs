@@ -39,11 +39,21 @@ fn unlink_dir(link: &Path) -> io::Result<()> {
 /// Moves files from one folder into another. A file that exists on both sides
 /// keeps the destination's copy, and the other is set aside under a new name.
 fn move_contents(from: &Path, to: &Path, tag: &str) -> Result<()> {
-    for entry in WalkDir::new(from).into_iter().filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()) {
-        let relative = entry.path().strip_prefix(from).map_err(|e| Error::Other(e.to_string()))?;
+    for entry in WalkDir::new(from)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let relative = entry
+            .path()
+            .strip_prefix(from)
+            .map_err(|e| Error::Other(e.to_string()))?;
         let mut target = to.join(relative);
         if target.exists() {
-            let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             target.set_file_name(format!("{tag} {name}"));
         }
         if let Some(parent) = target.parent() {
@@ -58,8 +68,15 @@ fn move_contents(from: &Path, to: &Path, tag: &str) -> Result<()> {
 }
 
 fn copy_contents(from: &Path, to: &Path) -> Result<()> {
-    for entry in WalkDir::new(from).into_iter().filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()) {
-        let relative = entry.path().strip_prefix(from).map_err(|e| Error::Other(e.to_string()))?;
+    for entry in WalkDir::new(from)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let relative = entry
+            .path()
+            .strip_prefix(from)
+            .map_err(|e| Error::Other(e.to_string()))?;
         let target = to.join(relative);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
@@ -78,7 +95,9 @@ impl Core {
             return Err(Error::Other(format!("{folder} can't be shared")));
         }
         if self.game_running(id) {
-            return Err(Error::Other("close the game before changing shared folders".into()));
+            return Err(Error::Other(
+                "close the game before changing shared folders".into(),
+            ));
         }
         let mut instance = self.instance(id)?;
         let local = self.paths.game(id).join(folder);
@@ -107,11 +126,14 @@ impl Core {
     /// Copies game options and keybinds from one instance to another.
     pub fn copy_settings(&self, from: &str, to: &str) -> Result<Option<WaymarkSummary>> {
         if self.game_running(to) {
-            return Err(Error::Other("close the game before copying settings".into()));
+            return Err(Error::Other(
+                "close the game before copying settings".into(),
+            ));
         }
         let source = self.instance(from)?;
         self.instance(to)?;
-        self.trail(to).mark("Before copying settings", WaymarkKind::Automatic)?;
+        self.trail(to)
+            .mark("Before copying settings", WaymarkKind::Automatic)?;
         let (from_dir, to_dir) = (self.paths.game(from), self.paths.game(to));
         let mut copied = 0;
         for file in TRACKED_FILES {
@@ -121,9 +143,15 @@ impl Core {
             }
         }
         if copied == 0 {
-            return Err(Error::Other(format!("{} has no game settings yet", source.name)));
+            return Err(Error::Other(format!(
+                "{} has no game settings yet",
+                source.name
+            )));
         }
-        self.trail(to).mark(&format!("Copied settings from {}", source.name), WaymarkKind::Manual)
+        self.trail(to).mark(
+            &format!("Copied settings from {}", source.name),
+            WaymarkKind::Manual,
+        )
     }
 }
 
@@ -135,8 +163,12 @@ mod tests {
     fn setup() -> (tempfile::TempDir, Core, Instance, Instance) {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path(), crate::event::silent()).unwrap();
-        let a = core.register_instance("A", "1.21.4", Loader::default(), "x".into(), None).unwrap();
-        let b = core.register_instance("B", "1.21.4", Loader::default(), "x".into(), None).unwrap();
+        let a = core
+            .register_instance("A", "1.21.4", Loader::default(), "x".into(), None)
+            .unwrap();
+        let b = core
+            .register_instance("B", "1.21.4", Loader::default(), "x".into(), None)
+            .unwrap();
         (dir, core, a, b)
     }
 
@@ -147,12 +179,22 @@ mod tests {
         fs::create_dir_all(&packs).unwrap();
         fs::write(packs.join("mine.zip"), b"pack").unwrap();
 
-        core.set_folder_shared(&a.id, "resourcepacks", true).unwrap();
-        core.set_folder_shared(&b.id, "resourcepacks", true).unwrap();
+        core.set_folder_shared(&a.id, "resourcepacks", true)
+            .unwrap();
+        core.set_folder_shared(&b.id, "resourcepacks", true)
+            .unwrap();
 
-        assert_eq!(fs::read(core.paths.game(&b.id).join("resourcepacks/mine.zip")).unwrap(), b"pack");
+        assert_eq!(
+            fs::read(core.paths.game(&b.id).join("resourcepacks/mine.zip")).unwrap(),
+            b"pack"
+        );
         fs::write(core.paths.game(&b.id).join("resourcepacks/new.zip"), b"new").unwrap();
-        assert!(core.paths.game(&a.id).join("resourcepacks/new.zip").is_file());
+        assert!(
+            core.paths
+                .game(&a.id)
+                .join("resourcepacks/new.zip")
+                .is_file()
+        );
     }
 
     #[test]
@@ -163,8 +205,10 @@ mod tests {
             fs::create_dir_all(&packs).unwrap();
             fs::write(packs.join("same.zip"), body).unwrap();
         }
-        core.set_folder_shared(&a.id, "resourcepacks", true).unwrap();
-        core.set_folder_shared(&b.id, "resourcepacks", true).unwrap();
+        core.set_folder_shared(&a.id, "resourcepacks", true)
+            .unwrap();
+        core.set_folder_shared(&b.id, "resourcepacks", true)
+            .unwrap();
 
         let common = core.paths.shared("resourcepacks");
         assert_eq!(fs::read(common.join("same.zip")).unwrap(), b"first");
@@ -184,15 +228,25 @@ mod tests {
         assert!(instance.shared.is_empty());
         assert!(!crate::waymarks::is_linked(&packs));
         assert_eq!(fs::read(packs.join("shader.zip")).unwrap(), b"s");
-        assert!(core.paths.shared("shaderpacks").join("shader.zip").is_file());
+        assert!(
+            core.paths
+                .shared("shaderpacks")
+                .join("shader.zip")
+                .is_file()
+        );
     }
 
     #[test]
     fn waymarks_ignore_shared_folders() {
         let (_dir, core, a, _b) = setup();
-        core.set_folder_shared(&a.id, "resourcepacks", true).unwrap();
+        core.set_folder_shared(&a.id, "resourcepacks", true)
+            .unwrap();
         fs::write(core.paths.shared("resourcepacks").join("big.zip"), b"pack").unwrap();
-        let first = core.trail(&a.id).mark("first", WaymarkKind::Manual).unwrap().unwrap();
+        let first = core
+            .trail(&a.id)
+            .mark("first", WaymarkKind::Manual)
+            .unwrap()
+            .unwrap();
         assert_eq!(first.files, 0);
     }
 
@@ -208,7 +262,10 @@ mod tests {
         fs::write(core.paths.game(&a.id).join("options.txt"), b"fov:90").unwrap();
         let mark = core.copy_settings(&a.id, &b.id).unwrap().unwrap();
         assert_eq!(mark.label, "Copied settings from A");
-        assert_eq!(fs::read(core.paths.game(&b.id).join("options.txt")).unwrap(), b"fov:90");
+        assert_eq!(
+            fs::read(core.paths.game(&b.id).join("options.txt")).unwrap(),
+            b"fov:90"
+        );
     }
 
     #[test]
