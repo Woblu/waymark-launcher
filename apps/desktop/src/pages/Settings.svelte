@@ -222,6 +222,13 @@
       <h2>Updates</h2>
       <div class="body">
         <div class="form-row">
+          <span class="form-label">Updates</span>
+          <div>
+            <label class="check top"><input type="checkbox" bind:checked={settings.checkUpdates} onchange={save} /> Check that the game still starts after an update</label>
+            <p class="form-hint">Waymark starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
+          </div>
+        </div>
+        <div class="form-row">
           <span class="form-label">Waymark</span>
           <div>
             <label class="check top"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark up to date</label>

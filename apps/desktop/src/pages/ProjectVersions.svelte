@@ -4,7 +4,7 @@
   import RichText from '../components/RichText.svelte';
   import { api, openExternal } from '../lib/api';
   import type { LibraryEntry, ProjectPage, VersionRow } from '../lib/api';
-  import { bytes, count, day, loaderName, minecraftRange, sortMinecraft } from '../lib/format';
+  import { acceptedLoaders, bytes, count, day, loaderName, minecraftRange, sortMinecraft } from '../lib/format';
 
   let {
     page,
@@ -98,16 +98,19 @@
   function fits(row: VersionRow): boolean {
     if (!instance || !row.gameVersions.includes(instance.minecraft)) return false;
     if (page.kind !== 'mod') return true;
-    const accepted = instance.loader.kind === 'quilt' ? ['quilt', 'fabric'] : [instance.loader.kind];
+    const accepted = acceptedLoaders(instance.loader.kind);
     return row.loaders.some((name) => accepted.includes(name));
   }
 
   const isInstalled = (row: VersionRow) => installed !== undefined && (row.number === installed || row.name === installed);
   const siteUrl = (row: VersionRow) => {
-    if (page.source === 'ftb' || page.source === 'atlauncher') return page.page;
-    return page.source === 'modrinth' ? `${page.page}/version/${row.number}` : `${page.page}/files/${row.id}`;
+    if (page.source === 'modrinth') return `${page.page}/version/${row.number}`;
+    return page.source === 'curseforge' ? `${page.page}/files/${row.id}` : page.page;
   };
-  const storeName = { modrinth: 'Modrinth', curseforge: 'CurseForge', ftb: 'Feed The Beast', atlauncher: 'ATLauncher' };
+  /** Technic's builds are only names, so most of this can be missing. */
+  const facts = (row: VersionRow) =>
+    [row.size ? bytes(row.size) : '', row.downloads ? `${count(row.downloads)} downloads` : '', row.gameVersions.length ? `For ${row.gameVersions.join(', ')}` : ''].filter(Boolean).join(' · ');
+  const storeName = { modrinth: 'Modrinth', curseforge: 'CurseForge', ftb: 'Feed The Beast', atlauncher: 'ATLauncher', technic: 'Technic' };
   const channelName = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
 </script>
 
@@ -148,9 +151,9 @@
             <span class="faint small truncate">{row.file}</span>
           </span>
           <span class="channel {row.channel}">{channelName(row.channel)}</span>
-          <span class="muted truncate">{minecraftRange(row.gameVersions)}</span>
+          <span class="muted truncate">{row.gameVersions.length ? minecraftRange(row.gameVersions) : ''}</span>
           <span class="muted truncate">{row.loaders.map(loaderName).join(', ')}</span>
-          <span class="faint tabular truncate">{day(row.published)}</span>
+          <span class="faint tabular truncate">{row.published ? day(row.published) : ''}</span>
         </button>
         <span class="action">
           {#if isInstalled(row)}
@@ -169,8 +172,8 @@
       {#if expanded}
         <div class="detail">
           <p class="facts faint small">
-            {bytes(row.size)} · {count(row.downloads)} downloads · For {row.gameVersions.join(', ')}
-            <button class="site" onclick={() => openExternal(siteUrl(row))}>Open on {storeName[page.source]} <ExternalLink size={12} /></button>
+            {facts(row)}
+            {#if page.page}<button class="site" onclick={() => openExternal(siteUrl(row))}>Open on {storeName[page.source]} <ExternalLink size={12} /></button>{/if}
           </p>
           {#if row.id in changelogs}
             {#if changelogs[row.id].trim()}

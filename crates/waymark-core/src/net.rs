@@ -1,11 +1,15 @@
 //! HTTP for everything: cached metadata and verified, parallel downloads.
 
 use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use futures_util::{StreamExt, TryStreamExt, stream};
+use md5::Md5;
+use reqwest::Url;
+use reqwest::redirect::Policy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha1::{Digest, Sha1};
@@ -14,13 +18,20 @@ use tokio::io::AsyncWriteExt;
 
 use crate::brand::USER_AGENT;
 use crate::error::{Error, Result};
+use crate::mojang::RESOURCES_URL;
 
 const PARALLEL_DOWNLOADS: usize = 24;
 const ATTEMPTS: u32 = 4;
+const MAX_REDIRECTS: usize = 10;
+/// Sounds from versions Mojang no longer serves. Files here are named by their
+/// hash and checked against it, so this server can't hand back anything else.
+const OLD_RESOURCES_URL: &str = "https://resources.betacraft.uk";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expected {
     Nothing,
+    /// Only for sources that publish nothing stronger.
+    Md5(String),
     Sha1(String),
     Sha512(String),
 }
@@ -35,6 +46,7 @@ pub struct Fetch {
 
 enum Hashing {
     Nothing,
+    Md5(Md5),
     Sha1(Sha1),
     Sha512(Box<Sha512>),
 }
@@ -43,6 +55,7 @@ impl Hashing {
     fn new(expected: &Expected) -> Self {
         match expected {
             Expected::Nothing => Hashing::Nothing,
+            Expected::Md5(_) => Hashing::Md5(Md5::new()),
             Expected::Sha1(_) => Hashing::Sha1(Sha1::new()),
             Expected::Sha512(_) => Hashing::Sha512(Box::new(Sha512::new())),
         }
@@ -51,6 +64,7 @@ impl Hashing {
     fn update(&mut self, bytes: &[u8]) {
         match self {
             Hashing::Nothing => {}
+            Hashing::Md5(h) => h.update(bytes),
             Hashing::Sha1(h) => h.update(bytes),
             Hashing::Sha512(h) => h.update(bytes),
         }
@@ -58,6 +72,9 @@ impl Hashing {
 
     fn matches(self, expected: &Expected) -> bool {
         match (self, expected) {
+            (Hashing::Md5(h), Expected::Md5(want)) => {
+                hex::encode(h.finalize()).eq_ignore_ascii_case(want)
+            }
             (Hashing::Sha1(h), Expected::Sha1(want)) => {
                 hex::encode(h.finalize()).eq_ignore_ascii_case(want)
             }
@@ -81,6 +98,16 @@ impl Net {
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(45))
             .pool_max_idle_per_host(PARALLEL_DOWNLOADS)
+            .redirect(Policy::custom(|attempt| {
+                // A safe address could otherwise hand the download to an unsafe one.
+                if attempt.url().scheme() != "https" || is_local(attempt.url()) {
+                    attempt.error("refused a redirect to an unsafe address")
+                } else if attempt.previous().len() >= MAX_REDIRECTS {
+                    attempt.error("too many redirects")
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()?;
         Ok(Net { client })
     }
@@ -134,6 +161,13 @@ impl Net {
             attempt += 1;
             match self.download(item, on_bytes).await {
                 Ok(()) => return Ok(()),
+                Err(Error::Status { status: 404, .. }) if older_copy(&item.url).is_some() => {
+                    let older = Fetch {
+                        url: older_copy(&item.url).unwrap_or_default(),
+                        ..item.clone()
+                    };
+                    return Box::pin(self.fetch_with(&older, on_bytes)).await;
+                }
                 Err(error) if attempt >= ATTEMPTS || !worth_retrying(&error) => return Err(error),
                 Err(error) => {
                     tracing::warn!(url = %item.url, %error, attempt, "download failed, retrying");
@@ -209,6 +243,44 @@ impl Net {
     }
 }
 
+/// Where else to find an asset Mojang doesn't have. Asking Mojang first keeps most of
+/// the traffic off a community server.
+fn older_copy(url: &str) -> Option<String> {
+    let path = url.strip_prefix(RESOURCES_URL)?;
+    Some(format!("{OLD_RESOURCES_URL}{path}"))
+}
+
+/// Whether an address points at this computer or its home network. A stranger's
+/// pack has no business reaching a router or a printer through the launcher.
+pub fn is_local(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return true;
+    };
+    match host.trim_matches(['[', ']']).parse() {
+        Ok(IpAddr::V4(address)) => is_local_v4(address),
+        Ok(IpAddr::V6(address)) => {
+            let first = address.segments()[0];
+            address.is_loopback()
+                || address.is_unspecified()
+                || first & 0xfe00 == 0xfc00
+                || first & 0xffc0 == 0xfe80
+                || address.to_ipv4_mapped().is_some_and(is_local_v4)
+        }
+        Err(_) => {
+            let name = host.trim_end_matches('.').to_ascii_lowercase();
+            name == "localhost" || name.ends_with(".localhost") || name.ends_with(".local")
+        }
+    }
+}
+
+fn is_local_v4(address: Ipv4Addr) -> bool {
+    address.is_loopback()
+        || address.is_private()
+        || address.is_link_local()
+        || address.is_unspecified()
+        || address.is_broadcast()
+}
+
 fn check(url: &str, response: &reqwest::Response) -> Result<()> {
     if response.status().is_success() {
         Ok(())
@@ -258,4 +330,29 @@ pub async fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     tokio::fs::write(&part, bytes).await?;
     tokio::fs::rename(&part, path).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_md5_is_really_compared() {
+        let hashed = |text: &str| {
+            let mut hashing = Hashing::new(&Expected::Md5(String::new()));
+            hashing.update(text.as_bytes());
+            hashing
+        };
+        let hello = Expected::Md5("5d41402abc4b2a76b9719d911017c592".to_string());
+        assert!(hashed("hello").matches(&hello));
+        assert!(!hashed("hullo").matches(&hello));
+    }
+
+    #[test]
+    fn local_addresses_are_recognised() {
+        let local = |url: &str| is_local(&Url::parse(url).unwrap());
+        assert!(local("https://localhost/a") && local("https://127.0.0.1/a"));
+        assert!(local("https://192.168.0.2/a") && local("https://[::1]/a"));
+        assert!(!local("https://example.com/a") && !local("https://8.8.8.8/a"));
+    }
 }

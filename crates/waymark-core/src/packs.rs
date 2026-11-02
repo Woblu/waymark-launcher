@@ -24,10 +24,12 @@ use crate::event::Task;
 use crate::ftb;
 use crate::install::safe_relative;
 use crate::instance::Instance;
+use crate::loaders::forge_is_a_jar_mod;
 use crate::lock::{Loader, LoaderKind, LockedMod, Lockfile, Origin, Side, Source};
 use crate::modrinth;
 use crate::net::{Expected, Fetch};
 use crate::store::{Placement, hash_file};
+use crate::technic;
 use crate::waymarks::WaymarkKind;
 
 /// The hosts the `.mrpack` format allows files to come from.
@@ -40,6 +42,8 @@ const ALLOWED_HOSTS: [&str; 4] = [
 
 /// How many ids go in one bulk request, which keeps the URL a sensible length.
 const LOOKUP_BATCH: usize = 80;
+/// More than any real pack unpacks to, which stops a zip built to fill a disk.
+const MAX_UNPACKED: u64 = 64 << 30;
 
 pub(crate) const PACK_STATE: &str = "pack.json";
 const MANUAL_FILES: &str = ".waymarks/manual-files.json";
@@ -337,7 +341,13 @@ fn read_entry<T: serde::de::DeserializeOwned>(pack: &Path, name: &str) -> Result
 
 /// Unpacks the override folders, refusing any entry that would land outside.
 fn extract_overrides(pack: &Path, prefixes: &[&str], target: &Path) -> Result<()> {
+    extract_except(pack, prefixes, &[], target)
+}
+
+/// The same, leaving out anything under the folders in `skip`.
+fn extract_except(pack: &Path, prefixes: &[&str], skip: &[&str], target: &Path) -> Result<()> {
     let mut archive = zip::ZipArchive::new(fs::File::open(pack)?)?;
+    let mut left = MAX_UNPACKED;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
         if entry.is_dir() {
@@ -355,11 +365,21 @@ fn extract_overrides(pack: &Path, prefixes: &[&str], target: &Path) -> Result<()
         let Some(relative) = prefixes.iter().find_map(inside) else {
             continue;
         };
+        let lower = relative.to_ascii_lowercase();
+        if skip.iter().any(|folder| lower.starts_with(folder)) {
+            continue;
+        }
         let dest = target.join(safe_relative(relative)?);
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)?;
         }
-        io::copy(&mut entry, &mut fs::File::create(dest)?)?;
+        let written = io::copy(
+            &mut entry.by_ref().take(left.saturating_add(1)),
+            &mut fs::File::create(dest)?,
+        )?;
+        left = left
+            .checked_sub(written)
+            .ok_or_else(|| Error::Other("refused a pack that unpacks to too much".into()))?;
     }
     Ok(())
 }
@@ -400,6 +420,10 @@ impl Core {
         }
         if source == ContentSource::AtLauncher {
             let (tree, origin, icon) = self.atl_tree(project, task).await?;
+            return self.install_tree(tree, Some(origin), icon, task).await;
+        }
+        if source == ContentSource::Technic {
+            let (tree, origin, icon) = self.technic_tree(project, task).await?;
             return self.install_tree(tree, Some(origin), icon, task).await;
         }
         let (path, origin, icon) = self.download_pack(source, project, minecraft).await?;
@@ -444,7 +468,7 @@ impl Core {
                 };
                 Ok((path, origin, details.icon_url))
             }
-            ContentSource::Ftb | ContentSource::AtLauncher => {
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
                 Err(Error::Other("these packs aren't single files".into()))
             }
             ContentSource::CurseForge => {
@@ -916,6 +940,94 @@ impl Core {
         ))
     }
 
+    /// Downloads a Technic pack's zips and reads them into a tree. Its `bin`
+    /// folder never reaches the game: it only says which loader to install.
+    async fn technic_tree(
+        &self,
+        project: &str,
+        task: &Task,
+    ) -> Result<(PackTree, PackOrigin, Option<String>)> {
+        let pack = technic::pack(&self.net, project).await?;
+        let title = pack.title().to_string();
+        let plan = technic::plan(&self.net, &pack).await?;
+
+        let staged = self.staging_dir();
+        let names: Vec<String> = (0..plan.archives.len()).map(|n| n.to_string()).collect();
+        let fetches = plan
+            .archives
+            .iter()
+            .zip(&names)
+            .map(|(archive, name)| Fetch {
+                url: archive.url.clone(),
+                dest: staged.join(name),
+                hash: archive.md5.clone().map_or(Expected::Nothing, Expected::Md5),
+                size: archive.size,
+            })
+            .collect();
+        self.net
+            .fetch_all(fetches, |done, total| {
+                task.progress(done, total, "Downloading pack files")
+            })
+            .await
+            .map_err(|error| {
+                let first = plan.archives.first().map_or("", |file| file.url.as_str());
+                technic::unreachable_pack(&title, first, error)
+            })?;
+
+        task.progress(0, 1, "Storing pack files");
+        let mut files = BTreeMap::new();
+        let mut bin = technic::Bin::default();
+        // When two zips hold the same file the earlier one wins, so they go in backwards.
+        for (name, archive) in names.iter().zip(&plan.archives).rev() {
+            let path = staged.join(name);
+            let reading = path.clone();
+            let found = blocking(move || technic::read_bin(&reading))
+                .await
+                .map_err(|error| match error {
+                    Error::Zip(_) => Error::Other(format!(
+                        "{title}'s file from {} isn't a zip, so its author may have moved it",
+                        archive.url
+                    )),
+                    other => other,
+                })?;
+            bin.overlay(found);
+            self.add_archive_except(&path, "", &technic::RESERVED, &mut files)
+                .await?;
+        }
+        let _ = fs::remove_dir_all(&staged);
+
+        let (minecraft, loader) = technic::game_of(&title, plan.minecraft.as_deref(), &bin)?;
+        if !bin.jar_files.is_empty()
+            && loader.kind == LoaderKind::Forge
+            && forge_is_a_jar_mod(&minecraft)
+        {
+            let version = loader.version.as_deref().unwrap_or_default();
+            let forge = self.forge_jar_mod(&minecraft, version).await?;
+            let plain = blocking(move || bin.is_plain_forge(&forge)).await?;
+            if !plain {
+                return Err(technic::patches_the_game(&title));
+            }
+        }
+        let origin = PackOrigin {
+            source: ContentSource::Technic,
+            project: project.to_string(),
+            version_id: plan.version.clone(),
+            version: plan.version,
+        };
+        let icon = pack.icon_url();
+        Ok((
+            PackTree {
+                name: title,
+                minecraft,
+                loader,
+                files: files.into_values().collect(),
+                manual: Vec::new(),
+            },
+            origin,
+            icon,
+        ))
+    }
+
     /// Stores everything in a zip, under a folder of the game directory.
     async fn add_archive(
         &self,
@@ -923,9 +1035,20 @@ impl Core {
         under: &str,
         files: &mut BTreeMap<String, TreeFile>,
     ) -> Result<()> {
+        self.add_archive_except(archive, under, &[], files).await
+    }
+
+    /// The same, leaving out anything under the folders in `skip`.
+    async fn add_archive_except(
+        &self,
+        archive: &Path,
+        under: &str,
+        skip: &'static [&'static str],
+        files: &mut BTreeMap<String, TreeFile>,
+    ) -> Result<()> {
         let staged = self.staging_dir();
         let (from, to) = (archive.to_path_buf(), staged.clone());
-        blocking(move || extract_overrides(&from, &[""], &to)).await?;
+        blocking(move || extract_except(&from, &[""], skip, &to)).await?;
         if staged.is_dir() {
             for entry in WalkDir::new(&staged)
                 .into_iter()
@@ -1270,6 +1393,14 @@ impl Core {
                 }
                 newest.name.clone()
             }
+            ContentSource::Technic => {
+                let pack = technic::pack(&self.net, &origin.project).await?;
+                let newest = technic::current_version(&self.net, &pack).await?;
+                if newest == origin.version_id {
+                    return Ok(None);
+                }
+                newest
+            }
             ContentSource::CurseForge => {
                 let id: u64 = origin
                     .project
@@ -1331,6 +1462,9 @@ impl Core {
             (tree, origin)
         } else if state.origin.source == ContentSource::AtLauncher {
             let (tree, origin, _) = self.atl_tree(&state.origin.project, task).await?;
+            (tree, origin)
+        } else if state.origin.source == ContentSource::Technic {
+            let (tree, origin, _) = self.technic_tree(&state.origin.project, task).await?;
             (tree, origin)
         } else {
             let (path, origin, _) = self
@@ -1609,7 +1743,7 @@ impl Core {
     }
 }
 
-fn sha1_of(path: &Path) -> Option<String> {
+pub(crate) fn sha1_of(path: &Path) -> Option<String> {
     use sha1::{Digest, Sha1};
     let mut file = fs::File::open(path).ok()?;
     let mut hasher = Sha1::new();
@@ -1847,6 +1981,24 @@ mod tests {
             b"setting = true"
         );
         assert!(!game.join("modrinth.index.json").exists());
+    }
+
+    #[test]
+    fn reserved_folders_stay_out_of_the_game() {
+        let dir = tempfile::tempdir().unwrap();
+        let pack = dir.path().join("pack.zip");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&pack).unwrap());
+        for name in ["bin/modpack.jar", "bin/evil.bat", "cache/x", "mods/a.jar"] {
+            zip.start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"x").unwrap();
+        }
+        zip.finish().unwrap();
+
+        let game = dir.path().join("game");
+        extract_except(&pack, &[""], &technic::RESERVED, &game).unwrap();
+        assert!(game.join("mods/a.jar").is_file());
+        assert!(!game.join("bin").exists() && !game.join("cache").exists());
     }
 
     #[test]

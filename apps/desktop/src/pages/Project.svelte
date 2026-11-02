@@ -22,14 +22,20 @@
   type Tab = 'description' | 'gallery' | 'versions';
   const KIND_NAMES = { mod: 'Mod', modpack: 'Modpack', shader: 'Shader', resourcepack: 'Resource pack', datapack: 'Data pack' };
   const BACK_BUTTON = 3;
-  const storeNames: Record<ContentSource, string> = { modrinth: 'Modrinth', curseforge: 'CurseForge', ftb: 'Feed The Beast', atlauncher: 'ATLauncher' };
+  const storeNames: Record<ContentSource, string> = { modrinth: 'Modrinth', curseforge: 'CurseForge', ftb: 'Feed The Beast', atlauncher: 'ATLauncher', technic: 'Technic' };
 
   let page = $state<ProjectPage | null>(null);
   let local = $state<LocalMod | null>(null);
   let build = $state<{ file: string; version?: string } | null>(null);
   let failed = $state<string | null>(null);
   let tab = $state<Tab>('description');
-  let instanceId = $state(untrack(() => target.instance ?? app.discoverTarget ?? app.target?.id ?? ''));
+  let instanceId = $state(
+    untrack(() => {
+      if (target.instance) return target.instance;
+      const wanted = app.discoverTarget ?? app.target?.id;
+      return app.moddable.some((entry) => entry.id === wanted) ? wanted! : (app.moddable[0]?.id ?? '');
+    }),
+  );
   let fit = $state<Fit | null | undefined>(undefined);
   let installed = $state<LockedMod | null>(null);
   let busy = $state(false);
@@ -125,6 +131,7 @@
       const mark = await api.applyUpdates(instanceId, [{ hash: installed.hash, version }]);
       if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
       app.contentTick++;
+      if (mark) app.checkUpdate(instanceId);
     } catch (error) {
       app.fail(error, 'Could not switch to that version');
     }
@@ -183,15 +190,19 @@
     {#if page}
       <div class="actions">
         {#if page.kind === 'modpack'}
-          <button class="btn primary" disabled={busy} onclick={() => add()}><Download size={16} /> {busy ? 'Installing' : 'Install as a new instance'}</button>
+          {#if inInstance}
+            <span class="have">Installed</span>
+          {:else}
+            <button class="btn primary" disabled={busy} onclick={() => add()}><Download size={16} /> {busy ? 'Installing' : 'Install as a new instance'}</button>
+          {/if}
         {:else if build}
           <p class="have">Installed build {build.version ?? ''}</p>
-        {:else if !app.library.length}
-          <p class="faint small">Create an instance to install this.</p>
+        {:else if !app.moddable.length}
+          <p class="faint small">Create a modded instance to install this.</p>
         {:else}
           <div class="target">
             <select class="field" aria-label="Instance" bind:value={instanceId}>
-              {#each app.library as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
+              {#each app.moddable as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
             </select>
             {#if isDataPack && worlds.length}
               <select class="field" aria-label="World" bind:value={world}>
@@ -342,24 +353,26 @@
             </section>
           {/if}
 
-          <section>
-            <h2>Details</h2>
-            <dl>
-              {#if page.categories.length}<dt>Categories</dt><dd>{page.categories.map(titleCase).join(', ')}</dd>{/if}
-              {#if page.license}
-                <dt>License</dt>
-                <dd>
-                  {#if page.license.url}
-                    <button class="plain-link" title={page.license.url} onclick={() => openExternal(page!.license!.url)}>{page.license.label}</button>
-                  {:else}
-                    {page.license.label}
-                  {/if}
-                </dd>
-              {/if}
-              {#if page.published}<dt>Published</dt><dd>{day(page.published)}</dd>{/if}
-              {#if page.updated}<dt>Updated</dt><dd>{day(page.updated)}</dd>{/if}
-            </dl>
-          </section>
+          {#if page.categories.length || page.license || page.published || page.updated}
+            <section>
+              <h2>Details</h2>
+              <dl>
+                {#if page.categories.length}<dt>Categories</dt><dd>{page.categories.map(titleCase).join(', ')}</dd>{/if}
+                {#if page.license}
+                  <dt>License</dt>
+                  <dd>
+                    {#if page.license.url}
+                      <button class="plain-link" title={page.license.url} onclick={() => openExternal(page!.license!.url)}>{page.license.label}</button>
+                    {:else}
+                      {page.license.label}
+                    {/if}
+                  </dd>
+                {/if}
+                {#if page.published}<dt>Published</dt><dd>{day(page.published)}</dd>{/if}
+                {#if page.updated}<dt>Updated</dt><dd>{day(page.updated)}</dd>{/if}
+              </dl>
+            </section>
+          {/if}
         </aside>
       {/if}
     </div>

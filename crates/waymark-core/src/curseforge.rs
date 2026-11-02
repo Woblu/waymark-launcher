@@ -253,7 +253,9 @@ pub fn split_game_versions(tags: &[String]) -> (Vec<String>, Vec<String>) {
 
 fn loader_type(loader: LoaderKind) -> Option<&'static str> {
     match loader {
-        LoaderKind::Forge => Some("1"),
+        // Cleanroom runs Forge's mods, and those are listed under Forge.
+        LoaderKind::Forge | LoaderKind::Cleanroom => Some("1"),
+        LoaderKind::LiteLoader => Some("3"),
         LoaderKind::Fabric => Some("4"),
         LoaderKind::Quilt => Some("5"),
         LoaderKind::NeoForge => Some("6"),

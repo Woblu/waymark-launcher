@@ -5,10 +5,12 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'legacyfabric' | 'babric' | 'ornithe';
-export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher';
+export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | 'legacyfabric' | 'babric' | 'ornithe' | 'liteloader' | 'rift' | 'cleanroom';
+export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher' | 'technic';
 export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack';
 export type Verdict = 'crashes' | 'works';
+export type StartCheck = { result: 'passed' | 'unclear' | 'skipped' } | { result: 'undone'; reason: string };
+export type GameVersion = { id: string; kind: string; era: string; released: string };
 
 export interface Loader { kind: LoaderKind; version?: string }
 
@@ -236,7 +238,7 @@ export interface PackExport { linked: number; bundled: string[] }
 export interface LogFile { path: string; size: number; modified: number }
 
 export interface ShareCode { code: string; leftOut: string[] }
-export interface HostStatus { ready: boolean; eulaAccepted: boolean; running: boolean; address?: string | null; port: number }
+export interface HostStatus { friends?: { address: string; internet: boolean } | null; ready: boolean; eulaAccepted: boolean; running: boolean; address?: string | null; port: number }
 
 export interface ManualFile { name: string; page: string; file: string; size: number; sha1?: string | null; project: number; fileId: number }
 
@@ -281,11 +283,12 @@ export interface Settings {
   customThemes: CustomTheme[];
   language: string;
   autoUpdate: boolean;
+  checkUpdates: boolean;
 }
 
 export interface UpdateStatus { current: string; ready: string | null }
 
-export interface Friend { id: string; username: string; online: boolean; lastSeen: string | null; playing: string | null }
+export interface Friend { id: string; username: string; hosting?: { title: string; address: string } | null; online: boolean; lastSeen: string | null; playing: string | null }
 export interface OtherPlayer { id: string; username: string }
 export interface SharedByFriend { id: string; name: string; from: string; at: string }
 export interface FriendOverview {
@@ -354,7 +357,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export const api = {
   library: () => call<LibraryEntry[]>('library'),
-  minecraftVersions: () => call<{ latest: string; versions: { id: string; kind: string }[] }>('minecraft_versions'),
+  minecraftVersions: () => call<{ latest: string; versions: GameVersion[] }>('minecraft_versions'),
   loaderVersions: (kind: LoaderKind, minecraft: string) =>
     call<{ version: string; stable: boolean }[]>('loader_versions', { kind, minecraft }),
   createInstance: (request: { name: string; minecraft: string; loader: LoaderKind }) => call<LibraryEntry>('create_instance', { request }),
@@ -372,6 +375,7 @@ export const api = {
   identifyContent: (id: string, kind: ContentKind) => call<LockedMod[] | null>('identify_content', { id, kind }),
   checkPackUpdate: (id: string) => call<PackUpdate | null>('check_pack_update', { id }),
   updatePack: (id: string) => call<PackUpdateReport>('update_pack', { id }),
+  checkStart: (id: string) => call<StartCheck>('check_start', { id }),
   setFolderShared: (id: string, folder: string, shared: boolean) => call<LibraryEntry>('set_folder_shared', { id, folder, shared }),
   copySettings: (from: string, to: string) => call<Waymark | null>('copy_settings', { from, to }),
   exportServer: (id: string, folder: string) => call<ServerExport>('export_server', { id, folder }),
@@ -471,6 +475,8 @@ export const api = {
   friendUnblock: (other: string) => call<void>('friend_unblock', { other }),
   friendShowStatus: (shown: boolean) => call<void>('friend_show_status', { shown }),
   friendSendInstance: (friend: string, instance: string) => call<string[]>('friend_send_instance', { friend, instance }),
+  friendJoin: (friend: string) => call<{ instance: LibraryEntry; failed: string[] }>('friend_join', { friend }),
+  openHostToFriends: (id: string, open: boolean) => call<HostStatus>('open_host_to_friends', { id, open }),
   friendInstallShare: (share: string) => call<{ instance: LibraryEntry; failed: string[] }>('friend_install_share', { share }),
   friendDropShare: (share: string) => call<void>('friend_drop_share', { share }),
   updateStatus: () => call<UpdateStatus>('update_status'),

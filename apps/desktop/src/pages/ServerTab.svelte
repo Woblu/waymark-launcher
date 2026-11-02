@@ -71,6 +71,17 @@
     await api.hostCommand(id, line).catch((error) => app.fail(error));
   }
 
+  async function shareWithFriends(open: boolean) {
+    busy = true;
+    try {
+      status = await api.openHostToFriends(id, open);
+      if (open && !status.friends?.internet) app.toast('info', 'Your router said no', `Friends on your network can still join. Others need port ${status.port} forwarded on your router.`);
+    } catch (error) {
+      app.fail(error, 'Could not open the server to friends');
+    }
+    busy = false;
+  }
+
   async function openServerFolder() {
     await openFolder(await api.hostFolder(id));
   }
@@ -109,9 +120,19 @@
     {/if}
 
     {#if status.ready}
-      <p class="faint small note">
-        People on your network can join at the address above. To let friends join over the internet, forward port {status.port} on your router, and only share that address with people you trust.
-      </p>
+      {#if status.running && app.friendAccount}
+        <div class="friends">
+          <label class="check"><input type="checkbox" checked={!!status.friends} disabled={busy} onchange={(event) => shareWithFriends(event.currentTarget.checked)} /> Let friends join</label>
+          <span class="faint small">Asks your router to open port {status.port} while this runs. Your friends see your internet address and get a Join button.</span>
+        </div>
+      {/if}
+      {#if status.friends}
+        <p class="faint small note">Friends join at <span class="selectable">{status.friends.address}</span>{status.friends.internet ? '.' : ', which only works on your network.'}</p>
+      {:else}
+        <p class="faint small note">
+          People on your network can join at the address above. To let friends join over the internet, forward port {status.port} on your router, and only share that address with people you trust.
+        </p>
+      {/if}
       <div class="console">
         {#if lines.length}
           <VirtualList items={lines} rowHeight={20} stickToEnd>
@@ -144,6 +165,7 @@
   .link { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
   .link:hover { color: var(--text); }
   .note { flex: none; padding: 0 var(--gutter) 10px; }
+  .friends { flex: none; display: flex; align-items: center; gap: 14px; padding: 0 var(--gutter) 10px; }
   .console { flex: 1; min-height: 0; margin: 0 var(--gutter); padding: 10px 4px 10px 14px; background: var(--console); clip-path: var(--stepped); }
   .line { overflow: hidden; color: var(--text-2); font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: pre; }
   .command { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px var(--gutter) var(--gutter); }

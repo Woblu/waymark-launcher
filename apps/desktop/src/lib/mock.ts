@@ -304,7 +304,7 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'external_instances':
       return [{ launcher: 'prism', name: 'Old Survival', gameDir: 'x', minecraft: '1.20.1', loader: { kind: 'fabric' } }];
     case 'settings':
-      return { memoryMb: 6144, releaseDelayHours: 48, showSnapshots: false, closeWhilePlaying: true, theme: 'system', customThemes: [], autoUpdate: true, language: 'system' };
+      return { memoryMb: 6144, releaseDelayHours: 48, showSnapshots: false, closeWhilePlaying: true, theme: 'system', customThemes: [], autoUpdate: true, checkUpdates: true, language: 'system' };
     default:
       return null;
   }

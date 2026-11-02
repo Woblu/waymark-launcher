@@ -29,6 +29,8 @@ pub enum ContentSource {
     /// ATLauncher, which only has modpacks too.
     #[serde(rename = "atlauncher")]
     AtLauncher,
+    /// The Technic Platform, which only has modpacks as well.
+    Technic,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,6 +216,7 @@ impl Core {
             ContentSource::CurseForge => curseforge::search(&self.net, query).await,
             ContentSource::Ftb => crate::ftb::search(&self.net, query).await,
             ContentSource::AtLauncher => self.atl_search(query).await,
+            ContentSource::Technic => crate::technic::search(&self.net, query).await,
         }
     }
 
@@ -225,16 +228,23 @@ impl Core {
         match source {
             ContentSource::Modrinth => modrinth::categories(&self.net, kind).await,
             ContentSource::CurseForge => curseforge::categories(&self.net, kind).await,
-            ContentSource::Ftb | ContentSource::AtLauncher => Ok(Vec::new()),
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
+                Ok(Vec::new())
+            }
         }
     }
 
-    /// Every project in an instance, as `source:id`.
+    /// Every project in an instance as `source:id`, and every file as `kind:name`.
+    /// Names catch the same mod from another store and ones placed by hand, which
+    /// have no id to match, so a second copy can't be installed over them.
     pub fn installed_projects(&self, id: &str) -> Result<Vec<String>> {
         Ok(self
             .lockfile(id)?
             .everything()
-            .filter_map(|(_, entry)| project_key(&entry.source))
+            .flat_map(|(kind, entry)| {
+                let name = format!("{kind:?}:{}", entry.name).to_lowercase();
+                project_key(&entry.source).into_iter().chain(Some(name))
+            })
             .collect())
     }
 
@@ -332,7 +342,7 @@ impl Core {
                 self.plan_curseforge(instance, &already, project, kind, version)
                     .await?
             }
-            ContentSource::Ftb | ContentSource::AtLauncher => {
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
                 return Err(Error::Other("this store only has modpacks".into()));
             }
         };
@@ -1187,6 +1197,21 @@ mod tests {
         lock.mods = mods;
         lock.save(&core.paths.instance(&instance.id)).unwrap();
         (dir, core, instance.id)
+    }
+
+    #[test]
+    fn installed_content_is_known_by_store_id_and_by_name() {
+        let mut from_a_store = locked("Sodium", Origin::Manual);
+        from_a_store.source = Source::Modrinth {
+            project: "AANobbMI".into(),
+            version: "1".into(),
+        };
+        let (_dir, core, id) = core_with(vec![from_a_store, locked("By Hand", Origin::Manual)]);
+        let known = core.installed_projects(&id).unwrap();
+        for key in ["modrinth:AANobbMI", "mod:sodium", "mod:by hand"] {
+            assert!(known.iter().any(|found| found == key), "{key} in {known:?}");
+        }
+        assert!(!known.iter().any(|found| found == "resourcepack:sodium"));
     }
 
     #[test]

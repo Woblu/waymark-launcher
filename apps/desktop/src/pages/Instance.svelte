@@ -3,7 +3,7 @@
   import Art from '../components/Art.svelte';
   import ManualFiles from '../components/ManualFiles.svelte';
   import { api, instanceIcon, openFolder } from '../lib/api';
-  import type { BisectView, ManualFile, PackUpdate, Verdict } from '../lib/api';
+  import type { BisectView, ContentKind, ManualFile, PackUpdate, Verdict } from '../lib/api';
   import { loaderName, playtime, timeAgo } from '../lib/format';
   import { instanceMenu } from '../lib/instance-menu';
   import { app } from '../lib/state.svelte';
@@ -29,7 +29,17 @@
     { id: 'settings', label: 'Settings' },
   ];
 
+  /** These only make sense with a loader, unless an older instance already has some. */
+  const CONTENT_TABS: { id: InstanceTab; kind: ContentKind }[] = [
+    { id: 'mods', kind: 'mod' },
+    { id: 'resourcepacks', kind: 'resourcepack' },
+    { id: 'shaders', kind: 'shader' },
+  ];
+
   const entry = $derived(app.entry(id));
+  const vanilla = $derived(entry?.loader.kind === 'vanilla');
+  let filled = $state<InstanceTab[]>([]);
+  const tabs = $derived(TABS.filter((item) => !vanilla || !CONTENT_TABS.some((tab) => tab.id === item.id) || filled.includes(item.id)));
   const picture = $derived(entry ? instanceIcon(entry, app.iconTick) : undefined);
 
   let search = $state<BisectView | null>(null);
@@ -53,6 +63,20 @@
     api.manualFiles(id).then((files) => (manual = files)).catch(() => {});
   });
 
+  $effect(() => {
+    app.contentTick;
+    if (!vanilla) return;
+    let current = true;
+    Promise.all(CONTENT_TABS.map((tab) => api.content(id, tab.kind).catch(() => []))).then((found) => {
+      if (current) filled = CONTENT_TABS.filter((_, index) => found[index].length).map((tab) => tab.id);
+    });
+    return () => (current = false);
+  });
+
+  $effect(() => {
+    if (entry && !tabs.some((item) => item.id === app.tab)) app.tab = 'worlds';
+  });
+
   function openMore(event: MouseEvent) {
     if (!entry) return;
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -72,6 +96,7 @@
       ];
       app.toast('good', `Updated to ${report.version}`, notes.filter(Boolean).join(' '));
       app.contentTick++;
+      app.checkUpdate(id);
       await app.refresh();
     } catch (error) {
       app.fail(error, 'Could not update the pack');
@@ -119,7 +144,7 @@
             <span>{entry.lastPlayed ? `Last played ${timeAgo(entry.lastPlayed)}` : 'Not played yet'}</span>
           </p>
         </div>
-        <button class="btn" onclick={() => app.go('discover', id)}><Plus size={16} /> Install content</button>
+        {#if !vanilla}<button class="btn" onclick={() => app.go('discover', id)}><Plus size={16} /> Install content</button>{/if}
         <button class="btn icon" aria-label="Open folder" title="Open folder" onclick={openGameFolder}><FolderOpen size={17} /></button>
         <button class="btn icon" aria-label="More actions" title="More actions" onclick={openMore}><Ellipsis size={17} /></button>
       </div>
@@ -160,7 +185,7 @@
 
     <div class="sections">
       <nav class="tabs" aria-label="Instance sections">
-        {#each TABS as item (item.id)}
+        {#each tabs as item (item.id)}
           <button class:active={app.tab === item.id} onclick={() => (app.tab = item.id)}>{item.label}</button>
         {/each}
       </nav>

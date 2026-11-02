@@ -8,7 +8,7 @@ use std::net::{IpAddr, UdpSocket};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -18,6 +18,7 @@ use tokio::sync::{Notify, mpsc};
 use crate::Core;
 use crate::error::{Error, Result};
 use crate::event::{Event, Task};
+use crate::port_map;
 
 const EULA_FILE: &str = "eula.txt";
 const EULA_ACCEPTED: &str = "eula=true\n";
@@ -33,6 +34,19 @@ pub(crate) struct Host {
     stop: Arc<Notify>,
 }
 
+/// A running server the player has opened to their friends.
+#[derive(Clone)]
+pub(crate) struct OpenHost {
+    pub id: String,
+    pub title: String,
+    pub address: String,
+    pub code: String,
+    /// Whether the router agreed to pass the port through.
+    pub internet: bool,
+    pub port: u16,
+    pub renewed: Instant,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostStatus {
@@ -43,6 +57,16 @@ pub struct HostStatus {
     /// The address for people on the same network.
     pub address: Option<String>,
     pub port: u16,
+    /// What friends were given, once the player opens this server to them.
+    pub friends: Option<FriendAccess>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendAccess {
+    pub address: String,
+    /// False means only friends on the same network can reach it.
+    pub internet: bool,
 }
 
 /// The computer's address on its own network. This sends nothing: connecting
@@ -96,13 +120,79 @@ impl Core {
         let eula = fs::read_to_string(folder.join(EULA_FILE)).unwrap_or_default();
         let properties = fs::read_to_string(folder.join(PROPERTIES_FILE)).unwrap_or_default();
         let port = port_in(&properties).unwrap_or(DEFAULT_PORT);
+        let friends = self
+            .open_host
+            .lock()
+            .expect("open host poisoned")
+            .as_ref()
+            .filter(|open| open.id == id)
+            .map(|open| FriendAccess {
+                address: open.address.clone(),
+                internet: open.internet,
+            });
         Ok(HostStatus {
             ready: folder.join("start.bat").is_file(),
             eula_accepted: has_accepted(&eula),
             running: self.host_running(id),
             address: local_address().map(|ip| format!("{ip}:{port}")),
             port,
+            friends,
         })
+    }
+
+    /// Lets friends see a running server and join it, or takes that back. Opening
+    /// it asks the router to pass its port through and gives friends this computer's
+    /// internet address, so it only ever happens when the player asks.
+    pub async fn open_host_to_friends(&self, id: &str, open: bool) -> Result<HostStatus> {
+        if !open {
+            self.close_host_to_friends().await;
+            return self.host_status(id);
+        }
+        let status = self.host_status(id)?;
+        if !status.running {
+            return Err(Error::Other("start the server first".into()));
+        }
+        self.close_host_to_friends().await;
+        let local = local_address()
+            .ok_or_else(|| Error::Other("this computer isn't on a network".into()))?;
+        let outside = port_map::open(local, status.port).await;
+        let shared = OpenHost {
+            id: id.to_string(),
+            title: self.instance(id)?.name,
+            internet: outside.is_some(),
+            address: outside.unwrap_or_else(|| format!("{local}:{}", status.port)),
+            code: self.share_code(id)?.code,
+            port: status.port,
+            renewed: Instant::now(),
+        };
+        *self.open_host.lock().expect("open host poisoned") = Some(shared);
+        self.host_status(id)
+    }
+
+    pub(crate) async fn close_host_to_friends(&self) {
+        let open = self.open_host.lock().expect("open host poisoned").take();
+        if let Some(open) = open.filter(|open| open.internet) {
+            port_map::close(open.port).await;
+        }
+    }
+
+    /// Keeps the router's promise alive for as long as the server runs.
+    pub(crate) async fn renew_open_host(&self) {
+        let due = self
+            .open_host
+            .lock()
+            .expect("open host poisoned")
+            .as_ref()
+            .filter(|open| open.internet && open.renewed.elapsed() >= port_map::RENEW_EVERY)
+            .map(|open| open.port);
+        let (Some(port), Some(local)) = (due, local_address()) else {
+            return;
+        };
+        if port_map::open(local, port).await.is_some()
+            && let Some(open) = self.open_host.lock().expect("open host poisoned").as_mut()
+        {
+            open.renewed = Instant::now();
+        }
     }
 
     /// Builds the server folder, or brings its mods up to date. Worlds and
@@ -260,6 +350,7 @@ impl Core {
             };
             finished.await;
             core.hosts.lock().expect("host list poisoned").remove(&id);
+            core.close_host_to_friends().await;
             (core.events)(Event::ServerStopped { instance: id });
         });
         Ok(())

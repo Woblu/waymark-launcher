@@ -42,7 +42,12 @@
   let kind = $state<ContentKind>(untrack(() => app.discoverKind ?? (target ? 'mod' : 'modpack')));
   let text = $state('');
   let sort = $state<Sort>('relevance');
-  let instanceId = $state(untrack(() => target ?? app.target?.id ?? ''));
+  let instanceId = $state(
+    untrack(() => {
+      const wanted = target ?? app.target?.id;
+      return app.moddable.some((entry) => entry.id === wanted) ? wanted! : (app.moddable[0]?.id ?? '');
+    }),
+  );
   let matchInstance = $state(true);
   let minecraft = $state('');
   let loader = $state<LoaderKind | ''>('');
@@ -61,6 +66,7 @@
   /** Mods and packs are filtered to the instance they'd go into, unless the player says otherwise. */
   const locked = $derived(kind !== 'modpack' && !!instance && matchInstance);
   const usesLoader = $derived(kind === 'mod' || kind === 'modpack');
+  const packsOnly = $derived(source === 'ftb' || source === 'atlauncher' || source === 'technic');
   const groups = $derived.by(() => {
     const found = new Map<string, SearchCategory[]>();
     for (const category of categories) found.set(category.group, [...(found.get(category.group) ?? []), category]);
@@ -117,7 +123,7 @@
   // Category ids belong to one store and one kind of content. Old results go
   // straight away too, so Install can't be pressed on a row from the last tab.
   $effect(() => {
-    if ((source === 'ftb' || source === 'atlauncher') && kind !== 'modpack') source = 'modrinth';
+    if (packsOnly && kind !== 'modpack') source = 'modrinth';
     const list = `${source}:${kind}`;
     chosen = [];
     hits = [];
@@ -171,10 +177,12 @@
     </nav>
     <div class="filters">
       <label class="search-box wide"><Search size={16} /><input class="field search" placeholder="Search" aria-label="Search" bind:value={text} /></label>
-      <label for="sort" class="muted">Sort</label>
-      <select id="sort" class="field sort" bind:value={sort}>
-        {#each SORTS as item (item.id)}<option value={item.id}>{item.label}</option>{/each}
-      </select>
+      {#if !packsOnly}
+        <label for="sort" class="muted">Sort</label>
+        <select id="sort" class="field sort" bind:value={sort}>
+          {#each SORTS as item (item.id)}<option value={item.id}>{item.label}</option>{/each}
+        </select>
+      {/if}
       <label for="source" class="muted">Source</label>
       <select id="source" class="field source" bind:value={source}>
         <option value="modrinth">Modrinth</option>
@@ -182,19 +190,20 @@
         {#if kind === 'modpack'}
           <option value="ftb">Feed The Beast</option>
           <option value="atlauncher">ATLauncher</option>
+          <option value="technic">Technic</option>
         {/if}
       </select>
-      {#if kind !== 'modpack' && app.library.length}
+      {#if kind !== 'modpack' && app.moddable.length}
         <label for="target" class="muted">Install to</label>
         <select id="target" class="field target" bind:value={instanceId}>
-          {#each app.library as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
+          {#each app.moddable as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
         </select>
       {/if}
     </div>
   </div>
 
-  <div class="body">
-    <section class="side" aria-label="Filters">
+  <div class="body" class:plain={source === 'technic'}>
+    <section class="side" aria-label="Filters" hidden={source === 'technic'}>
       {#if kind !== 'modpack' && instance}
         <label class="check"><input type="checkbox" bind:checked={matchInstance} /> Only for {instance.minecraft} {loaderName(instance.loader.kind)}</label>
       {/if}
@@ -286,6 +295,7 @@
   .filters > label:not(.search-box) { margin-left: 6px; }
 
   .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 20px; padding-left: var(--gutter); }
+  .body.plain { grid-template-columns: minmax(0, 1fr); }
   .side { min-height: 0; overflow-y: auto; padding: 0 6px var(--gutter) 0; }
   .heading { display: block; margin-bottom: 6px; color: var(--text); font-weight: 600; }
   .choice { margin-bottom: 14px; }

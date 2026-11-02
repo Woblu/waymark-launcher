@@ -135,7 +135,7 @@
       <h2>Worlds</h2>
       {#if worlds.length > 6}<label class="search-box"><Search size={16} /><input class="field" placeholder="Search {worlds.length} worlds" aria-label="Search worlds" bind:value={query} /></label>{/if}
       <span class="spacer"></span>
-      <button class="btn" onclick={() => app.go('discover', id, 'datapack')}><Compass size={16} /> Browse data packs</button>
+      {#if app.entry(id)?.loader.kind !== 'vanilla'}<button class="btn" onclick={() => app.go('discover', id, 'datapack')}><Compass size={16} /> Browse data packs</button>{/if}
     </div>
 
     {#if loaded && !worlds.length}

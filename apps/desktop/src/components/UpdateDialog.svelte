@@ -3,6 +3,7 @@
   import { ChevronDown, ChevronRight } from '@lucide/svelte';
   import { api } from '../lib/api';
   import type { LibraryEntry, ModUpdate, VersionRow } from '../lib/api';
+  import { acceptedLoaders } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
   import RichText from './RichText.svelte';
@@ -18,7 +19,7 @@
 
   const fits = (row: VersionRow) => {
     if (!row.gameVersions.includes(entry.minecraft)) return false;
-    const accepted = entry.loader.kind === 'quilt' ? ['quilt', 'fabric'] : [entry.loader.kind];
+    const accepted = acceptedLoaders(entry.loader.kind);
     return row.loaders.length === 0 || row.loaders.some((name) => accepted.includes(name)) || !row.loaders.some((name) => ['fabric', 'forge', 'neoforge', 'quilt'].includes(name));
   };
 
@@ -57,6 +58,7 @@
       const mark = await api.applyUpdates(entry.id, picks);
       if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
       app.contentTick++;
+      if (mark) app.checkUpdate(entry.id);
       onclose();
     } catch (error) {
       app.fail(error, 'Could not update those');

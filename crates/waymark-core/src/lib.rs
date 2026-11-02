@@ -14,6 +14,8 @@ pub mod export;
 pub mod external;
 pub mod ftb;
 pub mod gamelog;
+#[cfg(windows)]
+pub(crate) mod hidden_game;
 pub mod hosting;
 pub mod identify;
 pub mod install;
@@ -28,10 +30,12 @@ pub mod modinfo;
 pub mod modrinth;
 pub mod mojang;
 pub mod net;
+pub mod old_versions;
 pub mod organize;
 pub mod pack_export;
 pub mod packs;
 pub mod paths;
+pub mod port_map;
 pub mod projects;
 pub mod screenshots;
 pub mod share;
@@ -39,7 +43,9 @@ pub mod shared;
 pub mod shortcut;
 pub mod skins;
 pub mod social;
+pub mod start_check;
 pub mod store;
+pub mod technic;
 pub mod trash;
 pub mod waymarks;
 pub mod worlds;
@@ -85,6 +91,8 @@ pub struct Settings {
     pub language: String,
     /// Checks for new versions of Waymark and installs them when it closes.
     pub auto_update: bool,
+    /// Starts a game out of sight after an update, and undoes the update if it won't load.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -98,6 +106,7 @@ impl Default for Settings {
             custom_themes: Vec::new(),
             language: "system".to_string(),
             auto_update: true,
+            check_updates: true,
         }
     }
 }
@@ -110,7 +119,12 @@ pub struct Core {
     pub store: Store,
     pub events: Emitter,
     pub(crate) games: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    /// Updates being checked out of sight, with what ends each check early.
+    pub(crate) checks: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     pub(crate) hosts: Arc<Mutex<HashMap<String, hosting::Host>>>,
+    /// The hosted server friends can see, and what they were last told about it.
+    pub(crate) open_host: Arc<Mutex<Option<hosting::OpenHost>>>,
+    pub(crate) told_friends: Arc<Mutex<Option<String>>>,
     pub(crate) login: Arc<tokio::sync::Mutex<Option<social::Login>>>,
 }
 
@@ -124,6 +138,9 @@ impl Core {
             net: Net::new()?,
             events,
             games: Arc::default(),
+            checks: Arc::default(),
+            open_host: Arc::default(),
+            told_friends: Arc::default(),
             hosts: Arc::default(),
             login: Arc::default(),
         })

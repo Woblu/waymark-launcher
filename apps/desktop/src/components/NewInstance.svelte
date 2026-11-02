@@ -1,12 +1,24 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, inTauri, pickPackFile } from '../lib/api';
-  import type { ExternalInstance, LoaderKind } from '../lib/api';
-  import { loaderName } from '../lib/format';
+  import type { ExternalInstance, GameVersion, LoaderKind } from '../lib/api';
+  import { day, loaderName } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
 
   const LOADERS: LoaderKind[] = ['vanilla', 'fabric', 'neoforge', 'forge', 'quilt'];
+  const OLD_LOADERS: LoaderKind[] = ['vanilla', 'forge', 'legacyfabric', 'ornithe', 'liteloader', 'rift', 'cleanroom'];
+  const ERAS = [
+    { id: 'release', label: 'Releases' },
+    { id: 'snapshot', label: 'Snapshots' },
+    { id: 'beta', label: 'Beta' },
+    { id: 'alpha', label: 'Alpha' },
+    { id: 'infdev', label: 'Infdev' },
+    { id: 'indev', label: 'Indev' },
+    { id: 'classic', label: 'Classic' },
+    { id: 'preclassic', label: 'Pre-Classic' },
+    { id: 'aprilfools', label: 'April Fools' },
+  ];
   const LAUNCHERS = { prism: 'Prism Launcher', multimc: 'MultiMC', curseforge: 'CurseForge', modrinth: 'Modrinth App', atlauncher: 'ATLauncher', gdlauncher: 'GDLauncher' };
   /** Fabric only reaches back to 1.14, and these projects carry it further. */
   const OLD_MINOR = 14;
@@ -15,23 +27,44 @@
   let name = $state('');
   let minecraft = $state('');
   let loader = $state<LoaderKind>('fabric');
-  let snapshots = $state(false);
-  let old = $state(false);
-  let versions = $state<{ id: string; kind: string }[]>([]);
+  let era = $state('release');
+  let versions = $state<GameVersion[]>([]);
   let external = $state<ExternalInstance[]>([]);
   let code = $state('');
+  let missing = $state<LoaderKind[]>([]);
 
-  const shown = $derived(versions.filter((v) => v.kind === 'release' || (snapshots && v.kind === 'snapshot') || (old && v.kind.startsWith('old'))));
-  const loaders = $derived.by((): LoaderKind[] => {
+  const shown = $derived(versions.filter((v) => v.era === era));
+  const picked = $derived(versions.find((v) => v.id === minecraft));
+  const candidates = $derived.by((): LoaderKind[] => {
     if (minecraft === 'b1.7.3') return ['vanilla', 'babric', 'ornithe'];
+    if (picked && picked.era !== 'release' && picked.era !== 'snapshot') return ['vanilla'];
     const minor = /^1\.(\d+)/.exec(minecraft)?.[1];
-    if (minor && Number(minor) < OLD_MINOR) return ['vanilla', 'forge', 'legacyfabric', 'ornithe'];
-    return LOADERS;
+    return minor && Number(minor) < OLD_MINOR ? OLD_LOADERS : LOADERS;
   });
+  const loaders = $derived(candidates.filter((kind) => !missing.includes(kind)));
 
   $effect(() => {
     if (!loaders.includes(loader)) loader = 'vanilla';
   });
+
+  // Each loader says for itself whether it has a build for this version. A failed
+  // check keeps the loader listed, and creating the instance then says what's wrong.
+  $effect(() => {
+    const version = minecraft;
+    const asking = candidates.filter((kind) => kind !== 'vanilla');
+    let current = true;
+    missing = [];
+    if (!version) return;
+    Promise.all(asking.map((kind) => api.loaderVersions(kind, version).then((list) => list.length === 0, () => false))).then((empty) => {
+      if (current) missing = asking.filter((_, index) => empty[index]);
+    });
+    return () => (current = false);
+  });
+
+  function chooseEra(chosen: string) {
+    era = chosen;
+    minecraft = shown[0]?.id ?? '';
+  }
 
   function close() {
     app.dialog = 'none';
@@ -110,15 +143,18 @@
         <input id="name" class="field" bind:value={name} autofocus />
       </div>
       <div class="form-row">
+        <label for="era">Era</label>
+        <select id="era" class="field" value={era} onchange={(event) => chooseEra(event.currentTarget.value)}>
+          {#each ERAS as item (item.id)}<option value={item.id}>{item.label}</option>{/each}
+        </select>
+      </div>
+      <div class="form-row">
         <label for="version">Minecraft version</label>
         <div>
           <select id="version" class="field" bind:value={minecraft}>
             {#each shown as version (version.id)}<option value={version.id}>{version.id}</option>{/each}
           </select>
-          <div class="choices">
-            <label class="check"><input type="checkbox" bind:checked={snapshots} /> Show snapshots</label>
-            <label class="check"><input type="checkbox" bind:checked={old} /> Show alpha and beta</label>
-          </div>
+          {#if picked}<p class="faint small released">Released {day(picked.released)}</p>{/if}
         </div>
       </div>
       <div class="form-row">
@@ -127,6 +163,9 @@
           {#each loaders as kind (kind)}<option value={kind}>{loaderName(kind)}</option>{/each}
         </select>
       </div>
+      {#if loader === 'cleanroom'}
+        <p class="muted note">Cleanroom warns on its first launch that two patch mods, Fugue and Scalar, are missing. Both can be installed from Discover.</p>
+      {/if}
       <div class="actions">
         <button type="button" class="btn" onclick={close}>Cancel</button>
         <button class="btn primary" disabled={!name.trim() || !minecraft}>Create</button>
@@ -161,12 +200,12 @@
 
 <style>
   .picker { margin: -6px 0 6px; }
-  .choices { display: flex; flex-wrap: wrap; gap: 0 16px; }
-  .check { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--text-2); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
   .actions.start { justify-content: flex-start; border-top: 0; padding-top: 4px; }
   .paste { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
   .intro { margin: 8px 0 10px; }
+  .note { margin: -4px 0 14px; }
+  .released { margin-top: 6px; }
   ul { margin-bottom: 10px; border-top: 1px solid var(--line); }
   li {
     display: flex;

@@ -227,11 +227,12 @@ impl Version {
     }
 }
 
-/// Quilt runs Fabric mods, so its filter includes both.
+/// Quilt runs Fabric mods, so its filter includes both. Cleanroom runs Forge's.
 fn loader_filter(loader: LoaderKind) -> Vec<&'static str> {
     match loader {
         LoaderKind::Vanilla => Vec::new(),
         LoaderKind::Quilt => vec!["quilt", "fabric"],
+        LoaderKind::Cleanroom => vec!["forge"],
         other => vec![other.slug()],
     }
 }

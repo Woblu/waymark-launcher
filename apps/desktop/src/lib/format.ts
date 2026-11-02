@@ -45,8 +45,18 @@ export function loaderName(kind: string): string {
     'legacy-fabric': 'Legacy Fabric',
     babric: 'Babric',
     ornithe: 'Ornithe',
+    liteloader: 'LiteLoader',
+    rift: 'Rift',
+    cleanroom: 'Cleanroom',
   };
   return names[kind] ?? titleCase(kind);
+}
+
+/** The loaders whose mods run on this one. */
+export function acceptedLoaders(kind: string): string[] {
+  if (kind === 'quilt') return ['quilt', 'fabric'];
+  if (kind === 'cleanroom') return ['cleanroom', 'forge'];
+  return [kind];
 }
 
 export function day(date: string): string {

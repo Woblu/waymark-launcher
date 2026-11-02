@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::Core;
 use crate::brand::{FRIENDS_KEY, FRIENDS_URL, KEYCHAIN_SERVICE};
@@ -20,6 +21,8 @@ use crate::share::SharedResult;
 const TOKEN_MARGIN: Duration = Duration::from_secs(60);
 const ACCOUNT_DOMAIN: &str = "users.waymark.invalid";
 const UNAVAILABLE: &str = "Friends aren't available right now";
+/// Holds the hash of the share code an instance was made from to join a friend.
+const JOINED_MARKER: &str = ".waymarks/joined-from";
 
 /// Who's signed in. The access token only lives in memory.
 #[derive(Clone)]
@@ -63,6 +66,16 @@ pub struct Friend {
     pub online: bool,
     pub last_seen: Option<String>,
     pub playing: Option<String>,
+    /// A server they've opened to their friends.
+    #[serde(default)]
+    pub hosting: Option<FriendHost>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendHost {
+    pub title: String,
+    pub address: String,
 }
 
 /// A friend request, or someone blocked.
@@ -348,7 +361,57 @@ impl Core {
             .map(|instance| instance.name);
         self.call_value("heartbeat", json!({ "now_playing": playing }))
             .await
-            .map(drop)
+            .map(drop)?;
+        self.renew_open_host().await;
+        self.tell_friends_about_host().await;
+        Ok(())
+    }
+
+    /// Only speaks up when something changed. A server without this function yet
+    /// just means friends can't see the host, so that isn't worth stopping for.
+    async fn tell_friends_about_host(&self) {
+        let open = self.open_host.lock().expect("open host poisoned").clone();
+        let state = open
+            .as_ref()
+            .map(|open| format!("{}|{}", open.address, open.title));
+        if *self.told_friends.lock().expect("told friends poisoned") == state {
+            return;
+        }
+        let body = match &open {
+            Some(open) => {
+                json!({ "title": open.title, "address": open.address, "code": open.code })
+            }
+            None => json!({ "title": null, "address": null, "code": null }),
+        };
+        if self.call_value("set_hosting", body).await.is_ok() {
+            *self.told_friends.lock().expect("told friends poisoned") = state;
+        }
+    }
+
+    /// Gets ready to join a friend's server: their instance if it's new here, or the
+    /// copy from last time. The address comes back so the caller can start the game.
+    pub async fn friend_join(&self, friend: &str) -> Result<SharedResult> {
+        let code: Option<String> = self
+            .call("hosting_code", json!({ "friend": friend }))
+            .await?;
+        let code = code.ok_or_else(|| Error::NotFound("that server".into()))?;
+        let key = hex::encode(Sha256::digest(code.as_bytes()));
+        for entry in self.library()? {
+            let marker = self.paths.instance(&entry.instance.id).join(JOINED_MARKER);
+            if std::fs::read_to_string(marker).is_ok_and(|found| found == key) {
+                return Ok(SharedResult {
+                    instance: entry.instance,
+                    failed: Vec::new(),
+                });
+            }
+        }
+        let result = self.install_share(&code).await?;
+        let marker = self.paths.instance(&result.instance.id).join(JOINED_MARKER);
+        if let Some(folder) = marker.parent() {
+            std::fs::create_dir_all(folder)?;
+        }
+        std::fs::write(marker, key)?;
+        Ok(result)
     }
 
     /// Sends an instance to a friend, and says what couldn't travel with it.

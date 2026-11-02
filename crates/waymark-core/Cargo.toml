@@ -17,6 +17,7 @@ futures-util = "0.3"
 hex = "0.4"
 hickory-resolver = "0.25"
 keyring = "4.2"
+md-5 = "0.11"
 reqwest = { version = "0.13", features = ["form", "json", "multipart", "query", "stream"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
@@ -32,9 +33,20 @@ uuid = { version = "1", features = ["serde", "v4"] }
 walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
+igd-next = { version = "0.16", default-features = false, features = ["aio_tokio"] }
+
 [target.'cfg(windows)'.dependencies]
 junction = "2.1"
 mslnk = "0.1"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3"

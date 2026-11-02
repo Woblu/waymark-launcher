@@ -70,6 +70,7 @@
       const mark = await api.applyUpdates(id, ready.map((u) => ({ hash: u.hash })));
       if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
       app.contentTick++;
+      if (mark) app.checkUpdate(id);
     } catch (error) {
       app.fail(error, `Could not update those ${names.many}`);
     }

@@ -26,6 +26,9 @@ use crate::waymarks::WaymarkKind;
 use crate::worlds::{Join, join_arguments};
 
 const CLASSPATH_SEPARATOR: &str = if cfg!(windows) { ";" } else { ":" };
+/// Minecraft's own default window, for versions that have to be told a size.
+const DEFAULT_WIDTH: u32 = 854;
+const DEFAULT_HEIGHT: u32 = 480;
 
 /// The same collector settings Mojang's launcher defaults to.
 const GC_ARGS: [&str; 6] = [
@@ -155,6 +158,14 @@ fn shell(script: &str) -> Command {
     command
 }
 
+/// The command that starts a game.
+pub(crate) struct Launch {
+    pub java: std::path::PathBuf,
+    pub args: Vec<String>,
+    /// Where `APPDATA` has to point, for versions that would otherwise use the real one.
+    pub appdata: Option<std::path::PathBuf>,
+}
+
 /// Builds the full argument list after the Java binary.
 pub fn build_arguments(
     paths: &Paths,
@@ -206,6 +217,20 @@ pub fn build_arguments(
         ),
         ("classpath_separator", CLASSPATH_SEPARATOR.to_string()),
         ("classpath", classpath.clone()),
+        ("profile_name", instance.name.clone()),
+        ("instance_icon", String::new()),
+        (
+            "resolution_width",
+            instance.options.width.unwrap_or(DEFAULT_WIDTH).to_string(),
+        ),
+        (
+            "resolution_height",
+            instance
+                .options
+                .height
+                .unwrap_or(DEFAULT_HEIGHT)
+                .to_string(),
+        ),
     ]);
 
     let mut args = vec![
@@ -293,6 +318,7 @@ impl Core {
 
     /// Starts the game, and goes straight to a world or server if given one.
     pub async fn launch_with(&self, id: &str, session: Session, join: Option<Join>) -> Result<()> {
+        self.cancel_check(id).await;
         if self.game_running(id) {
             return Err(Error::Other("this instance is already running".into()));
         }
@@ -313,6 +339,48 @@ impl Core {
         }
     }
 
+    /// Gets everything a launch needs onto disk and works out its command.
+    pub(crate) async fn prepare_launch(
+        &self,
+        instance: &Instance,
+        session: &Session,
+        join: Option<&Join>,
+        task: &Task,
+    ) -> Result<Launch> {
+        let extra = join.map_or(Ok(Vec::new()), |join| {
+            join_arguments(join, &instance.minecraft)
+        })?;
+        let prepared = self.prepare_version(&instance.version_id, task).await?;
+        self.add_java_fix(instance).await?;
+        self.add_fml_libraries(instance, task).await?;
+        self.skip_sound_restart(instance)?;
+        self.link_resources(instance, &prepared).await?;
+
+        let memory = instance.memory_mb.unwrap_or(self.settings()?.memory_mb);
+        let mut args = build_arguments(&self.paths, instance, &prepared, session, memory)?;
+        args.extend(window_arguments(&instance.options));
+        args.extend(extra);
+        // Before 1.6 the game opens a log in the player's real `.minecraft` before
+        // anything can move it. That folder is found from these, so they're pointed
+        // at the instance. Windows reads the variable, and other systems the property.
+        let appdata = prepared
+            .resources
+            .is_some()
+            .then(|| self.paths.instance(&instance.id));
+        if let Some(folder) = &appdata {
+            args.insert(0, format!("-Duser.home={}", folder.display()));
+        }
+        let java: std::path::PathBuf = instance
+            .java_path
+            .clone()
+            .map_or(prepared.java.clone(), Into::into);
+        Ok(Launch {
+            java,
+            args,
+            appdata,
+        })
+    }
+
     async fn start_game(
         &self,
         instance: &Instance,
@@ -320,11 +388,11 @@ impl Core {
         join: Option<&Join>,
         task: &Task,
     ) -> Result<()> {
-        let extra = join.map_or(Ok(Vec::new()), |join| {
-            join_arguments(join, &instance.minecraft)
-        })?;
-        let prepared = self.prepare_version(&instance.version_id, task).await?;
-        self.add_java_fix(instance).await?;
+        let Launch {
+            java,
+            args,
+            appdata,
+        } = self.prepare_launch(instance, session, join, task).await?;
 
         task.progress(0, 1, "Setting a waymark");
         let trail = self.trail(&instance.id);
@@ -332,14 +400,6 @@ impl Core {
             .await
             .map_err(|e| Error::Other(e.to_string()))??;
 
-        let memory = instance.memory_mb.unwrap_or(self.settings()?.memory_mb);
-        let mut args = build_arguments(&self.paths, instance, &prepared, session, memory)?;
-        args.extend(window_arguments(&instance.options));
-        args.extend(extra);
-        let java: std::path::PathBuf = instance
-            .java_path
-            .clone()
-            .map_or(prepared.java.clone(), Into::into);
         let hooks = hook_environment(&self.paths, instance);
 
         if let Some(script) = instance
@@ -377,6 +437,9 @@ impl Core {
             }
             None => Command::new(&java),
         };
+        if let Some(folder) = &appdata {
+            command.env("APPDATA", folder);
+        }
         command
             .args(&args)
             .envs(instance.options.env.iter().map(|(key, value)| (key, value)))
@@ -513,6 +576,7 @@ mod tests {
             natives: "/data/natives/1.21.4".into(),
             log_config: None,
             game_assets: "/data/assets".into(),
+            resources: None,
         };
         (paths, instance, prepared)
     }

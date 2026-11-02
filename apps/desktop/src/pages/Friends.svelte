@@ -17,10 +17,26 @@
   let adding = $state('');
   let confirming = $state(false);
   let installing = $state<string | null>(null);
+  let joining = $state<string | null>(null);
 
   const overview = $derived(app.friends);
   const online = $derived(overview?.friends.filter((friend) => friend.online) ?? []);
   const away = $derived(overview?.friends.filter((friend) => !friend.online) ?? []);
+
+  /** Gets their setup if it's new here, then goes straight into their server. */
+  async function join(friend: Friend) {
+    if (!friend.hosting) return;
+    joining = friend.id;
+    try {
+      const result = await api.friendJoin(friend.id);
+      await app.refresh();
+      if (result.failed.length) app.toast('info', `${result.failed.length} could not be installed`, result.failed.slice(0, 4).join(', '));
+      await app.play(result.instance.id, { kind: 'server', address: friend.hosting.address });
+    } catch (error) {
+      app.fail(error, `Could not join ${friend.username}`);
+    }
+    joining = null;
+  }
 
   /** Runs a change on the server, then shows how things stand now. */
   async function change(work: () => Promise<unknown>, failure?: string) {
@@ -132,12 +148,14 @@
     <span class="text">
       <span class="name truncate">{friend.username}</span>
       <span class="sub truncate">
-        {#if friend.playing}<span class="on">Playing {friend.playing}</span>
+        {#if friend.hosting}<span class="on">Hosting {friend.hosting.title}</span>
+        {:else if friend.playing}<span class="on">Playing {friend.playing}</span>
         {:else if friend.online}<span class="on">Online</span>
         {:else if friend.lastSeen}Last seen {timeAgo(friend.lastSeen)}
         {:else}Offline{/if}
       </span>
     </span>
+    {#if friend.hosting}<button class="btn primary" disabled={joining !== null} onclick={() => join(friend)}>{joining === friend.id ? 'Getting ready' : 'Join'}</button>{/if}
     {#if app.library.length}<button class="btn" onclick={(event) => send(event, friend)}><Send size={15} /> Send instance</button>{/if}
     <button class="btn icon quiet" aria-label="More for {friend.username}" title="More" onclick={(event) => more(event, friend)}><Ellipsis size={17} /></button>
   </li>

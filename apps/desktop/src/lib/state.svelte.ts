@@ -111,6 +111,11 @@ class AppState {
     return this.current ?? this.library[0];
   }
 
+  /** Instances that can take content. Vanilla is kept as Minecraft comes. */
+  get moddable(): LibraryEntry[] {
+    return this.library.filter((entry) => entry.loader.kind !== 'vanilla');
+  }
+
   get canGoBack(): boolean {
     return this.pages.length > 0 || (this.view === 'library' && !!this.current) || (this.view === 'discover' && !!this.discoverTarget);
   }
@@ -139,7 +144,7 @@ class AppState {
 
   open(id: string, tab: InstanceTab = 'mods') {
     this.selected = id;
-    this.tab = tab;
+    this.tab = tab === 'mods' && this.entry(id)?.loader.kind === 'vanilla' ? 'worlds' : tab;
     this.view = 'library';
     this.pages = [];
   }
@@ -165,10 +170,11 @@ class AppState {
   }
 
   /** Whether an instance has a project, or for a modpack, whether any instance came from it. */
-  isInstalled(item: { source: ContentSource; id: string; kind: ContentKind }, instance: string): boolean {
+  isInstalled(item: { source: ContentSource; id: string; kind: ContentKind; title?: string }, instance: string): boolean {
     const key = `${item.source}:${item.id}`;
     if (item.kind === 'modpack') return this.library.some((entry) => entry.packProject === key);
-    return this.installed.get(instance)?.has(key) ?? false;
+    const have = this.installed.get(instance);
+    return !!have && (have.has(key) || have.has(`${item.kind}:${item.title}`.toLowerCase()));
   }
 
   /** Installs to an instance, or for a modpack creates one, and says if it worked. */
@@ -225,11 +231,13 @@ class AppState {
     const [images, jars, packs, zips] = [ending('.png'), ending('.jar'), ending('.mrpack'), ending('.zip')];
     if (images.length && this.view === 'skins') this.droppedSkins = images;
     const instance = this.current?.id;
+    const vanilla = this.current?.loader.kind === 'vanilla';
     if (jars.length && !instance) this.toast('bad', 'Open an instance first', 'Mods go into the instance on screen.');
+    if (jars.length && vanilla) this.toast('bad', "Vanilla instances don't use mods", 'Make an instance with a mod loader for these.');
     const zipKind = this.tab === 'shaders' ? 'shader' : this.tab === 'resourcepacks' ? 'resourcepack' : null;
     try {
-      if (instance && jars.length) await this.addFiles(instance, 'mod', jars);
-      if (instance && zipKind && zips.length && this.view === 'library') await this.addFiles(instance, zipKind, zips);
+      if (instance && jars.length && !vanilla) await this.addFiles(instance, 'mod', jars);
+      if (instance && zipKind && zips.length && this.view === 'library' && !vanilla) await this.addFiles(instance, zipKind, zips);
       for (const pack of [...packs, ...(zipKind ? [] : zips)]) {
         const result = await api.installPackFile(pack);
         await this.refresh();
@@ -331,6 +339,23 @@ class AppState {
         this.contentTick++;
         if (event.crash) this.crash = { instance: event.instance, report: event.crash };
         break;
+    }
+  }
+
+  /** Quietly starts the game after an update, and says so if the update had to be undone. */
+  async checkUpdate(id: string) {
+    const name = this.entry(id)?.name ?? 'That instance';
+    try {
+      const check = await api.checkStart(id);
+      if (check.result === 'passed') this.toast('good', `${name} still starts`, 'Waymark tried the update and it loads.');
+      else if (check.result === 'unclear') this.toast('info', `${name} took too long to check`, 'The update stayed. You can undo it from Waymarks.');
+      else if (check.result === 'undone') {
+        this.toast('bad', `That update stopped ${name} from starting`, `Waymark put it back the way it was. ${check.reason}`);
+        this.contentTick++;
+        await this.refresh();
+      }
+    } catch (error) {
+      this.fail(error, 'Could not check the update');
     }
   }
 

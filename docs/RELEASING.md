@@ -38,6 +38,8 @@ An update never installs while a game or a hosted server is running, because the
 2. Push a tag like `v0.2.0`. GitHub builds Windows, macOS (Apple silicon and Intel) and Linux, and creates a draft release.
 3. Test the draft, then publish it. Drafts are invisible to the app, and publishing is the moment every installed copy starts updating, so a bad release reaches people within hours.
 
+If BetaCraft has added builds or LegacyFix has a new release, run `node tools/old-versions.mjs <cache folder>` first, set the `LEGACYFIX` version at the top if it changed, and start the new builds before shipping. It rebuilds `crates/waymark-core/data/old-versions.json` and fetches one file at a time, so keep its cache folder between runs.
+
 After publishing, point `/download` in `apps/site/vercel.json` at the new installer and deploy the site. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
 
 ## Signing the installers

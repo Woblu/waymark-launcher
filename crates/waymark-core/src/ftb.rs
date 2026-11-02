@@ -213,19 +213,13 @@ pub fn newest(pack: &Pack) -> Option<&PackVersion> {
     latest(true).or_else(|| latest(false))
 }
 
-/// Forge has no usable installer before 1.6, so those packs can't be set up.
-fn installable(minecraft: &str) -> bool {
-    !matches!(minecraft.split('.').nth(1).and_then(|minor| minor.parse::<u32>().ok()), Some(minor) if minecraft.starts_with("1.") && minor < 6)
-}
-
 fn fits(pack: &Pack, query: &SearchQuery) -> bool {
     pack.versions.iter().any(|version| {
         game_of(&version.targets).is_some_and(|(minecraft, loader)| {
-            installable(&minecraft)
-                && query
-                    .minecraft
-                    .as_ref()
-                    .is_none_or(|wanted| *wanted == minecraft)
+            query
+                .minecraft
+                .as_ref()
+                .is_none_or(|wanted| *wanted == minecraft)
                 && query.loader.is_none_or(|wanted| wanted == loader.kind)
         })
     })
@@ -436,17 +430,6 @@ mod tests {
         let file: CurseForgeFile =
             serde_json::from_str(r#"{"project":"250363","file":3326041}"#).unwrap();
         assert_eq!((file.project, file.file), (250363, 3326041));
-    }
-
-    #[test]
-    fn packs_too_old_for_any_installer_are_hidden() {
-        assert!(!installable("1.4.7") && !installable("1.5.2"));
-        assert!(
-            installable("1.6.4")
-                && installable("1.7.10")
-                && installable("1.21.1")
-                && installable("26.1")
-        );
     }
 
     #[test]

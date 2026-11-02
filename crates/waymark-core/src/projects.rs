@@ -439,6 +439,11 @@ impl Core {
             ContentSource::AtLauncher => {
                 Ok(crate::atlauncher::page(&self.atl_pack(project).await?))
             }
+            ContentSource::Technic => {
+                let pack = crate::technic::pack(&self.net, project).await?;
+                let minecraft = crate::technic::real_minecraft(&self.net, &pack).await;
+                Ok(crate::technic::page(&pack, minecraft))
+            }
             ContentSource::Modrinth => {
                 let (details, members) = tokio::join!(
                     modrinth::details(&self.net, project),
@@ -500,6 +505,25 @@ impl Core {
                     versions,
                 })
             }
+            ContentSource::Technic => {
+                let pack = crate::technic::pack(&self.net, project).await?;
+                // Only one build's Minecraft is known, so the rest can't be ruled out.
+                let versions: Vec<VersionRow> = crate::technic::rows(&self.net, &pack)
+                    .await?
+                    .into_iter()
+                    .filter(|row| {
+                        row.game_versions.is_empty()
+                            || filter
+                                .minecraft
+                                .as_ref()
+                                .is_none_or(|wanted| row.game_versions.contains(wanted))
+                    })
+                    .collect();
+                Ok(VersionList {
+                    total: versions.len() as u64,
+                    versions,
+                })
+            }
             ContentSource::Modrinth => {
                 let versions = modrinth::version_listing(
                     &self.net,
@@ -542,7 +566,9 @@ impl Core {
         version: &str,
     ) -> Result<String> {
         match source {
-            ContentSource::Ftb | ContentSource::AtLauncher => Ok(String::new()),
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => {
+                Ok(String::new())
+            }
             ContentSource::Modrinth => modrinth::changelog(&self.net, version).await,
             ContentSource::CurseForge => {
                 let file = version
@@ -564,7 +590,7 @@ impl Core {
         let instance = self.instance(id)?;
         let (minecraft, loader): (&str, LoaderKind) = (&instance.minecraft, instance.loader.kind);
         match source {
-            ContentSource::Ftb | ContentSource::AtLauncher => Ok(None),
+            ContentSource::Ftb | ContentSource::AtLauncher | ContentSource::Technic => Ok(None),
             ContentSource::Modrinth => {
                 let versions =
                     modrinth::versions(&self.net, project, minecraft, loader, kind).await?;

@@ -64,7 +64,7 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 ## Rules this project keeps
 
 - **No gameplay without verified ownership.** A launch needs a `Session`. Release builds only get one through a signed-in account whose ownership was confirmed. `Session::development` exists in debug builds only. Mojang won't approve an app that bypasses this.
-- **Game files are never redistributed.** Sync and sharing move the lockfile, and the game comes from Mojang's servers. Default skins load from Mojang's texture server, so none are bundled. Server exports stay on the player's machine.
+- **Game files are never redistributed.** Sync and sharing move the lockfile, and the game comes from Mojang's servers. Builds Mojang doesn't list come from Omniarchive and BetaCraft, pinned by hash in `crates/waymark-core/data/old-versions.json`, and need the same signed-in account as any other launch. Default skins load from Mojang's texture server, so none are bundled. Server exports stay on the player's machine.
 - **The EULA is the player's to accept.** A hosted server won't start until they tick the box themselves. Nothing in the app or its tests may tick it for them.
 - **Respect CurseForge authors.** When a file has no download URL, the author has opted out of third-party apps, so the player is sent to CurseForge.
 - **Pack files and share codes are untrusted.** Paths are checked with `safe_relative`, download hosts against an allow list, and share codes only carry store ids. Launch commands come from the player's own settings and can never arrive in a pack or a code.
@@ -72,6 +72,7 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 - **Store descriptions are untrusted.** Anyone can publish a project, so bodies go through the allow list in `apps/desktop/src/lib/rich.ts`, and the end-to-end test attacks it. Don't widen that list or the security policy without adding an attack to the test.
 - **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first. Friends are opt-in: nothing goes to the friends server unless the player has signed in to a Waymark account.
 - **Friends can't touch the database.** Tables in `supabase/migrations` have no policies, so the app can only call functions that act as the signed-in player. Don't add a policy or a public function without a reason, and keep the Minecraft sign-in out of it.
+- **Tests stay out of sight.** Anything that opens a game or the app runs on a hidden desktop at low priority, because this is someone's gaming PC.
 - **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
 
 ## Forking
@@ -82,6 +83,10 @@ Forks need their own identity:
 - **CurseForge key.** Request your own and set `WAYMARK_CURSEFORGE_API_KEY` when you build.
 - **Update key and endpoint.** Generate your own, or your builds will look for updates from this project.
 - **Name.** Change the product name in `brand.rs`, so people can tell your build from this one.
+
+## Thanks
+
+Every version before 1.6 exists here because of other people's work. [Omniarchive](https://omniarchive.net/) recovered most of these builds, [BetaCraft](https://betacraft.uk/) lists them, and BetaCraft's [LegacyFix](https://github.com/betacraftuk/legacyfix) (GPL 3.0) brings back what they lost. [Bouncy Castle](https://www.bouncycastle.org/) lets LegacyFix make secure connections on old Java. All of it is downloaded when needed, not shipped in Waymark.
 
 ## License
 

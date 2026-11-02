@@ -38,6 +38,7 @@ use waymark_core::share::{ShareCode, SharedResult};
 use waymark_core::shortcut::LAUNCH_FLAG;
 use waymark_core::skins::{SavedSkin, SkinLibrary, SkinProfile, SkinVariant, Wear};
 use waymark_core::social::{FriendOverview, friends_available};
+use waymark_core::start_check::StartCheck;
 use waymark_core::trash::Trashed;
 use waymark_core::waymarks::{Pending, WaymarkKind, WaymarkSummary};
 use waymark_core::worlds::{Join, RecentWorld, SavedServer, ServerStatus, Worlds};
@@ -204,32 +205,15 @@ async fn library(launcher: State<'_, Launcher>) -> Reply<Vec<LibraryEntry>> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GameVersion {
-    id: String,
-    kind: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct GameVersions {
     latest: String,
-    versions: Vec<GameVersion>,
+    versions: Vec<waymark_core::old_versions::GameVersion>,
 }
 
 #[tauri::command]
 async fn minecraft_versions(launcher: State<'_, Launcher>) -> Reply<GameVersions> {
-    let manifest = launcher.core.version_manifest().await?;
-    Ok(GameVersions {
-        latest: manifest.latest.release,
-        versions: manifest
-            .versions
-            .into_iter()
-            .map(|v| GameVersion {
-                id: v.id,
-                kind: v.kind,
-            })
-            .collect(),
-    })
+    let (latest, versions) = launcher.core.game_versions().await?;
+    Ok(GameVersions { latest, versions })
 }
 
 #[tauri::command]
@@ -368,6 +352,11 @@ async fn check_pack_update(launcher: State<'_, Launcher>, id: String) -> Reply<O
 #[tauri::command]
 async fn update_pack(launcher: State<'_, Launcher>, id: String) -> Reply<PackUpdateReport> {
     launcher.core.update_pack(&id).await
+}
+
+#[tauri::command]
+async fn check_start(launcher: State<'_, Launcher>, id: String) -> Reply<StartCheck> {
+    launcher.core.check_start(&id).await
 }
 
 #[tauri::command]
@@ -978,6 +967,20 @@ async fn friend_send_instance(
 }
 
 #[tauri::command]
+async fn friend_join(launcher: State<'_, Launcher>, friend: String) -> Reply<SharedResult> {
+    launcher.core.friend_join(&friend).await
+}
+
+#[tauri::command]
+async fn open_host_to_friends(
+    launcher: State<'_, Launcher>,
+    id: String,
+    open: bool,
+) -> Reply<HostStatus> {
+    launcher.core.open_host_to_friends(&id, open).await
+}
+
+#[tauri::command]
 async fn friend_install_share(launcher: State<'_, Launcher>, share: String) -> Reply<SharedResult> {
     launcher.core.friend_install_share(&share).await
 }
@@ -1268,6 +1271,7 @@ pub fn run() {
             identify_content,
             check_pack_update,
             update_pack,
+            check_start,
             set_folder_shared,
             copy_settings,
             export_server,
@@ -1349,6 +1353,8 @@ pub fn run() {
             friend_show_status,
             friend_send_instance,
             friend_install_share,
+            friend_join,
+            open_host_to_friends,
             friend_drop_share,
             host_status,
             prepare_host,

@@ -7,7 +7,7 @@
 //
 // Set E2E_SHOTS to a folder to save screenshots along the way.
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -146,6 +146,7 @@ async function step(name, body) {
     console.log(`ok    ${name} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
   } catch (error) {
     console.log(`FAIL  ${name}: ${error.message}`);
+    console.log(await run(`JSON.stringify({ url: location.href, state: document.readyState, html: document.documentElement.outerHTML.length, text: document.body?.innerText.slice(0, 200) })`));
     await shot(`failed-${name.replace(/\W+/g, '-')}`);
     finish(1);
   }
@@ -160,6 +161,9 @@ function finish(code) {
 await send('Runtime.enable');
 await send('Log.enable');
 await send('Page.enable');
+// The window starts on about:blank. Reloading before the app has arrived reloads
+// that, and cancels the app's own first load.
+await waitFor('the first page', `location.href.startsWith('http')`, 60000);
 await send('Page.reload');
 await sleep(1500);
 await run(HELPERS);
@@ -178,6 +182,41 @@ await step('keeps the window open during play for this test', async () => {
   await sleep(300);
   expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('closeWhilePlaying = false'), 'the setting did not save');
   await nav('Library');
+});
+
+await step('offers only the loaders a Minecraft version has', async () => {
+  await click('New instance');
+  await waitFor('the version list', `document.querySelector('#version')?.options.length > 3`);
+  const has = `[...document.querySelector('#loader').options].map((option) => option.value)`;
+  const offers = [
+    ['1.1', [], ['forge', 'liteloader']],
+    ['1.2.5', ['forge'], ['liteloader']],
+    ['1.5.2', ['forge', 'liteloader'], ['rift', 'cleanroom']],
+    ['1.8.9', ['forge'], ['liteloader']],
+    ['1.8', ['liteloader'], ['rift']],
+    ['1.12.2', ['forge', 'liteloader', 'cleanroom'], ['rift']],
+    ['1.13', ['rift'], ['forge', 'cleanroom']],
+    ['1.13.1', [], ['rift', 'forge']],
+    ['1.13.2', ['rift', 'forge'], ['liteloader']],
+  ];
+  for (const [version, yes, no] of offers) {
+    await setValue('#version', version);
+    await waitFor(`the loaders for ${version}`, `${text(yes)}.every((kind) => ${has}.includes(kind)) && !${text(no)}.some((kind) => ${has}.includes(kind))`, 20000);
+  }
+  for (const [era, oldest] of [['classic', 'c0.0.12a_03-200018'], ['preclassic', 'rd-132211'], ['aprilfools', '2.0-red']]) {
+    await setValue('#era', era);
+    await waitFor(`the ${era} builds`, `[...document.querySelector('#version').options].some((option) => option.value === ${text(oldest)})`);
+    await waitFor(`only vanilla in ${era}`, `${has}.join() === 'vanilla'`, 20000);
+    expect(await run(hasText('Released')), 'a build shows no release date');
+  }
+  await shot('02-eras');
+  await setValue('#era', 'release');
+  await setValue('#version', '1.12.2');
+  await waitFor('Cleanroom to be offered', `${has}.includes('cleanroom')`, 20000);
+  await setValue('#loader', 'cleanroom');
+  await waitFor('the note about Cleanroom', hasText('Fugue and Scalar'));
+  await shot('02-cleanroom');
+  await click('Cancel');
 });
 
 await step('creates a Fabric instance through the dialog', async () => {
@@ -814,7 +853,32 @@ await step('changes theme, shows screenshots and browses Feed The Beast', async 
   await tab('Versions');
   await waitFor('its versions', `document.querySelectorAll('.project .line').length > 0`, 20000);
   await run(`document.querySelector('header .back').click()`);
-  await setValue('#source', 'modrinth');
+  await setValue('#source', 'technic');
+  await waitFor('Technic packs', `document.querySelectorAll('.results li').length > 3`, 30000);
+  expect(!(await run(`!!document.querySelector('#sort') || document.querySelector('.side').checkVisibility()`)), 'filters Technic can not use are showing');
+  const artLoaded = (part) => `document.querySelector('.results li ${part} img')?.naturalWidth > 0`;
+  await waitFor('the pack icons', artLoaded('.icon'), 20000);
+  await waitFor('the pack backgrounds', artLoaded('.banner'), 20000);
+  await waitFor('the first row of backgrounds', `[...document.querySelectorAll('.results li .banner img')].slice(0, 4).every((img) => img.complete && img.naturalWidth > 0)`, 30000);
+  await sleep(1500);
+  await shot('34-technic');
+  await setValue('input[aria-label="Search"]', 'hexxit');
+  await waitFor('a Technic search', `[...document.querySelectorAll('.results .title')].some((title) => title.innerText === 'Hexxit')`, 30000);
+  await run(`[...document.querySelectorAll('.results li .open')].find((row) => row.querySelector('.title').innerText === 'Hexxit').click()`);
+  await waitFor('the pack page', `!!document.querySelector('.project .tabs')`, 20000);
+  await shot('34-technic-page');
+  await tab('Versions');
+  await waitFor('its builds', `document.querySelectorAll('.project .line').length > 0`, 30000);
+  await run(`document.querySelector('.project .line').click()`);
+  await waitFor('a build to open', `!!document.querySelector('.project .detail') && !document.querySelector('.project .detail').innerText.includes('Loading')`, 20000);
+  await shot('34-technic-versions');
+  expect(!(await run(`document.body.innerText.includes('Invalid Date') || document.body.innerText.includes('NaN')`)), 'a Technic build shows a broken date or size');
+  await run(`document.querySelector('header .back').click()`);
+  await waitFor('Discover', `!!document.querySelector('#source')`);
+  await setValue('input[aria-label="Search"]', '');
+  await click('Mods');
+  await waitFor('Technic to give way for mods', `document.querySelector('#source').value === 'modrinth'`);
+  await click('Modpacks');
   await backToInstance();
   await tab('Mods');
 });
@@ -955,6 +1019,18 @@ await step('copies settings from another instance', async () => {
   await waitFor('the result', hasText('Could not copy settings') + ' || ' + hasText('Copied settings from'));
 });
 
+await step('asks for a file its author keeps on CurseForge', async () => {
+  const waiting = join(HOME, 'instances', ID, '.waymarks', 'manual-files.json');
+  writeFileSync(waiting, JSON.stringify([{ name: 'Kept Mod', page: 'https://www.curseforge.com/minecraft/mc-mods/kept-mod', file: 'kept-mod-1.0.jar', size: 16, sha1: '0'.repeat(40) }]));
+  await nav('Library');
+  await openInstance('E2E Renamed');
+  await click('Get it');
+  await waitFor('the file list', hasText('kept-mod-1.0.jar') + ' && ' + hasText('Watching for 1 file'));
+  await shot('35-manual-files');
+  await click('Close');
+  rmSync(waiting);
+});
+
 await step('installs a modpack from Discover', async () => {
   await click('Discover');
   await click('Modpacks');
@@ -972,6 +1048,21 @@ await step('installs a modpack from Discover', async () => {
   expect(described > 5 && iconned > 5, `pack mods are missing details: ${described} with versions, ${iconned} with icons`);
 });
 
+await step('shows an installed modpack as installed on its own page', async () => {
+  await click('Discover');
+  await click('Modpacks');
+  await setValue('.search', 'fabulously optimized');
+  await waitFor('search results', `[...document.querySelectorAll('.title')].some((t) => t.innerText.includes('Fabulously Optimized'))`, 20000);
+  await waitFor('Installed on its card', `[...document.querySelectorAll('.results li')].find((li) => li.querySelector('.title')?.innerText.includes('Fabulously Optimized'))?.querySelector('.installed') != null`);
+  await run(`[...document.querySelectorAll('.results li .open')].find((row) => row.querySelector('.title').innerText.includes('Fabulously Optimized')).click()`);
+  await waitFor('the pack page', `!!document.querySelector('.project .tabs')`, 20000);
+  await waitFor('Installed on its page', `document.querySelector('.project .have')?.innerText === 'Installed'`);
+  expect(!(await run(`[...document.querySelectorAll('.project button')].some((b) => b.innerText.includes('Install as a new instance'))`)), 'the page still offers to install it');
+  await run(`document.querySelector('header .back').click()`);
+  await waitFor('Discover', `!!document.querySelector('#source')`);
+  await setValue('.search', '');
+});
+
 await step('updates a modpack and keeps the player\'s own mod', async () => {
   const id = 'fabulously-optimized';
   const statePath = join(HOME, 'instances', id, 'pack.json');
@@ -987,6 +1078,29 @@ await step('updates a modpack and keeps the player\'s own mod', async () => {
   await click('Update pack');
   await waitFor('the result', hasText('Updated to'), 120000);
   expect(existsSync(join(modsDir(id), 'my-own-mod.jar')), 'the player\'s own mod was lost');
+});
+
+await step('keeps Vanilla instances free of mods and content', async () => {
+  await nav('Library');
+  await click('New instance');
+  await waitFor('the version list', `document.querySelector('#version')?.options.length > 3`);
+  await setValue('#name', 'E2E Vanilla');
+  await setValue('#version', VERSION);
+  await setValue('#loader', 'vanilla');
+  await click('Create');
+  await waitFor('the instance page', `!!document.querySelector('.names h1')?.innerText.includes('E2E Vanilla')`, 60000);
+  await waitFor('its tabs', `!!document.querySelector('.sections .tabs button.active')`);
+  const tabs = await run(`[...document.querySelectorAll('.sections .tabs button')].map((b) => b.innerText).join()`);
+  expect(!/Mods|Resource packs|Shaders/.test(tabs) && tabs.includes('Worlds'), `Vanilla shows ${tabs}`);
+  expect(await run(`document.querySelector('.sections .tabs button.active').innerText === 'Worlds'`), 'Vanilla did not open on Worlds');
+  expect(!(await run(hasText('Install content'))), 'Vanilla offers Install content');
+  expect(!(await run(hasText('Browse data packs'))), 'Vanilla offers data packs');
+  await shot('36-vanilla');
+  await nav('Discover');
+  await click('Mods');
+  await waitFor('the instance picker', `!!document.querySelector('#target')`);
+  expect(!(await run(`[...document.querySelector('#target').options].some((option) => option.text === 'E2E Vanilla')`)), 'Discover offers to install into Vanilla');
+  await click('Modpacks');
 });
 
 await step('saves global settings', async () => {

@@ -1,19 +1,22 @@
 //! Makes a version ready to launch: its metadata, client, libraries, assets,
 //! logging config, natives and Java. Files are shared across every instance.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use walkdir::WalkDir;
 
 use crate::Core;
 use crate::error::{Error, Result};
 use crate::event::Task;
+use crate::instance::Instance;
 use crate::mojang::{Features, RESOURCES_URL, VERSION_MANIFEST_URL, VersionManifest, VersionMeta};
 use crate::net::{Expected, Fetch};
+use crate::old_versions::{self, GameVersion};
 
 const NATIVES_MARKER: &str = ".waymark-extracted";
 const DEFAULT_JAVA: &str = "jre-legacy";
@@ -26,6 +29,8 @@ pub struct Prepared {
     pub natives: PathBuf,
     pub log_config: Option<PathBuf>,
     pub game_assets: PathBuf,
+    /// Set for versions that read their assets from inside the game folder.
+    pub resources: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -50,6 +55,15 @@ impl Core {
         self.net
             .cached_json(VERSION_MANIFEST_URL, &cache, Duration::from_secs(600))
             .await
+    }
+
+    /// Everything a player can pick, with the old builds Mojang doesn't list.
+    pub async fn game_versions(&self) -> Result<(String, Vec<GameVersion>)> {
+        let manifest = self.version_manifest().await?;
+        Ok((
+            manifest.latest.release,
+            old_versions::merged(manifest.versions),
+        ))
     }
 
     async fn load_meta(&self, id: &str) -> Result<VersionMeta> {
@@ -108,6 +122,12 @@ impl Core {
             });
         }
 
+        let mut jar_mods = Vec::new();
+        for artifact in meta.jar_mods.iter().filter_map(|m| m.artifact()) {
+            push_library(&mut fetches, &self.paths.libraries(), &artifact);
+            jar_mods.push(self.paths.libraries().join(&artifact.path));
+        }
+
         let mut native_jars = Vec::new();
         for library in meta.libraries.iter().filter(|l| l.is_allowed(features)) {
             if let Some(artifact) = library.artifact() {
@@ -144,6 +164,7 @@ impl Core {
 
         let mut game_assets = self.paths.assets();
         let mut legacy_assets = None;
+        let mut resources = None;
         if let Some(reference) = &meta.asset_index {
             let dest = self
                 .paths
@@ -175,6 +196,7 @@ impl Core {
             }
             if index.is_virtual || index.map_to_resources {
                 game_assets = self.paths.assets().join("virtual").join(&reference.id);
+                resources = index.map_to_resources.then(|| game_assets.clone());
                 legacy_assets = Some(index);
             }
         }
@@ -199,7 +221,12 @@ impl Core {
         }
         tokio::fs::create_dir_all(&natives).await?;
 
-        let client_jar = self.named_client_jar(id, &base, client_jar).await?;
+        let client_jar = if jar_mods.is_empty() {
+            self.named_client_jar(id, &base, client_jar).await?
+        } else {
+            task.progress(0, 1, "Patching the game");
+            self.patched_client_jar(id, client_jar, jar_mods).await?
+        };
 
         let component = meta
             .java_version
@@ -214,7 +241,25 @@ impl Core {
             natives,
             log_config,
             game_assets,
+            resources,
         })
+    }
+
+    /// Minecraft before 1.6 reads its sounds from the game folder, and the
+    /// address it used to fetch them from is gone. These are links to the shared
+    /// assets, and exports only read the folders they name, so they stay here.
+    pub(crate) async fn link_resources(
+        &self,
+        instance: &Instance,
+        prepared: &Prepared,
+    ) -> Result<()> {
+        let Some(assets) = prepared.resources.clone() else {
+            return Ok(());
+        };
+        let target = self.paths.game(&instance.id).join("resources");
+        tokio::task::spawn_blocking(move || link_tree(&assets, &target))
+            .await
+            .map_err(|e| Error::Other(e.to_string()))?
     }
 
     /// Forge and NeoForge find the vanilla jar by the modded version's name so
@@ -232,6 +277,26 @@ impl Core {
             }
         }
         Ok(named)
+    }
+
+    /// Builds the game jar for a loader that replaces the game's own classes.
+    /// This is Mojang's file with changes, so it's made here from the player's
+    /// copy and stays in `versions`, which no export or waymark ever reads.
+    async fn patched_client_jar(
+        &self,
+        id: &str,
+        vanilla: PathBuf,
+        mods: Vec<PathBuf>,
+    ) -> Result<PathBuf> {
+        let patched = self.paths.version_jar(id);
+        if !patched.is_file() {
+            tokio::fs::create_dir_all(self.paths.version_dir(id)).await?;
+            let target = patched.clone();
+            tokio::task::spawn_blocking(move || patch_jar(&vanilla, &mods, &target))
+                .await
+                .map_err(|e| Error::Other(e.to_string()))??;
+        }
+        Ok(patched)
     }
 
     /// Versions before 1.7 read assets by name instead of by hash.
@@ -268,6 +333,58 @@ fn push_library(fetches: &mut Vec<Fetch>, root: &Path, artifact: &crate::mojang:
             size: artifact.size,
         });
     }
+}
+
+fn link_tree(from: &Path, to: &Path) -> Result<()> {
+    for entry in WalkDir::new(from).into_iter().filter_map(|e| e.ok()) {
+        let Ok(relative) = entry.path().strip_prefix(from) else {
+            continue;
+        };
+        let dest = to.join(relative);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(dest)?;
+        } else if !dest.is_file() && fs::hard_link(entry.path(), &dest).is_err() {
+            fs::copy(entry.path(), &dest)?;
+        }
+    }
+    Ok(())
+}
+
+/// Signature files only fit the exact bytes they were made for, and Java refuses
+/// a package that mixes signed and unsigned classes.
+fn is_signature(name: &str) -> bool {
+    let Some(file) = name.strip_prefix("META-INF/") else {
+        return false;
+    };
+    let lower = file.to_ascii_lowercase();
+    lower == "manifest.mf" || [".sf", ".dsa", ".rsa"].iter().any(|e| lower.ends_with(e))
+}
+
+/// Writes the mods over the game. Entries are copied as they are, so nothing is
+/// unpacked, and the first copy of a name wins, which is why mods go first.
+fn patch_jar(vanilla: &Path, mods: &[PathBuf], target: &Path) -> Result<()> {
+    let part = target.with_extension("jar.part");
+    let mut jar = zip::ZipWriter::new(fs::File::create(&part)?);
+    let mut seen = HashSet::new();
+    for source in mods.iter().map(PathBuf::as_path).chain([vanilla]) {
+        let base = source == vanilla;
+        let mut archive = zip::ZipArchive::new(fs::File::open(source)?)?;
+        for i in 0..archive.len() {
+            let entry = archive.by_index_raw(i)?;
+            let name = entry.name()?.to_string();
+            let unwanted = if base {
+                name.starts_with("META-INF/")
+            } else {
+                is_signature(&name)
+            };
+            if !entry.is_dir() && !unwanted && seen.insert(name) {
+                jar.raw_copy_file(entry)?;
+            }
+        }
+    }
+    jar.finish()?;
+    fs::rename(part, target)?;
+    Ok(())
 }
 
 fn extract_natives(jars: &[(PathBuf, Vec<String>)], target: &Path) -> Result<()> {
@@ -315,6 +432,86 @@ pub fn safe_relative(path: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+
+    fn write_zip(path: &Path, entries: &[(&str, &str)]) {
+        let mut zip = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        for (name, text) in entries {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(text.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    fn read_zip(path: &Path) -> BTreeMap<String, String> {
+        let mut archive = zip::ZipArchive::new(fs::File::open(path).unwrap()).unwrap();
+        (0..archive.len())
+            .map(|i| {
+                let mut entry = archive.by_index(i).unwrap();
+                let mut text = String::new();
+                entry.read_to_string(&mut text).unwrap();
+                (entry.name().unwrap().to_string(), text)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_patched_jar_is_the_game_with_the_mod_over_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (game, forge, out) = (
+            dir.path().join("game.jar"),
+            dir.path().join("forge.zip"),
+            dir.path().join("patched.jar"),
+        );
+        write_zip(
+            &game,
+            &[
+                ("Minecraft.class", "vanilla"),
+                ("Other.class", "untouched"),
+                ("META-INF/MOJANG_C.SF", "signature"),
+                ("META-INF/MANIFEST.MF", "digests"),
+            ],
+        );
+        write_zip(
+            &forge,
+            &[
+                ("Minecraft.class", "patched"),
+                ("forge/Hook.class", "new"),
+                ("META-INF/FORGE.RSA", "signature"),
+                ("META-INF/services/thing", "kept"),
+            ],
+        );
+
+        patch_jar(&game, &[forge], &out).unwrap();
+
+        let jar = read_zip(&out);
+        assert_eq!(jar["Minecraft.class"], "patched");
+        assert_eq!(jar["Other.class"], "untouched");
+        assert_eq!(jar["forge/Hook.class"], "new");
+        assert_eq!(jar["META-INF/services/thing"], "kept");
+        assert_eq!(jar.len(), 4);
+        assert!(!dir.path().join("patched.jar.part").exists());
+    }
+
+    #[test]
+    fn linking_resources_leaves_the_players_files_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("assets"), dir.path().join("resources"));
+        fs::create_dir_all(from.join("sound/step")).unwrap();
+        fs::write(from.join("sound/step/grass.ogg"), "grass").unwrap();
+        fs::write(from.join("icon.png"), "icon").unwrap();
+        fs::create_dir_all(&to).unwrap();
+        fs::write(to.join("icon.png"), "theirs").unwrap();
+
+        link_tree(&from, &to).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(to.join("sound/step/grass.ogg")).unwrap(),
+            "grass"
+        );
+        assert_eq!(fs::read_to_string(to.join("icon.png")).unwrap(), "theirs");
+    }
 
     #[test]
     fn accepts_ordinary_relative_paths() {
