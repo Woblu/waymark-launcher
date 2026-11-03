@@ -29,10 +29,9 @@
     { id: 'settings', label: 'Settings' },
   ];
 
-  /** These only make sense with a loader, unless an older instance already has some. */
+  /** These only work with a loader, unless an older instance already has some. */
   const CONTENT_TABS: { id: InstanceTab; kind: ContentKind }[] = [
     { id: 'mods', kind: 'mod' },
-    { id: 'resourcepacks', kind: 'resourcepack' },
     { id: 'shaders', kind: 'shader' },
   ];
 
@@ -144,7 +143,7 @@
             <span>{entry.lastPlayed ? `Last played ${timeAgo(entry.lastPlayed)}` : 'Not played yet'}</span>
           </p>
         </div>
-        {#if !vanilla}<button class="btn" onclick={() => app.go('discover', id)}><Plus size={16} /> Install content</button>{/if}
+        <button class="btn" onclick={() => app.go('discover', id, vanilla ? 'resourcepack' : undefined)}><Plus size={16} /> Install content</button>
         <button class="btn icon" aria-label="Open folder" title="Open folder" onclick={openGameFolder}><FolderOpen size={17} /></button>
         <button class="btn icon" aria-label="More actions" title="More actions" onclick={openMore}><Ellipsis size={17} /></button>
       </div>

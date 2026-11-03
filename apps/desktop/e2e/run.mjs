@@ -1080,7 +1080,7 @@ await step('updates a modpack and keeps the player\'s own mod', async () => {
   expect(existsSync(join(modsDir(id), 'my-own-mod.jar')), 'the player\'s own mod was lost');
 });
 
-await step('keeps Vanilla instances free of mods and content', async () => {
+await step('keeps mods and shaders out of Vanilla instances', async () => {
   await nav('Library');
   await click('New instance');
   await waitFor('the version list', `document.querySelector('#version')?.options.length > 3`);
@@ -1091,15 +1091,22 @@ await step('keeps Vanilla instances free of mods and content', async () => {
   await waitFor('the instance page', `!!document.querySelector('.names h1')?.innerText.includes('E2E Vanilla')`, 60000);
   await waitFor('its tabs', `!!document.querySelector('.sections .tabs button.active')`);
   const tabs = await run(`[...document.querySelectorAll('.sections .tabs button')].map((b) => b.innerText).join()`);
-  expect(!/Mods|Resource packs|Shaders/.test(tabs) && tabs.includes('Worlds'), `Vanilla shows ${tabs}`);
+  expect(!/Mods|Shaders/.test(tabs) && tabs.includes('Resource packs') && tabs.includes('Worlds'), `Vanilla shows ${tabs}`);
   expect(await run(`document.querySelector('.sections .tabs button.active').innerText === 'Worlds'`), 'Vanilla did not open on Worlds');
-  expect(!(await run(hasText('Install content'))), 'Vanilla offers Install content');
-  expect(!(await run(hasText('Browse data packs'))), 'Vanilla offers data packs');
+  expect(await run(hasText('Browse data packs')), 'Vanilla lost its data packs');
   await shot('36-vanilla');
-  await nav('Discover');
+  await click('Install content');
+  await waitFor('resource packs for Vanilla', `document.querySelector('.tabs button.active')?.innerText === 'Resource packs' && document.querySelector('#target')?.selectedOptions[0]?.text === 'E2E Vanilla'`);
   await click('Mods');
+  const vanillaHere = `[...document.querySelector('#target').options].some((option) => option.text === 'E2E Vanilla')`;
   await waitFor('the instance picker', `!!document.querySelector('#target')`);
-  expect(!(await run(`[...document.querySelector('#target').options].some((option) => option.text === 'E2E Vanilla')`)), 'Discover offers to install into Vanilla');
+  expect(!(await run(vanillaHere)), 'Discover offers to install mods into Vanilla');
+  await click('Shaders');
+  expect(!(await run(vanillaHere)), 'Discover offers to install shaders into Vanilla');
+  await click('Resource packs');
+  await waitFor('Vanilla back for resource packs', `document.querySelector('#target')?.selectedOptions[0]?.text === 'E2E Vanilla'`);
+  await click('Data packs');
+  expect(await run(vanillaHere), 'Discover hides Vanilla from data packs');
   await click('Modpacks');
 });
 

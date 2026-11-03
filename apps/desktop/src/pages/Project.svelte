@@ -29,13 +29,7 @@
   let build = $state<{ file: string; version?: string } | null>(null);
   let failed = $state<string | null>(null);
   let tab = $state<Tab>('description');
-  let instanceId = $state(
-    untrack(() => {
-      if (target.instance) return target.instance;
-      const wanted = app.discoverTarget ?? app.target?.id;
-      return app.moddable.some((entry) => entry.id === wanted) ? wanted! : (app.moddable[0]?.id ?? '');
-    }),
-  );
+  let instanceId = $state(untrack(() => target.instance ?? app.discoverTarget ?? app.target?.id ?? ''));
   let fit = $state<Fit | null | undefined>(undefined);
   let installed = $state<LockedMod | null>(null);
   let busy = $state(false);
@@ -44,6 +38,12 @@
   let world = $state('');
 
   const preview = $derived(target.preview);
+  const targets = $derived(page ? app.targets(page.kind) : app.library);
+
+  // Vanilla can take resource and data packs but not mods or shaders.
+  $effect(() => {
+    if (page && !target.instance && !targets.some((entry) => entry.id === instanceId)) instanceId = targets[0]?.id ?? '';
+  });
   const instance = $derived(app.entry(instanceId));
   const title = $derived(page?.title ?? local?.name ?? preview?.title ?? '');
   const icon = $derived(page?.icon ?? iconUrl(local?.icon) ?? preview?.icon ?? null);
@@ -197,12 +197,12 @@
           {/if}
         {:else if build}
           <p class="have">Installed build {build.version ?? ''}</p>
-        {:else if !app.moddable.length}
-          <p class="faint small">Create a modded instance to install this.</p>
+        {:else if !targets.length}
+          <p class="faint small">{app.library.length ? 'Create a modded instance to install this.' : 'Create an instance to install this.'}</p>
         {:else}
           <div class="target">
             <select class="field" aria-label="Instance" bind:value={instanceId}>
-              {#each app.moddable as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
+              {#each targets as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
             </select>
             {#if isDataPack && worlds.length}
               <select class="field" aria-label="World" bind:value={world}>

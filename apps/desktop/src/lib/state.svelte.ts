@@ -111,9 +111,14 @@ class AppState {
     return this.current ?? this.library[0];
   }
 
-  /** Instances that can take content. Vanilla is kept as Minecraft comes. */
-  get moddable(): LibraryEntry[] {
-    return this.library.filter((entry) => entry.loader.kind !== 'vanilla');
+  /** Mods and shaders need a loader. Resource packs, data packs and modpacks don't. */
+  canTake(entry: LibraryEntry, kind: ContentKind): boolean {
+    return entry.loader.kind !== 'vanilla' || (kind !== 'mod' && kind !== 'shader');
+  }
+
+  /** The instances this kind of content can be installed into. */
+  targets(kind: ContentKind): LibraryEntry[] {
+    return this.library.filter((entry) => this.canTake(entry, kind));
   }
 
   get canGoBack(): boolean {
@@ -237,7 +242,7 @@ class AppState {
     const zipKind = this.tab === 'shaders' ? 'shader' : this.tab === 'resourcepacks' ? 'resourcepack' : null;
     try {
       if (instance && jars.length && !vanilla) await this.addFiles(instance, 'mod', jars);
-      if (instance && zipKind && zips.length && this.view === 'library' && !vanilla) await this.addFiles(instance, zipKind, zips);
+      if (instance && zipKind && zips.length && this.view === 'library' && (!vanilla || zipKind === 'resourcepack')) await this.addFiles(instance, zipKind, zips);
       for (const pack of [...packs, ...(zipKind ? [] : zips)]) {
         const result = await api.installPackFile(pack);
         await this.refresh();

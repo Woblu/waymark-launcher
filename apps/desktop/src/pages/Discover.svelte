@@ -42,12 +42,9 @@
   let kind = $state<ContentKind>(untrack(() => app.discoverKind ?? (target ? 'mod' : 'modpack')));
   let text = $state('');
   let sort = $state<Sort>('relevance');
-  let instanceId = $state(
-    untrack(() => {
-      const wanted = target ?? app.target?.id;
-      return app.moddable.some((entry) => entry.id === wanted) ? wanted! : (app.moddable[0]?.id ?? '');
-    }),
-  );
+  /** The instance the player asked for, kept so it comes back on a tab that can use it. */
+  let preferred = untrack(() => target ?? app.target?.id ?? '');
+  let instanceId = $state(untrack(() => preferred));
   let matchInstance = $state(true);
   let minecraft = $state('');
   let loader = $state<LoaderKind | ''>('');
@@ -113,6 +110,15 @@
     chosen;
     const timer = setTimeout(() => untrack(() => run(1)), SEARCH_DELAY);
     return () => clearTimeout(timer);
+  });
+
+  const targets = $derived(app.targets(kind));
+
+  // Vanilla can take resource and data packs but not mods or shaders.
+  $effect(() => {
+    const fits = (id: string) => targets.some((entry) => entry.id === id);
+    const best = fits(preferred) ? preferred : fits(instanceId) ? instanceId : (targets[0]?.id ?? '');
+    if (best !== instanceId) instanceId = best;
   });
 
   $effect(() => {
@@ -193,10 +199,10 @@
           <option value="technic">Technic</option>
         {/if}
       </select>
-      {#if kind !== 'modpack' && app.moddable.length}
+      {#if kind !== 'modpack' && targets.length}
         <label for="target" class="muted">Install to</label>
-        <select id="target" class="field target" bind:value={instanceId}>
-          {#each app.moddable as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
+        <select id="target" class="field target" bind:value={instanceId} onchange={() => (preferred = instanceId)}>
+          {#each targets as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
         </select>
       {/if}
     </div>
