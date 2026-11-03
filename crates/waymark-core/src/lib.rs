@@ -126,6 +126,9 @@ pub struct Core {
     pub(crate) open_host: Arc<Mutex<Option<hosting::OpenHost>>>,
     pub(crate) told_friends: Arc<Mutex<Option<String>>>,
     pub(crate) login: Arc<tokio::sync::Mutex<Option<social::Login>>>,
+    /// The last verified Minecraft session, and a turn for anyone about to make one.
+    pub(crate) recent: Arc<Mutex<Option<auth::Recent>>>,
+    pub(crate) signing: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Core {
@@ -143,6 +146,8 @@ impl Core {
             told_friends: Arc::default(),
             hosts: Arc::default(),
             login: Arc::default(),
+            recent: Arc::default(),
+            signing: Arc::default(),
         })
     }
 

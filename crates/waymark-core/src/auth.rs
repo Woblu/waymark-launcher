@@ -6,7 +6,7 @@
 //! reaching gameplay without that proof.
 
 use std::fs;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,6 +26,9 @@ const PROFILE: &str = "https://api.minecraftservices.com/minecraft/profile";
 
 /// How long a verified account may keep playing with no internet connection.
 const OFFLINE_GRACE: time::Duration = time::Duration::days(30);
+/// Minecraft's tokens last a day. One is let go this long before it runs out.
+const TOKEN_MARGIN: Duration = Duration::from_secs(600);
+const A_DAY: u64 = 86_400;
 
 /// What the game needs to start. Fields are only visible inside this crate, so
 /// a session can't be assembled by the UI or any other caller.
@@ -136,6 +139,34 @@ struct XboxError {
 #[derive(Deserialize)]
 struct MinecraftLogin {
     access_token: String,
+    #[serde(default = "a_day")]
+    expires_in: u64,
+}
+
+fn a_day() -> u64 {
+    A_DAY
+}
+
+/// A session Minecraft accepted, kept because Mojang turns down sign-ins that come
+/// too often. Opening the skins page and wearing a skin used to be two in a row.
+#[derive(Clone)]
+pub(crate) struct Recent {
+    session: Session,
+    until: Instant,
+}
+
+/// Mojang saying no isn't the same as being offline, so it never leads to the
+/// offline session, whose token Minecraft's services would reject.
+fn refused(status: Option<reqwest::StatusCode>) -> Error {
+    match status.map(|status| status.as_u16()) {
+        Some(429) => {
+            Error::Auth("Minecraft is getting too many sign-ins. Try again in a minute.".into())
+        }
+        Some(code) => Error::Auth(format!(
+            "Minecraft's servers turned the sign-in down (HTTP {code}). Try again shortly."
+        )),
+        None => Error::Auth("Minecraft's servers turned the sign-in down.".into()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -223,6 +254,14 @@ impl Core {
     }
 
     pub fn remove_account(&self, uuid: &str) -> Result<Vec<Account>> {
+        let mut recent = self.recent.lock().expect("session poisoned");
+        if recent
+            .as_ref()
+            .is_some_and(|kept| kept.session.uuid == uuid)
+        {
+            *recent = None;
+        }
+        drop(recent);
         let mut accounts = self.accounts()?;
         accounts.retain(|a| a.uuid != uuid);
         if !accounts.iter().any(|a| a.active)
@@ -302,6 +341,7 @@ impl Core {
             .refresh_token
             .ok_or_else(|| Error::Auth("Microsoft sent no refresh token".into()))?;
         let verified = self.minecraft_session(&access).await?;
+        self.remember(&verified);
 
         keychain(&verified.session.uuid)?
             .set_password(&refresh)
@@ -407,6 +447,7 @@ impl Core {
             .map(|s| s.url.clone());
 
         Ok(Verified {
+            lasts: Duration::from_secs(login.expires_in),
             account: Account {
                 uuid: profile.id.clone(),
                 name: profile.name.clone(),
@@ -428,16 +469,14 @@ impl Core {
     /// online. With no internet, an account verified within the grace period
     /// can still play, which never lets a new or unverified account through.
     pub async fn session(&self) -> Result<Session> {
-        let account = self
-            .accounts()?
-            .into_iter()
-            .find(|a| a.active)
-            .ok_or(Error::SignInRequired)?;
-        if !account.owns_game {
-            return Err(Error::NotOwned);
-        }
+        let account = self.active_account()?;
+        let _turn = self.signing.lock().await;
         match self.refresh(&account).await {
             Ok(session) => Ok(session),
+            // A session verified minutes ago is still proof, so a busy server doesn't stop play.
+            Err(Error::Http(error)) if error.is_status() => self
+                .kept_session(&account.uuid)
+                .ok_or_else(|| refused(error.status())),
             Err(Error::Http(_)) if may_play_offline(&account) => Ok(Session {
                 name: account.name,
                 uuid: account.uuid,
@@ -449,6 +488,51 @@ impl Core {
             )),
             Err(error) => Err(error),
         }
+    }
+
+    /// A session for Minecraft's own services, like changing a skin. Those need a real
+    /// token, so there's no offline session here, and a recent one is used again.
+    pub(crate) async fn web_session(&self) -> Result<Session> {
+        let account = self.active_account()?;
+        let _turn = self.signing.lock().await;
+        if let Some(kept) = self.kept_session(&account.uuid) {
+            return Ok(kept);
+        }
+        match self.refresh(&account).await {
+            Err(Error::Http(error)) if error.is_status() => Err(refused(error.status())),
+            Err(Error::Http(_)) => Err(Error::Auth(
+                "Connect to the internet to change this.".into(),
+            )),
+            other => other,
+        }
+    }
+
+    fn active_account(&self) -> Result<Account> {
+        let account = self
+            .accounts()?
+            .into_iter()
+            .find(|a| a.active)
+            .ok_or(Error::SignInRequired)?;
+        if !account.owns_game {
+            return Err(Error::NotOwned);
+        }
+        Ok(account)
+    }
+
+    fn remember(&self, verified: &Verified) {
+        *self.recent.lock().expect("session poisoned") = Some(Recent {
+            session: verified.session.clone(),
+            until: Instant::now() + verified.lasts.saturating_sub(TOKEN_MARGIN),
+        });
+    }
+
+    fn kept_session(&self, uuid: &str) -> Option<Session> {
+        self.recent
+            .lock()
+            .expect("session poisoned")
+            .as_ref()
+            .filter(|kept| kept.session.uuid == uuid && Instant::now() < kept.until)
+            .map(|kept| kept.session.clone())
     }
 
     async fn refresh(&self, account: &Account) -> Result<Session> {
@@ -476,6 +560,7 @@ impl Core {
         }
 
         let verified = self.minecraft_session(&access).await?;
+        self.remember(&verified);
         let mut accounts = self.accounts()?;
         if let Some(stored) = accounts.iter_mut().find(|a| a.uuid == account.uuid) {
             let active = stored.active;
@@ -492,6 +577,8 @@ impl Core {
 struct Verified {
     account: Account,
     session: Session,
+    /// How long Minecraft said the token is good for.
+    lasts: Duration,
 }
 
 #[cfg(test)]
@@ -511,6 +598,47 @@ mod tests {
 
     fn entitlements(json: &str) -> Entitlements {
         serde_json::from_str(json).unwrap()
+    }
+
+    fn verified(uuid: &str, lasts: Duration) -> Verified {
+        Verified {
+            account: account(true, 0),
+            session: Session {
+                name: "Steve".into(),
+                uuid: uuid.into(),
+                access_token: "real".into(),
+                xuid: "1".into(),
+            },
+            lasts,
+        }
+    }
+
+    #[test]
+    fn a_verified_session_is_kept_for_its_own_account_until_it_nearly_runs_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        core.remember(&verified("abc", Duration::from_secs(A_DAY)));
+        assert_eq!(core.kept_session("abc").unwrap().access_token, "real");
+        assert!(core.kept_session("someone else").is_none());
+        core.remember(&verified("abc", TOKEN_MARGIN));
+        assert!(core.kept_session("abc").is_none());
+    }
+
+    #[test]
+    fn signing_out_forgets_the_kept_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        core.remember(&verified("abc", Duration::from_secs(A_DAY)));
+        core.remove_account("abc").unwrap();
+        assert!(core.kept_session("abc").is_none());
+    }
+
+    #[test]
+    fn a_busy_server_is_not_mistaken_for_being_offline() {
+        let busy = refused(Some(reqwest::StatusCode::TOO_MANY_REQUESTS)).to_string();
+        assert!(busy.contains("too many sign-ins"), "{busy}");
+        let down = refused(Some(reqwest::StatusCode::SERVICE_UNAVAILABLE)).to_string();
+        assert!(down.contains("HTTP 503"), "{down}");
     }
 
     #[test]

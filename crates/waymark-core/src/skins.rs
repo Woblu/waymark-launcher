@@ -304,7 +304,7 @@ impl Core {
     }
 
     pub async fn skin_profile(&self) -> Result<SkinProfile> {
-        let session = self.session().await?;
+        let session = self.web_session().await?;
         Ok(self
             .net
             .client()
@@ -319,7 +319,7 @@ impl Core {
 
     /// Changes the skin on the player's Minecraft account.
     pub async fn wear_skin(&self, wear: Wear) -> Result<SkinProfile> {
-        let session = self.session().await?;
+        let session = self.web_session().await?;
         let client = self.net.client();
         let request = client
             .post(format!("{PROFILE}/skins"))
@@ -359,7 +359,7 @@ impl Core {
 
     /// Puts on one of the player's capes, or takes it off.
     pub async fn wear_cape(&self, cape: Option<&str>) -> Result<SkinProfile> {
-        let session = self.session().await?;
+        let session = self.web_session().await?;
         let client = self.net.client();
         let active = format!("{PROFILE}/capes/active");
         let response = match cape {
