@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Privacy, Waymark</title>
+    <meta name="description" content="What Waymark sends over the internet, where it goes, and how to turn the optional parts off." />
+    <link rel="icon" href="/assets/favicon.png" />
+    <link rel="preload" href="/assets/fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1><a href="/">Waymark</a></h1>
+        <p class="lede">Privacy policy</p>
+        <p class="note">Last updated 3 November 2026.</p>
+      </header>
+
+      <section>
+        <h2>In short</h2>
+        <div>
+          <p>Waymark has no analytics, no ads and no tracking. It doesn't send anything about you or your computer to us. It only connects to the services below, and only to do the job you asked for, with one exception: it checks for new versions of itself, which you can turn off.</p>
+          <p>Every connection reveals your computer's internet address to the service on the other end, the same as visiting a website.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Updates to Waymark</h2>
+        <div>
+          <p>Twenty seconds after it starts, and every six hours after that, Waymark asks <code>waymark-launcher.vercel.app</code> for the newest version, which sends it on to the release on GitHub. The request carries no account or identifier. Turn it off in Settings with <strong>Keep Waymark up to date</strong>. See <a href="https://vercel.com/legal/privacy-policy">Vercel's privacy policy</a> and <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's</a>.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Signing in to Minecraft</h2>
+        <div>
+          <p>When you sign in, and when you play or change your skin, Waymark talks to Microsoft, Xbox Live and Mojang to confirm you own the game. Your Microsoft password is typed on Microsoft's own page, never in Waymark. Waymark keeps your Minecraft username, account id and skin address on your computer, and a sign-in token in your system's keychain. See <a href="https://privacy.microsoft.com/privacystatement">Microsoft's privacy statement</a>.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Downloading the game, mods and packs</h2>
+        <div>
+          <p>The game comes from Mojang. Mods, packs, shaders and resource packs come from the store you choose: <a href="https://modrinth.com/legal/privacy">Modrinth</a>, <a href="https://www.overwolf.com/legal/privacy/">CurseForge</a>, <a href="https://www.feed-the-beast.com/policies/privacy-notice">Feed The Beast</a>, <a href="https://atlauncher.com/privacy-policy">ATLauncher</a> or Technic. Those stores see your searches. Mod loaders come from their own publishers, such as Fabric, Quilt, Forge and NeoForge.</p>
+          <p>To show the right page for a mod you added by hand, Waymark sends a fingerprint of the file to Modrinth. A fingerprint is a short code worked out from the file, and the file itself never leaves your computer.</p>
+          <p>Project pages show the pictures and videos their authors added, so those load from wherever the author hosts them. Technic packs download from wherever their author put them, often Dropbox.</p>
+          <p>Builds of Minecraft from before 1.6 come from Mojang, <a href="https://omniarchive.net/">Omniarchive</a> and <a href="https://betacraft.uk/legal">BetaCraft</a>. While one of those plays, its fixes from LegacyFix talk to Mojang to sign you in to servers and to load skins, and can fetch that version's sounds from Mojang or BetaCraft. They are set to keep Classic saves on your computer and to ask no other server for skins.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Friends</h2>
+        <div>
+          <p>Friends are optional and off until you make a Waymark account. That account is a username and a password with no email address, kept on a database run by <a href="https://supabase.com/privacy">Supabase</a>. It stores your username, a hash of your password, your friends list, anything a friend sends you, when you were last online and the name of the instance you're playing. When an account is made, a hash of the internet address it came from is kept for about a day to limit sign-ups.</p>
+          <p>If you host a server and turn on <strong>Let friends join</strong>, Waymark asks your router to open the server's port while it runs, and your friends can see your internet address and your instance's setup. Turning it off, or stopping the server, takes that back.</p>
+          <p>You can hide your status, block people, or delete the account and everything above from the app.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Only when you ask</h2>
+        <div>
+          <ul>
+            <li><strong>Sharing a log.</strong> Waymark uploads it to <a href="https://aternos.gmbh/en/mclogs/privacy">mclo.gs</a>, after taking out folder names and sign-in tokens.</li>
+            <li><strong>Servers in your list.</strong> Waymark asks each one for its player count and description.</li>
+            <li><strong>Links you open.</strong> They open in your web browser.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>On your computer</h2>
+        <div>
+          <p>Everything else stays on your computer: your instances, waymarks, worlds, screenshots, skins and settings. Crash reports are read locally and never sent anywhere.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Contact</h2>
+        <div>
+          <p>Questions about this policy go to <a href="mailto:waymarklaunchersupport@proton.me">waymarklaunchersupport@proton.me</a>. Waymark's source is public on <a href="https://github.com/Woblu/waymark-launcher">GitHub</a>, so anyone can check what it sends.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p><a href="/">Home</a> · <a href="/code-signing">Code signing policy</a></p>
+      <p>NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.</p>
+    </footer>
+  </body>
+</html>

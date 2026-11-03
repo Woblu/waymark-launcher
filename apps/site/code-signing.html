@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Code signing policy, Waymark</title>
+    <meta name="description" content="How Waymark's Windows installers are signed, who can approve a signed release, and what that signature means." />
+    <link rel="icon" href="/assets/favicon.png" />
+    <link rel="preload" href="/assets/fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1><a href="/">Waymark</a></h1>
+        <p class="lede">Code signing policy</p>
+      </header>
+
+      <section>
+        <h2>Signing</h2>
+        <div>
+          <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+          <p>Windows installers are built by GitHub Actions from the public source in <a href="https://github.com/Woblu/waymark-launcher">Woblu/waymark-launcher</a>, and nowhere else. A signature means the file is the one that build made, unchanged. Every release is approved by hand before it's signed.</p>
+          <p>Waymark also signs its own updates with a separate key, so an installed copy only accepts updates from this project.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Team</h2>
+        <div>
+          <table>
+            <tbody>
+              <tr><th scope="row">Committers and reviewers</th><td><a href="https://github.com/Woblu">Woblu</a></td></tr>
+              <tr><th scope="row">Approvers</th><td><a href="https://github.com/Woblu">Woblu</a></td></tr>
+            </tbody>
+          </table>
+          <p>Committers can change the source. Every change from anyone else, such as a pull request, is reviewed by a committer before it's merged. Approvers decide whether a release gets signed.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Privacy</h2>
+        <div>
+          <p>Waymark connects to Minecraft's services and the mod stores to do what you ask, and checks for its own updates, which you can turn off. The <a href="/privacy">privacy policy</a> lists every service it talks to, what each one sees, and the policies of those services.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Installing and removing</h2>
+        <div>
+          <p>The installer puts Waymark in your user folder, adds it to the Start menu and to Apps in Windows Settings, and installs Microsoft's WebView2 runtime if Windows doesn't have it yet. It changes no other system settings. Remove Waymark from Windows Settings, under Apps. Your instances stay in <code>%APPDATA%\Waymark</code> until you delete that folder.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p><a href="/">Home</a> · <a href="/privacy">Privacy</a></p>
+      <p>NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.</p>
+    </footer>
+  </body>
+</html>
