@@ -44,13 +44,14 @@ pub mod shortcut;
 pub mod skins;
 pub mod social;
 pub mod start_check;
+pub mod starters;
 pub mod store;
 pub mod technic;
 pub mod trash;
 pub mod waymarks;
 pub mod worlds;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -93,6 +94,8 @@ pub struct Settings {
     pub auto_update: bool,
     /// Starts a game out of sight after an update, and undoes the update if it won't load.
     pub check_updates: bool,
+    /// Starter mods by Minecraft version, plus `*` for every version.
+    pub starters: BTreeMap<String, Vec<starters::Starter>>,
 }
 
 impl Default for Settings {
@@ -107,6 +110,7 @@ impl Default for Settings {
             language: "system".to_string(),
             auto_update: true,
             check_updates: true,
+            starters: BTreeMap::new(),
         }
     }
 }

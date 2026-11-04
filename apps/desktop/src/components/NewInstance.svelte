@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, inTauri, pickPackFile } from '../lib/api';
-  import type { ExternalInstance, GameVersion, LoaderKind } from '../lib/api';
+  import type { ExternalInstance, GameVersion, LoaderKind, Starter } from '../lib/api';
   import { day, loaderName } from '../lib/format';
-  import { app } from '../lib/state.svelte';
+  import { app, starterFits, startersFor } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
 
   const LOADERS: LoaderKind[] = ['vanilla', 'fabric', 'neoforge', 'forge', 'quilt'];
@@ -32,6 +32,8 @@
   let external = $state<ExternalInstance[]>([]);
   let code = $state('');
   let missing = $state<LoaderKind[]>([]);
+  let lists = $state<Record<string, Starter[]>>({});
+  let useStarters = $state(true);
 
   const shown = $derived(versions.filter((v) => v.era === era));
   const picked = $derived(versions.find((v) => v.id === minecraft));
@@ -42,6 +44,8 @@
     return minor && Number(minor) < OLD_MINOR ? OLD_LOADERS : LOADERS;
   });
   const loaders = $derived(candidates.filter((kind) => !missing.includes(kind)));
+  /** Starters that could go into this instance. Each one's store is still asked when it's made. */
+  const starters = $derived(startersFor(lists, minecraft).filter((item) => starterFits(item.kind, loader)));
 
   $effect(() => {
     if (!loaders.includes(loader)) loader = 'vanilla';
@@ -71,7 +75,8 @@
   }
 
   onMount(async () => {
-    const [manifest, found] = await Promise.allSettled([api.minecraftVersions(), api.externalInstances()]);
+    const [manifest, found, settings] = await Promise.allSettled([api.minecraftVersions(), api.externalInstances(), api.settings()]);
+    if (settings.status === 'fulfilled') lists = settings.value.starters ?? {};
     if (manifest.status === 'fulfilled') {
       versions = manifest.value.versions;
       minecraft = manifest.value.latest;
@@ -81,11 +86,14 @@
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
+    // Read before closing, which takes this dialog away.
+    const withStarters = useStarters && starters.length > 0;
     close();
     try {
       const instance = await api.createInstance({ name: name.trim(), minecraft, loader });
       await app.refresh();
       app.open(instance.id);
+      if (withStarters) await app.addStarters(instance.id);
     } catch (error) {
       app.fail(error, 'Could not create the instance');
     }
@@ -163,6 +171,15 @@
           {#each loaders as kind (kind)}<option value={kind}>{loaderName(kind)}</option>{/each}
         </select>
       </div>
+      {#if starters.length}
+        <div class="form-row">
+          <span class="form-label">Starter mods</span>
+          <div>
+            <label class="check"><input type="checkbox" bind:checked={useStarters} /> Add starter mods ({starters.length})</label>
+            <p class="faint small names truncate">{starters.map((item) => item.title).join(', ')}</p>
+          </div>
+        </div>
+      {/if}
       {#if loader === 'cleanroom'}
         <p class="muted note">Cleanroom warns on its first launch that two patch mods, Fugue and Scalar, are missing. Both can be installed from Discover.</p>
       {/if}
@@ -206,6 +223,8 @@
   .intro { margin: 8px 0 10px; }
   .note { margin: -4px 0 14px; }
   .released { margin-top: 6px; }
+  .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; color: var(--text); }
+  .names { margin-top: 4px; }
   ul { margin-bottom: 10px; border-top: 1px solid var(--line); }
   li {
     display: flex;

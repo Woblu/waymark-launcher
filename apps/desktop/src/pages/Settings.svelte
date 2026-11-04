@@ -2,12 +2,13 @@
   import { onMount } from 'svelte';
   import { Plus } from '@lucide/svelte';
   import Modal from '../components/Modal.svelte';
+  import StarterMods from '../components/StarterMods.svelte';
   import { api } from '../lib/api';
   import type { Account, CustomTheme, Settings, Trashed } from '../lib/api';
   import { bytes, timeAgo } from '../lib/format';
   import { LANGUAGE_NAMES, chooseLanguage, savedLanguage } from '../lib/i18n';
   import { PRESETS, previewTheme, useTheme } from '../lib/theme';
-  import { app } from '../lib/state.svelte';
+  import { EVERY_VERSION, app } from '../lib/state.svelte';
 
   let settings = $state<Settings | null>(null);
   let reclaiming = $state(false);
@@ -127,6 +128,14 @@
     reclaiming = false;
   }
 
+  let editingStarters = $state(false);
+  /** Each version with a list, the shared one first, then the newest. */
+  const starterLists = $derived(
+    Object.entries(settings?.starters ?? {})
+      .filter(([, items]) => items.length)
+      .sort(([a], [b]) => (a === EVERY_VERSION ? -1 : b === EVERY_VERSION ? 1 : b.localeCompare(a, undefined, { numeric: true }))),
+  );
+
   let checking = $state(false);
   let upToDate = $state(false);
 
@@ -219,6 +228,24 @@
     </section>
 
     <section>
+      <h2>New instances</h2>
+      <div class="body">
+        <div class="form-row">
+          <span class="form-label">Starter mods</span>
+          <div>
+            <button class="btn" onclick={() => (editingStarters = true)}>Edit starter mods</button>
+            <p class="form-hint">Mods, resource packs and shaders added to each new instance on a Minecraft version.</p>
+            {#if starterLists.length}
+              <p class="lists">
+                {#each starterLists as [key, items] (key)}<span class="tabular">{key === EVERY_VERSION ? `Every version (${items.length})` : `${key} (${items.length})`}</span>{/each}
+              </p>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>Updates</h2>
       <div class="body">
         <div class="form-row">
@@ -300,6 +327,10 @@
   </div>
 </div>
 
+{#if editingStarters && settings}
+  <StarterMods bind:settings onsave={save} onclose={() => (editingStarters = false)} />
+{/if}
+
 {#if editing}
   <Modal title={creating ? 'New theme' : 'Edit theme'} width={420} onclose={stopEditing}>
     <form onsubmit={saveTheme}>
@@ -355,4 +386,5 @@
   .version { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .legal { margin-top: 4px; }
   .first { margin: 0 0 8px; }
+  .lists { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
 </style>

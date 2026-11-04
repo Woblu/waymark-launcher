@@ -235,6 +235,24 @@ const SAMPLE_LOG = [
   '[Render thread/INFO] Sound engine started',
 ].map((text) => ({ text, error: text.includes('/ERROR]') }));
 
+let mockSettings = {
+  memoryMb: 6144,
+  releaseDelayHours: 48,
+  showSnapshots: false,
+  closeWhilePlaying: true,
+  theme: 'system',
+  customThemes: [],
+  autoUpdate: true,
+  checkUpdates: true,
+  language: 'system',
+  starters: {
+    '1.20.1': [
+      { source: 'modrinth', project: 'AANobbMI', kind: 'mod', title: 'Sodium', icon: null },
+      { source: 'modrinth', project: 'mOgUt4GM', kind: 'mod', title: 'Mod Menu', icon: null },
+    ],
+  } as Record<string, unknown[]>,
+};
+
 export function mockCall(command: string, args?: Record<string, unknown>): unknown {
   switch (command) {
     case 'library':
@@ -304,7 +322,12 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'external_instances':
       return [{ launcher: 'prism', name: 'Old Survival', gameDir: 'x', minecraft: '1.20.1', loader: { kind: 'fabric' } }];
     case 'settings':
-      return { memoryMb: 6144, releaseDelayHours: 48, showSnapshots: false, closeWhilePlaying: true, theme: 'system', customThemes: [], autoUpdate: true, checkUpdates: true, language: 'system' };
+      return structuredClone(mockSettings);
+    case 'save_settings':
+      mockSettings = structuredClone(args?.settings as typeof mockSettings);
+      return null;
+    case 'add_starters':
+      return { added: ['Sodium', 'Mod Menu'], skipped: [{ title: 'Embeddium', reason: null }] };
     default:
       return null;
   }

@@ -284,7 +284,15 @@ export interface Settings {
   language: string;
   autoUpdate: boolean;
   checkUpdates: boolean;
+  /** Starter mods by Minecraft version, with `*` for every version. */
+  starters: Record<string, Starter[]>;
 }
+
+/** A project added to each new instance on a version. */
+export interface Starter { source: ContentSource; project: string; kind: ContentKind; title: string; icon?: string | null }
+/** A starter left out. Without a reason, it had no version for that instance. */
+export interface SkippedStarter { title: string; reason: string | null }
+export interface StarterResult { added: string[]; skipped: SkippedStarter[] }
 
 export interface UpdateStatus { current: string; ready: string | null }
 
@@ -441,6 +449,7 @@ export const api = {
   takePendingLaunch: () => call<string | null>('take_pending_launch'),
   shareCode: (id: string) => call<ShareCode>('share_code', { id }),
   installShare: (code: string) => call<{ instance: LibraryEntry; failed: string[] }>('install_share', { code }),
+  addStarters: (id: string) => call<StarterResult>('add_starters', { id }),
   hostStatus: (id: string) => call<HostStatus>('host_status', { id }),
   prepareHost: (id: string) => call<HostStatus>('prepare_host', { id }),
   acceptEula: (id: string) => call<void>('accept_eula', { id }),

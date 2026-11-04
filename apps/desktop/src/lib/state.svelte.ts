@@ -1,7 +1,25 @@
 import { api, iconUrl, inTauri, onCoreEvent, onFileDrop, onGameLog, onLaunchRequest, onUpdateReady } from './api';
-import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, FriendOverview, Join, LibraryEntry, LockedMod, ProjectTarget } from './api';
+import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, FriendOverview, Join, LibraryEntry, LoaderKind, LockedMod, ProjectTarget, Starter } from './api';
 
 const FRIENDS_EVERY = 60000;
+
+/** The list kept for every version, next to each version's own. */
+export const EVERY_VERSION = '*';
+
+/** Vanilla has no mods and nothing to run shaders with. Matches `fits` in the core. */
+export function starterFits(kind: ContentKind, loader: LoaderKind): boolean {
+  if (kind === 'resourcepack') return true;
+  return (kind === 'mod' || kind === 'shader') && loader !== 'vanilla';
+}
+
+/** What a new instance on `minecraft` gets: its own list, then the shared one, each project once. */
+export function startersFor(lists: Record<string, Starter[]> | undefined, minecraft: string): Starter[] {
+  const chosen: Starter[] = [];
+  for (const starter of [...(lists?.[minecraft] ?? []), ...(lists?.[EVERY_VERSION] ?? [])]) {
+    if (!chosen.some((other) => other.source === starter.source && other.project === starter.project)) chosen.push(starter);
+  }
+  return chosen;
+}
 
 export type View = 'library' | 'discover' | 'skins' | 'screenshots' | 'friends' | 'settings';
 export type InstanceTab = 'mods' | 'resourcepacks' | 'shaders' | 'worlds' | 'trail' | 'logs' | 'server' | 'settings';
@@ -377,6 +395,22 @@ class AppState {
   fail(error: unknown, title = 'Something went wrong') {
     const problem = error as Partial<ApiError>;
     this.toast('bad', title, problem?.message ?? String(error));
+  }
+
+  /** Adds the player's starter mods to a new instance and says what was left out. */
+  async addStarters(instance: string) {
+    try {
+      const { added, skipped } = await api.addStarters(instance);
+      await Promise.all([this.refresh(), this.loadInstalled(instance)]);
+      this.contentTick++;
+      const missing = skipped.filter((item) => !item.reason).map((item) => item.title);
+      const absent = missing.length ? `No version for this instance: ${missing.join(', ')}` : undefined;
+      if (added.length) this.toast('good', added.length === 1 ? `Added the starter mod ${added[0]}` : `Added ${added.length} starter mods`, absent);
+      else if (missing.length) this.toast('info', 'None of your starter mods have a version for this instance', missing.join(', '));
+      for (const item of skipped.filter((item) => item.reason).slice(0, 3)) this.toast('bad', `Could not add ${item.title}`, item.reason ?? undefined);
+    } catch (error) {
+      this.fail(error, 'Could not add starter mods');
+    }
   }
 
   /** Brings back something deleted, wherever it was. */

@@ -1110,6 +1110,68 @@ await step('keeps mods and shaders out of Vanilla instances', async () => {
   await click('Modpacks');
 });
 
+await step('adds starter mods to new instances on their version', async () => {
+  const hit = (title) => `[...document.querySelectorAll('.hits li')].find((li) => li.querySelector('.title')?.innerText === ${text(title)})`;
+  await nav('Settings');
+  await click('Edit starter mods');
+  await waitFor('the version list', `document.querySelector('#starter-version')?.options.length > 3`);
+  await setValue('#starter-version', VERSION);
+  await setValue('.search-starters', 'mod menu');
+  await waitFor('Mod Menu in the results', `!!${hit('Mod Menu')}`, 20000);
+  await run(`${hit('Mod Menu')}.querySelector('.add-starter').click()`);
+  await waitFor('Mod Menu on the list', `[...document.querySelectorAll('.chosen .title')].some((t) => t.innerText === 'Mod Menu')`);
+  // The most downloaded resource pack for this version, whatever it is today.
+  await setValue('.finder select', 'resourcepack');
+  await setValue('.search-starters', '');
+  await waitFor('resource packs', `!!document.querySelector('.hits li .add-starter') && !document.querySelector('.hits[aria-busy="true"]')`, 20000);
+  const pack = await run(`document.querySelector('.hits li .title').innerText`);
+  await run(`document.querySelector('.hits li .add-starter').click()`);
+  await waitFor('the pack on the list', `[...document.querySelectorAll('.chosen .title')].some((t) => t.innerText === ${text(pack)})`);
+  await setValue('#starter-version', '*');
+  await waitFor('the empty shared list', hasText('Nothing is added to every version yet.'));
+  await setValue('.finder select', 'mod');
+  await setValue('.search-starters', 'sodium');
+  await waitFor('Sodium in the results', `!!${hit('Sodium')}`, 20000);
+  await run(`${hit('Sodium')}.querySelector('.add-starter').click()`);
+  await waitFor('Sodium marked as added', `${hit('Sodium')}?.innerText.includes('Added')`);
+  await shot('37-starter-mods');
+  await click('Done');
+  await waitFor('the lists in Settings', hasText('Every version (1)') + ' && ' + hasText(`${VERSION} (2)`));
+  const saved = readFileSync(join(HOME, 'settings.toml'), 'utf8');
+  expect(saved.includes('Mod Menu') && saved.includes('Sodium') && saved.includes(pack), 'the lists did not save');
+
+  await nav('Library');
+  await click('New instance');
+  await waitFor('the version list', `document.querySelector('#version')?.options.length > 3`);
+  await setValue('#name', 'E2E Starters');
+  await setValue('#version', VERSION);
+  await setValue('#loader', 'fabric');
+  await waitFor('all three starters offered', hasText('Add starter mods (3)'));
+  await setValue('#loader', 'vanilla');
+  await waitFor('only the pack offered on Vanilla', hasText('Add starter mods (1)'));
+  await setValue('#loader', 'fabric');
+  await shot('38-new-with-starters');
+  await click('Create');
+  await waitFor('the starters to install', hasText('Added 3 starter mods'), 120000);
+  const lock = lockText('e2e-starters');
+  expect(lock.includes('Mod Menu') && lock.includes('Sodium') && lock.includes(pack), 'a starter is missing from the lockfile');
+  const jars = modFiles('e2e-starters').join(' ').toLowerCase();
+  expect(jars.includes('modmenu') && jars.includes('sodium'), `the mods folder has ${jars}`);
+  expect(readFileSync(join(HOME, 'instances', 'e2e-starters', '.waymarks', 'trail.json'), 'utf8').includes('Added 3 starter mods'), 'no waymark for the starters');
+
+  await nav('Library');
+  await click('New instance');
+  await waitFor('the version list', `document.querySelector('#version')?.options.length > 3`);
+  await setValue('#name', 'E2E Plain');
+  await setValue('#version', VERSION);
+  await setValue('#loader', 'vanilla');
+  await waitFor('the pack offered', hasText('Add starter mods (1)'));
+  await click('Create');
+  await waitFor('the pack to install', hasText(`Added the starter mod ${pack}`), 120000);
+  const plain = lockText('e2e-plain');
+  expect(plain.includes(pack) && !plain.includes('Sodium') && modFiles('e2e-plain').length === 0, 'Vanilla got mods');
+});
+
 await step('saves global settings', async () => {
   await nav('Settings');
   await waitFor('the settings page', `!!document.querySelector('#delay')`);

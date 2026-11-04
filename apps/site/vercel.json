@@ -4,7 +4,7 @@
   "redirects": [
     {
       "source": "/download",
-      "destination": "https://github.com/Woblu/waymark-launcher/releases/download/v0.3.1/Waymark_0.3.1_x64-setup.exe",
+      "destination": "https://github.com/Woblu/waymark-launcher/releases/download/v0.3.2/Waymark_0.3.2_x64-setup.exe",
       "permanent": false
     },
     {

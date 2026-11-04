@@ -144,7 +144,7 @@ struct Wanted<'a> {
 }
 
 /// A file about to be installed.
-struct Planned {
+pub(crate) struct Planned {
     kind: ContentKind,
     name: String,
     file: String,
@@ -156,7 +156,7 @@ struct Planned {
     version: String,
     icon: Option<String>,
     side: Side,
-    project_key: String,
+    pub(crate) project_key: String,
     requires: Vec<String>,
     remote_hash: Option<String>,
 }
@@ -185,7 +185,11 @@ pub(crate) fn project_key(source: &Source) -> Option<String> {
 
 /// What's already here, so nothing is installed twice. A data pack only counts
 /// in its own world, because each world can have its own copy.
-fn installed_keys(lock: &Lockfile, kind: ContentKind, world: Option<&str>) -> HashSet<String> {
+pub(crate) fn installed_keys(
+    lock: &Lockfile,
+    kind: ContentKind,
+    world: Option<&str>,
+) -> HashSet<String> {
     lock.everything()
         .filter(|(shelf, entry)| {
             *shelf != ContentKind::DataPack
@@ -330,7 +334,7 @@ impl Core {
             ContentKind::DataPack => Some(self.world_folder(&instance.id, wanted.world)?),
             _ => None,
         };
-        let mut lock = self.lockfile(&instance.id)?;
+        let lock = self.lockfile(&instance.id)?;
         let already = installed_keys(&lock, kind, world.as_deref());
         task.progress(0, 1, "Working out dependencies");
         let planned = match source {
@@ -349,7 +353,28 @@ impl Core {
         if planned.is_empty() {
             return Ok(None);
         }
+        let primary = planned.first().map(|p| p.name.clone()).unwrap_or_default();
+        let extras = planned.len() - 1;
+        self.add_planned(instance, lock, &planned, world, task)
+            .await?;
+        let label = match extras {
+            0 => format!("Installed {primary}"),
+            1 => format!("Installed {primary} and 1 dependency"),
+            n => format!("Installed {primary} and {n} dependencies"),
+        };
+        self.trail(&instance.id).mark(&label, WaymarkKind::Install)
+    }
 
+    /// Downloads planned files, puts them in the instance and records them in its
+    /// lockfile. The caller marks the waymark, so several plans can share one.
+    pub(crate) async fn add_planned(
+        &self,
+        instance: &Instance,
+        mut lock: Lockfile,
+        planned: &[Planned],
+        world: Option<String>,
+        task: &Task,
+    ) -> Result<()> {
         let staged = self.paths.cache().join("downloads");
         let fetches: Vec<Fetch> = planned
             .iter()
@@ -366,11 +391,9 @@ impl Core {
             })
             .await?;
 
-        let primary = planned.first().map(|p| p.name.clone()).unwrap_or_default();
-        let extras = planned.len() - 1;
         let game = self.paths.game(&instance.id);
         let mut stored: HashMap<String, String> = HashMap::new();
-        for plan in &planned {
+        for plan in planned {
             let path = staged.join(&plan.file);
             let file = self.store.add(&path, Placement::Link)?;
             let _ = fs::remove_file(&path);
@@ -402,18 +425,11 @@ impl Core {
                 .retain(|m| m.file != plan.file || m.group != entry.group);
             lock.shelf_mut(plan.kind).push(entry);
         }
-        link_requirements(&mut lock, &planned, &stored);
-        lock.save(&self.paths.instance(&instance.id))?;
-
-        let label = match extras {
-            0 => format!("Installed {primary}"),
-            1 => format!("Installed {primary} and 1 dependency"),
-            n => format!("Installed {primary} and {n} dependencies"),
-        };
-        self.trail(&instance.id).mark(&label, WaymarkKind::Install)
+        link_requirements(&mut lock, planned, &stored);
+        lock.save(&self.paths.instance(&instance.id))
     }
 
-    async fn plan_modrinth(
+    pub(crate) async fn plan_modrinth(
         &self,
         instance: &Instance,
         already: &HashSet<String>,
@@ -488,7 +504,7 @@ impl Core {
         Ok(planned)
     }
 
-    async fn plan_curseforge(
+    pub(crate) async fn plan_curseforge(
         &self,
         instance: &Instance,
         already: &HashSet<String>,
