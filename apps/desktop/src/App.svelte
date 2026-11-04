@@ -14,6 +14,7 @@
   import InstanceDialogs from './components/InstanceDialogs.svelte';
   import Library from './pages/Library.svelte';
   import Discover from './pages/Discover.svelte';
+  import Servers from './pages/Servers.svelte';
   import Friends from './pages/Friends.svelte';
   import Project from './pages/Project.svelte';
   import Screenshots from './pages/Screenshots.svelte';
@@ -36,6 +37,8 @@
         <Library />
       {:else if app.view === 'discover'}
         <Discover target={app.discoverTarget} />
+      {:else if app.view === 'servers'}
+        <Servers />
       {:else if app.view === 'skins'}
         <Skins />
       {:else if app.view === 'screenshots'}

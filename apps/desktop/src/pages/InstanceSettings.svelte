@@ -13,6 +13,8 @@
   ];
 
   const original = untrack(() => entry);
+  /** What the form last matched on disk: when it opened, then after each save. */
+  let base: LibraryEntry = original;
   let name = $state(original.name);
   let memory = $state(original.memoryMb ?? 4096);
   let useDefaultMemory = $state(original.memoryMb === undefined);
@@ -25,6 +27,10 @@
   let preLaunch = $state(original.preLaunch ?? '');
   let wrapper = $state(original.wrapper ?? '');
   let postExit = $state(original.postExit ?? '');
+  let keepOwn = $state(original.keepsOwnSettings ?? false);
+  /** Whether game settings are shared, which is when keeping its own means anything. */
+  let sharing = $state(false);
+  api.settings().then((found) => (sharing = found.shareSettings), () => {});
   let confirming = $state(false);
   let copyFrom = $state('');
   let exporting = $state(false);
@@ -40,8 +46,19 @@
       .map((line) => [line.slice(0, line.indexOf('=')).trim(), line.slice(line.indexOf('=') + 1)]);
   }
 
+  async function unlink() {
+    try {
+      await api.updateInstance(entry.id, { server: null });
+      await app.refresh();
+      base = app.library.find((other) => other.id === entry.id) ?? base;
+      app.toast('good', `${entry.name} no longer joins a server on Play`);
+    } catch (error) {
+      app.fail(error, 'Could not save');
+    }
+  }
+
   /**
-   * What this form shows came from when it opened. Something outside Waymark can
+   * What this form shows came from when it opened or last saved. Something outside Waymark can
    * change the instance meanwhile, like an installer adding a pre-launch command,
    * so a field this form didn't change keeps whatever is saved now.
    */
@@ -54,12 +71,13 @@
     try {
       await app.refresh();
       const saved = app.library.find((other) => other.id === entry.id) ?? original;
-      const field = <T,>(mine: T, read: (from: LibraryEntry) => T) => unlessChanged(mine, read(original), read(saved));
+      const field = <T,>(mine: T, read: (from: LibraryEntry) => T) => unlessChanged(mine, read(base), read(saved));
       await api.updateInstance(entry.id, {
         name: field(name.trim() || entry.name, (from) => from.name),
         memoryMb: field(useDefaultMemory ? null : memory, (from) => from.memoryMb ?? null),
         javaPath: field(javaPath.trim() || null, (from) => from.javaPath ?? null),
         jvmArgs: field(jvmArgs.trim() ? jvmArgs.trim().split(/\s+/) : [], (from) => from.jvmArgs ?? []),
+        keepsOwnSettings: field(keepOwn, (from) => from.keepsOwnSettings ?? false),
         options: {
           width: field(Number(width) || null, (from) => from.width ?? null),
           height: field(Number(height) || null, (from) => from.height ?? null),
@@ -71,6 +89,7 @@
         },
       });
       await app.refresh();
+      base = app.library.find((other) => other.id === entry.id) ?? base;
       app.toast('good', 'Settings saved');
     } catch (error) {
       app.fail(error, 'Could not save');
@@ -167,6 +186,25 @@
         <label class="check"><input type="checkbox" bind:checked={fullscreen} /> Start in fullscreen</label>
       </div>
     </div>
+    {#if entry.server}
+      <div class="form-row">
+        <span class="form-label">Server</span>
+        <div>
+          <p class="linked"><span class="name">{entry.server.name}</span> <span class="faint mono">{entry.server.address}</span></p>
+          <p class="form-hint">Play joins this server straight away, and joining it from Servers keeps this instance on the version it needs.</p>
+          <button type="button" class="btn" onclick={unlink}>Stop joining it on Play</button>
+        </div>
+      </div>
+    {/if}
+    {#if sharing}
+      <div class="form-row">
+        <span class="form-label">Game settings</span>
+        <div>
+          <label class="check"><input type="checkbox" bind:checked={keepOwn} /> Keep this instance's own game settings</label>
+          <p class="form-hint">Its keybinds, video and other options stay as they are, and what you change here stays here.</p>
+        </div>
+      </div>
+    {/if}
     <div class="form-row">
       <label for="env">Environment variables</label>
       <div>
@@ -254,6 +292,9 @@
   .tab { height: 100%; overflow-y: auto; padding: 8px var(--gutter) var(--gutter); }
   .sheet { max-width: 720px; }
   .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
+  .linked { padding-top: 8px; }
+  .linked .name { font-weight: 600; }
+  .linked + .form-hint + .btn { margin-top: 8px; }
   .size { display: flex; align-items: center; gap: 8px; }
   .size .field { width: 96px; }
   .area { height: auto; padding: 8px 12px; resize: vertical; }

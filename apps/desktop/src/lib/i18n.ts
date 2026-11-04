@@ -80,6 +80,11 @@ function resolve(language: string): string {
   return code in LANGUAGE_NAMES ? code : 'en';
 }
 
+/** The language the interface is shown in, as a code like `de`. */
+export function currentLanguage(): string {
+  return resolve(savedLanguage());
+}
+
 export function savedLanguage(): string {
   try {
     return localStorage.getItem(KEY) ?? 'system';

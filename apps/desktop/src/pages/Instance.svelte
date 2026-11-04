@@ -26,7 +26,6 @@
     { id: 'trail', label: 'Waymarks' },
     { id: 'logs', label: 'Logs' },
     { id: 'server', label: 'Server' },
-    { id: 'settings', label: 'Settings' },
   ];
 
   /** These only work with a loader, unless an older instance already has some. */
@@ -72,8 +71,9 @@
     return () => (current = false);
   });
 
+  // Settings has no tab of its own. It opens from the More actions menu.
   $effect(() => {
-    if (entry && !tabs.some((item) => item.id === app.tab)) app.tab = 'worlds';
+    if (entry && app.tab !== 'settings' && !tabs.some((item) => item.id === app.tab)) app.tab = 'worlds';
   });
 
   function openMore(event: MouseEvent) {
@@ -141,6 +141,7 @@
             {loaderName(entry.loader.kind)} {entry.minecraft}{entry.loader.version ? `, ${entry.loader.version}` : ''}
             {#if entry.playtimeSecs >= 60}<span>{playtime(entry.playtimeSecs)}</span>{/if}
             <span>{entry.lastPlayed ? `Last played ${timeAgo(entry.lastPlayed)}` : 'Not played yet'}</span>
+            {#if entry.server}<span>{`Joins ${entry.server.name}`}</span>{/if}
           </p>
         </div>
         <button class="btn" onclick={() => app.go('discover', id, vanilla ? 'resourcepack' : undefined)}><Plus size={16} /> Install content</button>
@@ -206,6 +207,7 @@
       {:else if app.tab === 'server'}
         <ServerTab {id} />
       {:else}
+        <h2 class="settings-title">Settings</h2>
         <InstanceSettings {entry} />
       {/if}
     </section>
@@ -227,4 +229,5 @@
   .notice { flex: none; margin: 10px var(--gutter) 0; }
   .sections { flex: none; padding: 0 var(--gutter); }
   .panel { flex: 1; min-height: 0; }
+  .settings-title { margin: 2px 0 10px; font-size: var(--text-l); }
 </style>

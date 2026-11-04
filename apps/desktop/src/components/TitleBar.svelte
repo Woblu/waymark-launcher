@@ -9,6 +9,7 @@
   const VIEWS: { id: View; label: string }[] = [
     { id: 'library', label: 'Library' },
     { id: 'discover', label: 'Discover' },
+    { id: 'servers', label: 'Servers' },
     { id: 'skins', label: 'Skins' },
     { id: 'screenshots', label: 'Screenshots' },
     { id: 'friends', label: 'Friends' },

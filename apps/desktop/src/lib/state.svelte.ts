@@ -21,7 +21,7 @@ export function startersFor(lists: Record<string, Starter[]> | undefined, minecr
   return chosen;
 }
 
-export type View = 'library' | 'discover' | 'skins' | 'screenshots' | 'friends' | 'settings';
+export type View = 'library' | 'discover' | 'servers' | 'skins' | 'screenshots' | 'friends' | 'settings';
 export type InstanceTab = 'mods' | 'resourcepacks' | 'shaders' | 'worlds' | 'trail' | 'logs' | 'server' | 'settings';
 
 export interface TaskState {
@@ -416,6 +416,33 @@ class AppState {
     }
   }
 
+  /** The listed server being got ready to join, if any. */
+  joiningServer = $state<string | null>(null);
+
+  /**
+   * Joins a listed server: the instance made for it last time, or a new one the
+   * first time, then straight into the server. A pack that wants files fetched
+   * by hand opens its instance instead, where those are listed.
+   */
+  async joinServer(server: { id: string; name: string }) {
+    if (this.joiningServer) return;
+    this.joiningServer = server.id;
+    try {
+      const ready = await api.serverInstance(server.id);
+      await this.refresh();
+      if (ready.updated) this.toast('good', `Updated ${ready.instance.name} for ${server.name}`, 'The server moved to a new version of its pack. You can undo this from Waymarks.');
+      if (ready.manual.length) {
+        this.open(ready.instance.id);
+        this.toast('info', 'A few files need downloading by hand', `${server.name} needs them before you can join.`);
+      } else {
+        await this.play(ready.instance.id, { kind: 'server', address: ready.address });
+      }
+    } catch (error) {
+      this.fail(error, `Could not join ${server.name}`);
+    }
+    this.joiningServer = null;
+  }
+
   /** Brings back something deleted, wherever it was. */
   async restore(id: string) {
     try {
@@ -429,6 +456,9 @@ class AppState {
   }
 
   async play(id: string, join?: Join) {
+    // An instance made for a listed server goes straight into it, wherever Play is pressed.
+    const server = this.entry(id)?.server;
+    if (!join && server) join = { kind: 'server', address: server.address };
     try {
       await api.launch(id, join);
     } catch (error) {

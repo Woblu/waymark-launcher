@@ -6,6 +6,10 @@ pub const KEYCHAIN_SERVICE: &str = "app.waymark.launcher";
 pub const USER_AGENT: &str = concat!("waymark-launcher/", env!("CARGO_PKG_VERSION"));
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The Discord application rich presence shows as, named "Waymark" on Discord.
+/// An application ID is public by design. An empty one turns rich presence off.
+pub const DISCORD_CLIENT_ID: &str = "1567673605003944039";
+
 /// The Azure app registration. A client ID is public by design.
 pub const MSA_CLIENT_ID: &str = "aea84696-cbfe-470c-8138-023b193ce3cb";
 

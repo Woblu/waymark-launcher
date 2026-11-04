@@ -458,6 +458,11 @@ impl Core {
             appdata,
         } = self.prepare_launch(instance, session, join, task).await?;
 
+        // Before the waymark, so it records exactly what the game starts with.
+        if let Err(error) = self.share_settings_in(instance) {
+            tracing::warn!(%error, "could not share game settings with this instance");
+        }
+
         task.progress(0, 1, "Setting a waymark");
         let trail = self.trail(&instance.id);
         tokio::task::spawn_blocking(move || trail.mark("Before playing", WaymarkKind::Launch))
@@ -514,6 +519,7 @@ impl Core {
             .stderr(Stdio::piped());
         crate::loaders::hide_console(&mut command);
         let child = command.spawn()?;
+        self.show_playing(instance, join);
         self.watch(instance.clone(), child, hooks);
         Ok(())
     }
@@ -567,6 +573,10 @@ impl Core {
                 }
             };
             core.games.lock().expect("game list poisoned").remove(&id);
+            core.stop_playing(&id);
+            if let Err(error) = core.share_settings_out(&instance) {
+                tracing::warn!(%error, "could not take back this instance's game settings");
+            }
 
             let played_secs = began.elapsed().as_secs();
             let code = status.and_then(|s| s.code());
@@ -630,6 +640,8 @@ mod tests {
             pack: None,
             shared: Vec::new(),
             group: None,
+            keeps_own_settings: false,
+            server: None,
             options: LaunchOptions::default(),
         };
         let prepared = Prepared {

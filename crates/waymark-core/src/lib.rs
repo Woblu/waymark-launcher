@@ -8,6 +8,7 @@ pub mod brand;
 pub mod content;
 pub mod crash;
 pub mod curseforge;
+pub mod discord;
 pub mod error;
 pub mod event;
 pub mod export;
@@ -38,6 +39,7 @@ pub mod paths;
 pub mod port_map;
 pub mod projects;
 pub mod screenshots;
+pub mod server_list;
 pub mod share;
 pub mod shared;
 pub mod shortcut;
@@ -46,6 +48,7 @@ pub mod social;
 pub mod start_check;
 pub mod starters;
 pub mod store;
+pub mod sync;
 pub mod technic;
 pub mod trash;
 pub mod waymarks;
@@ -96,6 +99,14 @@ pub struct Settings {
     pub check_updates: bool,
     /// Starter mods by Minecraft version, plus `*` for every version.
     pub starters: BTreeMap<String, Vec<starters::Starter>>,
+    /// Game options follow the player between instances.
+    pub share_settings: bool,
+    /// The server list does too, while settings are shared.
+    pub share_servers: bool,
+    /// Options the player chose to share or keep apart, over the defaults.
+    pub shared_choices: BTreeMap<String, bool>,
+    /// Shows the instance being played on the player's Discord profile.
+    pub discord_presence: bool,
 }
 
 impl Default for Settings {
@@ -111,6 +122,10 @@ impl Default for Settings {
             auto_update: true,
             check_updates: true,
             starters: BTreeMap::new(),
+            share_settings: false,
+            share_servers: true,
+            shared_choices: BTreeMap::new(),
+            discord_presence: false,
         }
     }
 }
@@ -137,6 +152,10 @@ pub struct Core {
     pub(crate) vault: Arc<dyn auth::SessionVault>,
     /// Mojang's last answer about what the player wears, so pages can share it.
     pub(crate) profile: Arc<Mutex<Option<skins::KnownProfile>>>,
+    /// Discord rich presence, started the first time there's something to show.
+    pub(crate) presence: Arc<std::sync::OnceLock<discord::Presence>>,
+    /// The game being shown, by instance, so turning presence on mid-game works.
+    pub(crate) playing: Arc<Mutex<Option<(String, discord::Activity)>>>,
 }
 
 /// The real keychain, except in tests, which must never write to it.
@@ -167,6 +186,8 @@ impl Core {
             signing: Arc::default(),
             vault: session_vault(),
             profile: Arc::default(),
+            presence: Arc::default(),
+            playing: Arc::default(),
         })
     }
 
@@ -180,6 +201,8 @@ impl Core {
 
     pub fn save_settings(&self, settings: &Settings) -> Result<()> {
         fs::write(self.paths.settings(), toml::to_string_pretty(settings)?)?;
+        // Turning presence on or off takes effect at once, even mid-game.
+        self.update_presence();
         Ok(())
     }
 

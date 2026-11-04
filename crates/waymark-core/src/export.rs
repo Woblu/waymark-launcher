@@ -430,6 +430,8 @@ mod tests {
             pack: None,
             shared: Vec::new(),
             group: None,
+            keeps_own_settings: false,
+            server: None,
             options: crate::instance::LaunchOptions::default(),
         };
         let text = notes(&instance, &["Sodium".to_string()]);

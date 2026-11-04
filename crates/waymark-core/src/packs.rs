@@ -394,9 +394,27 @@ impl Core {
     ) -> Result<PackResult> {
         let task = Task::start(&self.events, "Installing modpack");
         let outcome = self
-            .fetch_and_install_pack(source, project, minecraft, &task)
+            .fetch_and_install_pack(source, project, minecraft, None, &task)
             .await;
         conclude(task, outcome)
+    }
+
+    /// Installs one exact version of a Modrinth pack, the way a server asks for it.
+    pub(crate) async fn install_pack_version(
+        &self,
+        project: &str,
+        version: &str,
+    ) -> Result<PackResult> {
+        let task = Task::start(&self.events, "Installing modpack");
+        let outcome = self
+            .fetch_and_install_pack(ContentSource::Modrinth, project, None, Some(version), &task)
+            .await;
+        conclude(task, outcome)
+    }
+
+    /// The pack version an instance has now, if it came from a pack.
+    pub(crate) fn pack_version_id(&self, id: &str) -> Option<String> {
+        self.pack_state(id).map(|state| state.origin.version_id)
     }
 
     /// Installs a `.mrpack` or CurseForge `.zip` the player already has.
@@ -411,6 +429,7 @@ impl Core {
         source: ContentSource,
         project: &str,
         minecraft: Option<&str>,
+        version: Option<&str>,
         task: &Task,
     ) -> Result<PackResult> {
         task.progress(0, 1, "Finding the pack");
@@ -426,7 +445,9 @@ impl Core {
             let (tree, origin, icon) = self.technic_tree(project, task).await?;
             return self.install_tree(tree, Some(origin), icon, task).await;
         }
-        let (path, origin, icon) = self.download_pack(source, project, minecraft).await?;
+        let (path, origin, icon) = self
+            .download_pack(source, project, minecraft, version)
+            .await?;
         let result = self
             .install_from_archive(&path, Some(origin), icon, task)
             .await;
@@ -434,20 +455,32 @@ impl Core {
         result
     }
 
-    /// Fetches the newest suitable version of a pack.
+    /// Fetches the newest suitable version of a pack, or the one asked for. Only
+    /// Modrinth packs can be asked for by version.
     async fn download_pack(
         &self,
         source: ContentSource,
         project: &str,
         minecraft: Option<&str>,
+        wanted: Option<&str>,
     ) -> Result<(std::path::PathBuf, PackOrigin, Option<String>)> {
         let staged = self.paths.cache().join("downloads");
         match source {
             ContentSource::Modrinth => {
                 let details = modrinth::project(&self.net, project).await?;
-                let versions = self.pack_versions(&details.id, minecraft).await?;
-                let version = modrinth::pick(&versions)
-                    .ok_or_else(|| Error::NotFound(format!("a version of {}", details.title)))?;
+                let versions = match wanted {
+                    Some(wanted) => modrinth::versions_by_id(&self.net, &[wanted.to_string()])
+                        .await?
+                        .into_iter()
+                        .filter(|version| version.project_id == details.id)
+                        .collect(),
+                    None => self.pack_versions(&details.id, minecraft).await?,
+                };
+                let version = match wanted {
+                    Some(_) => versions.first(),
+                    None => modrinth::pick(&versions),
+                }
+                .ok_or_else(|| Error::NotFound(format!("a version of {}", details.title)))?;
                 let file = version
                     .primary_file()
                     .ok_or_else(|| Error::NotFound(format!("a file for {}", details.title)))?;
@@ -1437,7 +1470,31 @@ impl Core {
             ));
         }
         let task = Task::start(&self.events, format!("Updating {}", state.name));
-        let outcome = self.run_pack_update(id, state, &task).await;
+        let outcome = self.run_pack_update(id, state, None, &task).await;
+        match outcome {
+            Ok(report) => {
+                task.finish();
+                Ok(report)
+            }
+            Err(error) => {
+                task.fail(error.to_string());
+                Err(error)
+            }
+        }
+    }
+
+    /// Moves an instance's pack to one exact version, which a server may ask for.
+    pub(crate) async fn update_pack_to(&self, id: &str, version: &str) -> Result<PackUpdateReport> {
+        let state = self
+            .pack_state(id)
+            .ok_or_else(|| Error::NotFound("a modpack for this instance".into()))?;
+        if self.game_running(id) {
+            return Err(Error::Other(
+                "close the game before updating this pack".into(),
+            ));
+        }
+        let task = Task::start(&self.events, format!("Updating {}", state.name));
+        let outcome = self.run_pack_update(id, state, Some(version), &task).await;
         match outcome {
             Ok(report) => {
                 task.finish();
@@ -1454,6 +1511,7 @@ impl Core {
         &self,
         id: &str,
         state: PackState,
+        version: Option<&str>,
         task: &Task,
     ) -> Result<PackUpdateReport> {
         task.progress(0, 1, "Downloading the new version");
@@ -1468,7 +1526,7 @@ impl Core {
             (tree, origin)
         } else {
             let (path, origin, _) = self
-                .download_pack(state.origin.source, &state.origin.project, None)
+                .download_pack(state.origin.source, &state.origin.project, None, version)
                 .await?;
             let tree = self.read_pack(&path, task).await;
             let _ = fs::remove_file(&path);
@@ -1807,6 +1865,26 @@ fn conclude(task: Task, outcome: Result<PackResult>) -> Result<PackResult> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// A server asks for one exact pack version, and only from its own project.
+    #[tokio::test]
+    #[ignore = "talks to Modrinth"]
+    async fn live_an_exact_pack_version_is_fetched_for_a_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        let (path, origin, _) = core
+            .download_pack(ContentSource::Modrinth, "OgcNPs6n", None, Some("GDELFL7Y"))
+            .await
+            .unwrap();
+        assert_eq!(origin.version_id, "GDELFL7Y");
+        assert!(path.is_file());
+        assert!(
+            core.download_pack(ContentSource::Modrinth, "AANobbMI", None, Some("GDELFL7Y"))
+                .await
+                .is_err(),
+            "a version from another project was accepted"
+        );
+    }
 
     fn dependencies(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

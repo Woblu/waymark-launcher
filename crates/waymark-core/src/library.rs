@@ -31,14 +31,32 @@ pub struct LibraryEntry {
     pub pack_project: Option<String>,
 }
 
+/// A field that's there, even as `null`, is a change. Plain serde reads `null` as
+/// missing, which made clearing a value impossible.
+fn present<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstancePatch {
     pub name: Option<String>,
+    /// `null` goes back to the default memory.
+    #[serde(default, deserialize_with = "present")]
     pub memory_mb: Option<Option<u32>>,
+    /// `null` goes back to the recommended Java.
+    #[serde(default, deserialize_with = "present")]
     pub java_path: Option<Option<String>>,
     pub jvm_args: Option<Vec<String>>,
     pub options: Option<LaunchOptions>,
+    pub keeps_own_settings: Option<bool>,
+    /// `null` unlinks the instance from its server.
+    #[serde(default, deserialize_with = "present")]
+    pub server: Option<Option<crate::instance::ServerLink>>,
 }
 
 /// One point in a bisect, in terms the player can act on.
@@ -107,6 +125,12 @@ impl Core {
         }
         if let Some(options) = patch.options {
             instance.options = options;
+        }
+        if let Some(own) = patch.keeps_own_settings {
+            instance.keeps_own_settings = own;
+        }
+        if let Some(server) = patch.server {
+            instance.server = server;
         }
         self.save_instance(&instance)?;
         Ok(instance)
@@ -251,6 +275,40 @@ impl Core {
 mod tests {
     use super::*;
     use crate::lock::{Loader, LoaderKind, LockedMod, Origin, Side, Source};
+
+    /// Settings saved as `null` go back to their defaults, and missing ones stay put.
+    #[test]
+    fn a_patch_can_clear_memory_java_and_the_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        let instance = core
+            .register_instance("A", "1.21.4", Loader::default(), "x".into(), None)
+            .unwrap();
+        let set: InstancePatch = serde_json::from_str(
+            r#"{"memoryMb": 8192, "javaPath": "C:/java/bin/javaw.exe", "server": {"project": "abc", "name": "S", "address": "s.example"}}"#,
+        )
+        .unwrap();
+        let changed = core.update_instance(&instance.id, set).unwrap();
+        assert_eq!(changed.memory_mb, Some(8192));
+        assert!(changed.server.is_some());
+
+        let untouched = core
+            .update_instance(
+                &instance.id,
+                serde_json::from_str(r#"{"name": "B"}"#).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(untouched.memory_mb, Some(8192));
+        assert!(untouched.java_path.is_some() && untouched.server.is_some());
+
+        let cleared: InstancePatch =
+            serde_json::from_str(r#"{"memoryMb": null, "javaPath": null, "server": null}"#)
+                .unwrap();
+        let back = core.update_instance(&instance.id, cleared).unwrap();
+        assert_eq!(back.memory_mb, None);
+        assert_eq!(back.java_path, None);
+        assert_eq!(back.server, None);
+    }
 
     fn locked(name: &str) -> LockedMod {
         LockedMod {

@@ -136,6 +136,13 @@ const backToInstance = async () => {
   await run(`document.querySelector('.grid [data-instance=${text(ID)}]').click()`);
   await waitFor('the instance', `!!document.querySelector('.names h1')`);
 };
+// Instance settings has no tab. It opens from the More actions menu.
+const instanceSettings = async () => {
+  await run(`document.querySelector('[aria-label="More actions"]').click()`);
+  await waitFor('the menu', `!!document.querySelector('[role="menu"]')`);
+  await run(`[...document.querySelectorAll('[role="menu"] button')].find((b) => b.innerText.trim() === 'Settings').click()`);
+  await waitFor('the instance settings', `!!document.querySelector('#instance-name')`);
+};
 const listed = (name) => `[...document.querySelectorAll('.grid .name, .names h1')].some((n) => n.innerText === ${text(name)})`;
 const lockText = (id) => readFileSync(join(HOME, 'instances', id, 'waymark.lock'), 'utf8');
 
@@ -301,8 +308,9 @@ await step('launches the game, shows its log and stops it', async () => {
 });
 
 await step('renames the instance from its settings', async () => {
-  await run(`[...document.querySelectorAll('.tabs button')].find((b) => b.innerText === 'Settings').click()`);
-  await waitFor('the form', `!!document.querySelector('#instance-name')`);
+  const tabs = await run(`[...document.querySelectorAll('.sections .tabs button')].map((b) => b.innerText).join()`);
+  expect(!tabs.includes('Settings'), `the instance tabs still include Settings: ${tabs}`);
+  await instanceSettings();
   await setValue('#instance-name', 'E2E Renamed');
   await shot('07-instance-settings');
   await click('Save');
@@ -782,7 +790,7 @@ await step('reads past logs and saves launch settings', async () => {
   await waitFor('its text', `document.querySelectorAll('.console .line').length > 0`, 10000);
   await setValue('[aria-label="Which log"]', '');
 
-  await tab('Settings');
+  await instanceSettings();
   await setValue('[aria-label="Window width"]', '1280');
   await setValue('[aria-label="Window height"]', '720');
   await run(`(() => { const a = document.querySelector('#env'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(a, 'WAYMARK_TEST=yes'); a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
@@ -970,7 +978,7 @@ await step('groups and tags mods', async () => {
 });
 
 await step('shares a folder between instances', async () => {
-  await tab('Settings');
+  await instanceSettings();
   await waitFor('the form', hasText('Shared folders'));
   await run(`[...document.querySelectorAll('label')].find((l) => l.innerText.trim() === 'Resource packs').querySelector('input').click()`);
   await sleep(600);
@@ -1022,7 +1030,7 @@ await step('copies settings from another instance', async () => {
   const source = await run(`[...document.querySelectorAll('.grid .name')].find((n) => !n.innerText.includes('E2E'))?.innerText`);
   if (!source) return;
   await openInstance('E2E Renamed');
-  await tab('Settings');
+  await instanceSettings();
   await waitFor('the copy control', `!!document.querySelector('#copy-from')`);
   await setValue('#copy-from', await run(`document.querySelector('#copy-from').options[1].value`));
   await click('Copy');
@@ -1191,13 +1199,126 @@ await step('saves global settings', async () => {
   await nav('Library');
   await nav('Settings');
   await waitFor('the saved value', `document.querySelector('#delay')?.value === '168'`);
+
+  // No game is running here, so switching presence on sends Discord nothing.
+  const presence = `[...document.querySelectorAll('label')].find((l) => l.innerText.includes('Discord profile'))?.querySelector('input')`;
+  await waitFor('the Discord switch', `!!${presence}`);
+  expect(!(await run(`${presence}.checked`)), 'Discord presence started out on');
+  await run(`${presence}.click()`);
+  await sleep(400);
+  expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('discordPresence = true'), 'turning presence on did not save');
+  await run(`${presence}.click()`);
+  await sleep(400);
+  expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('discordPresence = false'), 'turning presence off did not save');
+});
+
+await step('shares game settings between instances', async () => {
+  const sharing = `[...document.querySelectorAll('label')].find((l) => l.innerText.includes('Share game settings'))?.querySelector('input')`;
+  await nav('Settings');
+  await waitFor('the sharing switch', `!!${sharing}`);
+  await run(`${sharing}.click()`);
+  await waitFor('where the shared set started', hasText('Started from'), 20000);
+  expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('shareSettings = true'), 'sharing did not save');
+  await click('Choose settings');
+  await waitFor('the shared options', `document.querySelectorAll('.sets li').length > 3`, 20000);
+  await shot('39-shared-settings');
+  const fov = `[...document.querySelectorAll('.sets li')].find((li) => li.querySelector('.key')?.innerText === 'fov')`;
+  await waitFor('the field of view', `!!${fov}`);
+  await run(`${fov}.querySelector('input').click()`);
+  await sleep(400);
+  expect(/fov = false/.test(readFileSync(join(HOME, 'settings.toml'), 'utf8')), 'keeping fov apart did not save');
+  await click('Done');
+
+  // A launch gives a never-played instance the shared set before the game writes its own file.
+  const vanillaOptions = join(HOME, 'instances', 'e2e-vanilla', 'game', 'options.txt');
+  expect(!existsSync(vanillaOptions), 'the Vanilla instance already has settings');
+  await openInstance('E2E Vanilla');
+  await click('Play');
+  const deadline = Date.now() + 120000;
+  while (!existsSync(vanillaOptions) && Date.now() < deadline) await sleep(100);
+  const given = existsSync(vanillaOptions) ? readFileSync(vanillaOptions, 'utf8') : '';
+  expect(/^version:\d+/.test(given) && /\nkey_key\.\w+:key\./.test(given), `the launch did not share settings: ${given.slice(0, 120)}`);
+  await waitFor('the game to start', `document.querySelector('footer .running') !== null`, 120000);
+  await click('Stop');
+  await waitFor('the game to stop', `document.querySelector('footer .running') === null`, 20000);
+
+  await openInstance('E2E Renamed');
+  await instanceSettings();
+  const keep = `[...document.querySelectorAll('label')].find((l) => l.innerText.includes("Keep this instance's own game settings"))?.querySelector('input')`;
+  await waitFor('the keep-its-own switch', `!!${keep}`);
+  await run(`${keep}.click()`);
+  await click('Save');
+  await sleep(500);
+  expect(/keepsOwnSettings = true/.test(readFileSync(join(HOME, 'instances', ID, 'instance.toml'), 'utf8')), 'keeping its own did not save');
+  await run(`${keep}.click()`);
+  await click('Save');
+  await sleep(500);
+  expect(!/keepsOwnSettings/.test(readFileSync(join(HOME, 'instances', ID, 'instance.toml'), 'utf8')), 'turning it back off did not save');
+
+  await nav('Settings');
+  await waitFor('the sharing switch', `!!${sharing}`);
+  await run(`${sharing}.click()`);
+  await sleep(400);
+  expect(readFileSync(join(HOME, 'settings.toml'), 'utf8').includes('shareSettings = false'), 'turning sharing off did not save');
+});
+
+await step('browses the server list, saves a server and gets an instance ready to join it', async () => {
+  await nav('Servers');
+  await waitFor('server cards', `document.querySelectorAll('.grid li').length > 5`, 30000);
+  await shot('40-servers');
+  const total = async () => run(`document.querySelector('.found .faint')?.innerText ?? ''`);
+  const before = await total();
+  await run(`[...document.querySelectorAll('.side label')].find((l) => l.innerText.trim() === 'Vanilla').querySelector('input').click()`);
+  await waitFor('only vanilla servers', `${text(before)} !== (document.querySelector('.found .faint')?.innerText ?? '') && [...document.querySelectorAll('.grid .by')].length > 0 && ![...document.querySelectorAll('.grid .by')].some((b) => b.innerText.startsWith('Modpack'))`, 30000);
+  const smp = `[...document.querySelectorAll('.side label')].find((l) => l.innerText.trim() === 'SMP')?.querySelector('input')`;
+  await waitFor('the SMP filter', `!!${smp}`, 20000);
+  const vanilla = await total();
+  await run(`${smp}.click()`);
+  await waitFor('fewer servers', `${text(vanilla)} !== (document.querySelector('.found .faint')?.innerText ?? '')`, 30000);
+  await run(`${smp}.click()`);
+  await waitFor('the vanilla list again', `${text(vanilla)} === (document.querySelector('.found .faint')?.innerText ?? '')`, 30000);
+
+  const name = await run(`document.querySelector('.grid .title').innerText`);
+  await setValue('[aria-label="Search servers"]', name);
+  await waitFor('the search to find it', `[...document.querySelectorAll('.grid .title')].some((t) => t.innerText === ${text(name)})`, 30000);
+  await run(`[...document.querySelectorAll('.grid li')].find((li) => li.querySelector('.title').innerText === ${text(name)}).querySelector('.open').click()`);
+  await waitFor('the server page', `document.querySelector('.server h1')?.innerText === ${text(name)}`);
+  await waitFor('its details', `!!document.querySelector('.server .address') && !document.querySelector('.server .main')?.innerText.startsWith('Loading')`, 30000);
+  await waitFor('the live check', `![...document.querySelectorAll('.server aside p')].some((p) => p.innerText === 'Checking')`, 20000);
+  await shot('41-server-page');
+  await click('Save');
+  await waitFor('it to be saved', `!!e2e.button('Saved')`);
+  const saved = JSON.parse(readFileSync(join(HOME, 'saved-servers.json'), 'utf8'));
+  expect(saved[0]?.name === name, `saved ${JSON.stringify(saved)}`);
+
+  await run(`document.querySelector('.server .back').click()`);
+  await waitFor('the list again', `document.querySelectorAll('.grid li').length > 0`);
+  await run(`[...document.querySelectorAll('.tabs button')].find((b) => b.innerText.startsWith('Your servers')).click()`);
+  await waitFor('the saved server', `[...document.querySelectorAll('.yours .name')].some((n) => n.innerText === ${text(name)})`);
+  await waitFor('servers from your instances', `[...document.querySelectorAll('.yours .name')].some((n) => n.innerText === 'Test Server')`);
+  await waitFor('the pings to finish', `![...document.querySelectorAll('.yours .status')].some((s) => s.innerText === 'Checking')`, 30000);
+  await shot('42-your-servers');
+
+  // Joining gets the instance ready, then starts the game. The test stops before
+  // the game, so it never connects to someone's public server.
+  const ready = (id) => run(`window.__TAURI_INTERNALS__.invoke('server_instance', { id: ${text(saved[0].id)} }).then((r) => JSON.stringify(r), (e) => 'error: ' + (e.message ?? JSON.stringify(e)))`);
+  const first = JSON.parse(await ready());
+  expect(first.created && first.instance.server?.project === saved[0].id, `the first join gave ${JSON.stringify(first).slice(0, 200)}`);
+  const listedThere = readFileSync(join(HOME, 'instances', first.instance.id, 'game', 'servers.dat'));
+  expect(listedThere.includes(Buffer.from(first.address.split(':')[0])), 'the server is not in the new instance\'s list');
+  const second = JSON.parse(await ready());
+  expect(!second.created && second.instance.id === first.instance.id, 'joining again made another instance');
+  // The app rereads its library when its window comes back into focus.
+  await run(`window.dispatchEvent(new Event('focus'))`);
+  await nav('Library');
+  await waitFor('the new instance', listed(name), 20000);
 });
 
 await step('deletes an instance and brings it back', async () => {
   await nav('Library');
   await waitFor('the instance in the library', listed('E2E Renamed'));
   await openInstance('E2E Renamed');
-  await tab('Settings');
+  await instanceSettings();
   await click('Delete');
   await click('Delete E2E Renamed');
   const named = listed('E2E Renamed');
@@ -1209,7 +1330,7 @@ await step('deletes an instance and brings it back', async () => {
   expect(existsSync(join(HOME, 'instances', ID, 'waymark.lock')), 'Undo did not restore the instance');
 
   await openInstance('E2E Renamed');
-  await tab('Settings');
+  await instanceSettings();
   await click('Delete');
   await click('Delete E2E Renamed');
   await waitFor('it to disappear again', `!${named}`);

@@ -196,7 +196,7 @@ const SAMPLE_VERSIONS = ['release', 'beta', 'alpha'].map((channel, index) => ({
 export function applyPreview(app: typeof App) {
   const hash = location.hash.slice(1);
   if (['mods', 'bisect', 'trail', 'worlds', 'instance-settings', 'logs'].includes(hash)) app.selected = 'emberfall';
-  if (hash === 'discover' || hash === 'settings' || hash === 'skins' || hash === 'screenshots') app.go(hash);
+  if (hash === 'discover' || hash === 'servers' || hash === 'settings' || hash === 'skins' || hash === 'screenshots') app.go(hash);
   if (hash === 'mods' || hash === 'bisect') app.tab = 'mods';
   if (hash === 'trail') app.tab = 'trail';
   if (hash === 'worlds') app.tab = 'worlds';
@@ -224,6 +224,14 @@ export function applyPreview(app: typeof App) {
   }
 }
 
+// Made-up servers for the browser preview of the server list.
+const SAMPLE_SERVERS = [
+  { id: 'srv-lantern', slug: 'lanternfall', name: 'Lanternfall SMP', summary: 'A slow, friendly survival world with towns, a shared market and seasons that end in a festival.', icon: null, banner: null, address: 'play.lanternfall.example', content: { kind: 'vanilla', versions: ['1.21.4', '1.21.5'], recommended: '1.21.4' }, online: true, players: 84, capacity: 200, versionName: 'Paper 1.21.4', region: 'europe', languages: ['en', 'de'], categories: ['smp', 'towns', 'economy'], plays: 1840 },
+  { id: 'srv-copper', slug: 'copperline', name: 'Copperline Minigames', summary: 'Bed wars, parkour races and a new arena every Friday.', icon: null, banner: null, address: 'copperline.example:25570', content: { kind: 'vanilla', versions: ['1.20.1'], recommended: '1.20.1' }, online: true, players: 1290, capacity: null, versionName: 'Velocity 3.3', region: 'us_east', languages: ['en'], categories: ['minigames', 'bedwars', 'parkour'], plays: 9120 },
+  { id: 'srv-forge', slug: 'deepforge', name: 'Deepforge Industries', summary: 'Tech and magic on a hand-tuned pack. Whitelist by application.', icon: null, banner: null, address: 'deepforge.example', content: { kind: 'modpack', project: 'srv-forge', version: 'v12', name: 'Deepforge Industries', icon: null }, online: false, players: null, capacity: null, versionName: null, region: 'us_west', languages: ['en'], categories: ['technical', 'whitelisted'], plays: 210 },
+];
+let mockKept: { id: string; name: string; address: string; icon: string | null }[] = [];
+
 const SAMPLE_LOG = [
   '[main/INFO] Loading Minecraft 1.21.4 with Fabric Loader 0.20.1',
   '[main/INFO] Loading 214 mods:',
@@ -245,6 +253,10 @@ let mockSettings = {
   autoUpdate: true,
   checkUpdates: true,
   language: 'system',
+  shareSettings: false,
+  discordPresence: false,
+  shareServers: true,
+  sharedChoices: {} as Record<string, boolean>,
   starters: {
     '1.20.1': [
       { source: 'modrinth', project: 'AANobbMI', kind: 'mod', title: 'Sodium', icon: null },
@@ -326,6 +338,46 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'save_settings':
       mockSettings = structuredClone(args?.settings as typeof mockSettings);
       return null;
+    case 'public_servers': {
+      const kind = (args?.query as { kind?: string })?.kind;
+      const found = SAMPLE_SERVERS.filter((server) => !kind || (kind === 'vanilla') === (server.content.kind === 'vanilla'));
+      return { servers: found, total: found.length };
+    }
+    case 'server_categories':
+      return [
+        { id: 'minigames', name: 'minigames', group: 'gameplay' },
+        { id: 'towns', name: 'towns', group: 'gameplay' },
+        { id: 'economy', name: 'economy', group: 'features' },
+        { id: 'smp', name: 'smp', group: 'community' },
+        { id: 'whitelisted', name: 'whitelisted', group: 'meta' },
+      ];
+    case 'public_server': {
+      const server = SAMPLE_SERVERS.find((item) => item.id === args?.id) ?? SAMPLE_SERVERS[0];
+      return { ...server, description: `## Welcome to ${server.name}\n\nJoin from Waymark and you land straight in the spawn town. Be kind, build big, and read the rules at spawn.`, gallery: [], links: [{ label: 'Discord', url: 'https://discord.gg/example' }], followers: 1260, page: `https://modrinth.com/server/${server.slug}`, instance: null };
+    }
+    case 'kept_servers':
+      return mockKept;
+    case 'keep_server': {
+      const server = args?.server as (typeof mockKept)[number];
+      mockKept = mockKept.filter((other) => other.id !== server.id);
+      if (args?.keep) mockKept.unshift(server);
+      return mockKept;
+    }
+    case 'discord_available':
+      return true;
+    case 'known_servers':
+      return [{ name: 'Hypixel', address: 'mc.hypixel.net', icon: null, instances: [{ id: 'emberfall', name: 'Emberfall', minecraft: '1.21.4' }, { id: 'quiet-skies', name: 'Quiet Skies', minecraft: '1.21.4' }] }];
+    case 'shared_settings':
+      return {
+        sets: mockSettings.shareSettings
+          ? [{ family: 'modern', label: 'Minecraft 1.13 and newer', from: 'Emberfall', options: [
+              { key: 'fov', value: '0.5', shared: mockSettings.sharedChoices.fov ?? true },
+              { key: 'key_key.jump', value: 'key.keyboard.space', shared: mockSettings.sharedChoices['key_key.jump'] ?? true },
+              { key: 'resourcePacks', value: '["vanilla"]', shared: mockSettings.sharedChoices.resourcePacks ?? false },
+            ] }]
+          : [],
+        serversFrom: mockSettings.shareSettings ? 'Emberfall' : null,
+      };
     case 'add_starters':
       return { added: ['Sodium', 'Mod Menu'], skipped: [{ title: 'Embeddium', reason: null }] };
     default:

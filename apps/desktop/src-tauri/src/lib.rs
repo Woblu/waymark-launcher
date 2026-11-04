@@ -34,12 +34,16 @@ use waymark_core::packs::{ManualFile, PackResult, PackUpdate, PackUpdateReport};
 use waymark_core::paths::Paths;
 use waymark_core::projects::{Fit, InstalledPage, ProjectPage, VersionFilter, VersionList};
 use waymark_core::screenshots::Screenshot;
+use waymark_core::server_list::{
+    KeptServer, KnownServer, ServerDetails, ServerInstance, ServerPage, ServerQuery,
+};
 use waymark_core::share::{ShareCode, SharedResult};
 use waymark_core::shortcut::LAUNCH_FLAG;
 use waymark_core::skins::{SavedSkin, SkinLibrary, SkinProfile, SkinVariant, Wear};
 use waymark_core::social::{FriendOverview, friends_available};
 use waymark_core::start_check::StartCheck;
 use waymark_core::starters::StarterResult;
+use waymark_core::sync::SharedSettings;
 use waymark_core::trash::Trashed;
 use waymark_core::waymarks::{Pending, WaymarkKind, WaymarkSummary};
 use waymark_core::worlds::{Join, RecentWorld, SavedServer, ServerStatus, Worlds};
@@ -1018,6 +1022,55 @@ async fn add_starters(launcher: State<'_, Launcher>, id: String) -> Reply<Starte
 }
 
 #[tauri::command]
+async fn shared_settings(launcher: State<'_, Launcher>) -> Reply<SharedSettings> {
+    off_thread(&launcher, |core| core.shared_settings()).await
+}
+
+#[tauri::command]
+async fn public_servers(launcher: State<'_, Launcher>, query: ServerQuery) -> Reply<ServerPage> {
+    launcher.core.public_servers(&query).await
+}
+
+#[tauri::command]
+async fn server_categories(launcher: State<'_, Launcher>) -> Reply<Vec<SearchCategory>> {
+    launcher.core.server_categories().await
+}
+
+#[tauri::command]
+async fn public_server(launcher: State<'_, Launcher>, id: String) -> Reply<ServerDetails> {
+    launcher.core.public_server(&id).await
+}
+
+#[tauri::command]
+async fn server_instance(launcher: State<'_, Launcher>, id: String) -> Reply<ServerInstance> {
+    launcher.core.server_instance(&id).await
+}
+
+#[tauri::command]
+async fn kept_servers(launcher: State<'_, Launcher>) -> Reply<Vec<KeptServer>> {
+    off_thread(&launcher, |core| core.kept_servers()).await
+}
+
+#[tauri::command]
+async fn keep_server(
+    launcher: State<'_, Launcher>,
+    server: KeptServer,
+    keep: bool,
+) -> Reply<Vec<KeptServer>> {
+    off_thread(&launcher, move |core| core.keep_server(server, keep)).await
+}
+
+#[tauri::command]
+fn discord_available(launcher: State<'_, Launcher>) -> bool {
+    launcher.core.discord_available()
+}
+
+#[tauri::command]
+async fn known_servers(launcher: State<'_, Launcher>) -> Reply<Vec<KnownServer>> {
+    off_thread(&launcher, |core| core.known_servers()).await
+}
+
+#[tauri::command]
 async fn host_status(launcher: State<'_, Launcher>, id: String) -> Reply<HostStatus> {
     off_thread(&launcher, move |core| core.host_status(&id)).await
 }
@@ -1345,6 +1398,15 @@ pub fn run() {
             share_code,
             install_share,
             add_starters,
+            shared_settings,
+            public_servers,
+            server_categories,
+            public_server,
+            server_instance,
+            kept_servers,
+            keep_server,
+            known_servers,
+            discord_available,
             friends_open,
             friend_account,
             friend_sign_in,

@@ -30,6 +30,10 @@ export interface LibraryEntry {
   pack?: string;
   shared?: string[];
   group?: string;
+  /** Keeps its own game settings while the others share theirs. */
+  keepsOwnSettings?: boolean;
+  /** The listed server this instance was made to join. */
+  server?: { project: string; name: string; address: string } | null;
   width?: number;
   height?: number;
   fullscreen?: boolean;
@@ -286,6 +290,13 @@ export interface Settings {
   checkUpdates: boolean;
   /** Starter mods by Minecraft version, with `*` for every version. */
   starters: Record<string, Starter[]>;
+  /** Game options follow the player between instances. */
+  shareSettings: boolean;
+  shareServers: boolean;
+  /** Options the player chose to share (true) or keep apart (false). */
+  sharedChoices: Record<string, boolean>;
+  /** Shows the instance being played on the player's Discord profile. */
+  discordPresence: boolean;
 }
 
 /** A project added to each new instance on a version. */
@@ -293,6 +304,47 @@ export interface Starter { source: ContentSource; project: string; kind: Content
 /** A starter left out. Without a reason, it had no version for that instance. */
 export interface SkippedStarter { title: string; reason: string | null }
 export interface StarterResult { added: string[]; skipped: SkippedStarter[] }
+
+export type ServerSort = 'popular' | 'followed' | 'newest' | 'updated';
+export type ServerKind = 'vanilla' | 'modded';
+export interface ServerQuery { text: string; sort: ServerSort; kind?: ServerKind; categories?: string[]; region?: string; language?: string; offset: number; limit: number }
+export type ServerContent =
+  | { kind: 'vanilla'; versions: string[]; recommended: string | null }
+  | { kind: 'modpack'; project: string; version: string; name: string | null; icon: string | null; minecraft: string | null; loader: LoaderKind | null };
+export interface PublicServer {
+  id: string;
+  slug: string;
+  name: string;
+  summary: string;
+  icon: string | null;
+  banner: string | null;
+  address: string;
+  content: ServerContent;
+  online: boolean;
+  players: number | null;
+  capacity: number | null;
+  versionName: string | null;
+  region: string | null;
+  languages: string[];
+  categories: string[];
+  plays: number | null;
+}
+export interface ServerPage { servers: PublicServer[]; total: number }
+export interface ServerDetails extends PublicServer {
+  description: string;
+  gallery: string[];
+  links: { label: string; url: string }[];
+  followers: number;
+  page: string;
+  instance: string | null;
+}
+export interface ServerInstance { instance: LibraryEntry; address: string; created: boolean; updated: boolean; manual: ManualFile[] }
+export interface KeptServer { id: string; name: string; address: string; icon?: string | null }
+export interface KnownServer { name: string; address: string; icon: string | null; instances: { id: string; name: string; minecraft: string }[] }
+
+export interface SharedOption { key: string; value: string; shared: boolean }
+export interface SharedSet { family: 'modern' | 'legacy'; label: string; from: string | null; options: SharedOption[] }
+export interface SharedSettings { sets: SharedSet[]; serversFrom: string | null }
 
 export interface UpdateStatus { current: string; ready: string | null }
 
@@ -450,6 +502,15 @@ export const api = {
   shareCode: (id: string) => call<ShareCode>('share_code', { id }),
   installShare: (code: string) => call<{ instance: LibraryEntry; failed: string[] }>('install_share', { code }),
   addStarters: (id: string) => call<StarterResult>('add_starters', { id }),
+  sharedSettings: () => call<SharedSettings>('shared_settings'),
+  publicServers: (query: ServerQuery) => call<ServerPage>('public_servers', { query }),
+  serverCategories: () => call<SearchCategory[]>('server_categories'),
+  publicServer: (id: string) => call<ServerDetails>('public_server', { id }),
+  serverInstance: (id: string) => call<ServerInstance>('server_instance', { id }),
+  keptServers: () => call<KeptServer[]>('kept_servers'),
+  keepServer: (server: KeptServer, keep: boolean) => call<KeptServer[]>('keep_server', { server, keep }),
+  knownServers: () => call<KnownServer[]>('known_servers'),
+  discordAvailable: () => call<boolean>('discord_available'),
   hostStatus: (id: string) => call<HostStatus>('host_status', { id }),
   prepareHost: (id: string) => call<HostStatus>('prepare_host', { id }),
   acceptEula: (id: string) => call<void>('accept_eula', { id }),

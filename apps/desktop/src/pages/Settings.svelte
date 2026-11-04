@@ -3,6 +3,7 @@
   import { Plus } from '@lucide/svelte';
   import Modal from '../components/Modal.svelte';
   import StarterMods from '../components/StarterMods.svelte';
+  import SharedSettings from '../components/SharedSettings.svelte';
   import { api } from '../lib/api';
   import type { Account, CustomTheme, Settings, Trashed } from '../lib/api';
   import { bytes, timeAgo } from '../lib/format';
@@ -18,8 +19,12 @@
     deleted = await api.trashed().catch(() => []);
   }
 
+  /** This build has a Discord application to show presence as. */
+  let discordAvailable = $state(false);
+
   onMount(async () => {
     settings = await api.settings();
+    discordAvailable = await api.discordAvailable().catch(() => false);
   });
 
   $effect(() => {
@@ -128,6 +133,24 @@
     reclaiming = false;
   }
 
+  let choosingShared = $state(false);
+  /** The instance the shared set started from, once there is one. */
+  let sharedFrom = $state<string | null>(null);
+
+  async function loadShared() {
+    const found = await api.sharedSettings().catch(() => null);
+    sharedFrom = found?.sets.find((set) => set.from)?.from ?? null;
+  }
+
+  $effect(() => {
+    if (settings?.shareSettings) loadShared();
+  });
+
+  async function toggleSharing() {
+    await save();
+    if (settings?.shareSettings) await loadShared();
+  }
+
   let editingStarters = $state(false);
   /** Each version with a list, the shared one first, then the newest. */
   const starterLists = $derived(
@@ -224,6 +247,15 @@
             <p class="form-hint">The window comes back when the game exits. While it's closed, you can reopen it from the Waymark icon in the system tray.</p>
           </div>
         </div>
+        {#if discordAvailable}
+          <div class="form-row">
+            <span class="form-label">Discord</span>
+            <div>
+              <label class="check"><input type="checkbox" bind:checked={settings.discordPresence} onchange={save} /> Show what you're playing on your Discord profile</label>
+              <p class="form-hint">Your Discord friends see the instance's name, its Minecraft version, and the server's name when it's from the server list. Waymark tells the Discord app on this computer, and never shares a private server's address.</p>
+            </div>
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -239,6 +271,26 @@
               <p class="lists">
                 {#each starterLists as [key, items] (key)}<span class="tabular">{key === EVERY_VERSION ? `Every version (${items.length})` : `${key} (${items.length})`}</span>{/each}
               </p>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Shared settings</h2>
+      <div class="body">
+        <div class="form-row">
+          <span class="form-label">Game settings</span>
+          <div>
+            <label class="check top"><input type="checkbox" bind:checked={settings.shareSettings} onchange={toggleSharing} /> Share game settings between instances</label>
+            <p class="form-hint">Keybinds, video, sound and other options carry over. What you change in one instance reaches the others the next time they start. Minecraft 1.13 and newer share one set and older releases another. An instance can keep its own from its settings.</p>
+            {#if settings.shareSettings}
+              <label class="check"><input type="checkbox" bind:checked={settings.shareServers} onchange={save} /> Share the server list too</label>
+              <div class="version">
+                <button class="btn" onclick={() => (choosingShared = true)}>Choose settings</button>
+                {#if sharedFrom}<span class="faint">{`Started from ${sharedFrom}`}</span>{/if}
+              </div>
             {/if}
           </div>
         </div>
@@ -326,6 +378,10 @@
   </section>
   </div>
 </div>
+
+{#if choosingShared && settings}
+  <SharedSettings bind:settings onsave={save} onclose={() => (choosingShared = false)} />
+{/if}
 
 {#if editingStarters && settings}
   <StarterMods bind:settings onsave={save} onclose={() => (editingStarters = false)} />

@@ -60,8 +60,27 @@ pub struct Instance {
     /// The folder it's filed under in the library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// Keeps its own game settings while the others share theirs.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keeps_own_settings: bool,
+    /// The listed server this instance was made to join, so joining again reuses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<ServerLink>,
     #[serde(default, flatten)]
     pub options: LaunchOptions,
+}
+
+/// A server from the server list that an instance belongs to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerLink {
+    /// Its Modrinth project id.
+    pub project: String,
+    pub name: String,
+    pub address: String,
+    /// The listing's icon, which Discord can show while it's played.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// How the game is started. These only ever come from the player's own
@@ -244,6 +263,8 @@ impl Core {
             pack,
             shared: Vec::new(),
             group: None,
+            keeps_own_settings: false,
+            server: None,
             options: LaunchOptions::default(),
         };
         Lockfile::new(minecraft, loader).save(&dir)?;
