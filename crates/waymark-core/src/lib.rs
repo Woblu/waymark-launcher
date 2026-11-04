@@ -133,6 +133,17 @@ pub struct Core {
     /// The last verified Minecraft session, and a turn for anyone about to make one.
     pub(crate) recent: Arc<Mutex<Option<auth::Recent>>>,
     pub(crate) signing: Arc<tokio::sync::Mutex<()>>,
+    /// Keeps that session between runs.
+    pub(crate) vault: Arc<dyn auth::SessionVault>,
+}
+
+/// The real keychain, except in tests, which must never write to it.
+fn session_vault() -> Arc<dyn auth::SessionVault> {
+    if cfg!(test) {
+        Arc::new(auth::MemoryVault::default())
+    } else {
+        Arc::new(auth::Keychain)
+    }
 }
 
 impl Core {
@@ -152,6 +163,7 @@ impl Core {
             login: Arc::default(),
             recent: Arc::default(),
             signing: Arc::default(),
+            vault: session_vault(),
         })
     }
 

@@ -252,7 +252,7 @@ export interface LaunchOptions {
   postExit?: string | null;
 }
 
-export interface Account { uuid: string; name: string; ownsGame: boolean; verifiedAt: string; skinUrl?: string; active: boolean }
+export interface Account { uuid: string; name: string; ownsGame: boolean; verifiedAt: string; skinUrl?: string; skinSlim?: boolean; active: boolean }
 
 export interface DeviceLogin { userCode: string; verificationUri: string; expiresIn: number }
 

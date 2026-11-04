@@ -59,6 +59,9 @@ export async function detectVariant(url: string): Promise<SkinVariant> {
   return inferModelType(canvas) === 'slim' ? 'slim' : 'classic';
 }
 
+/** Minecraft's default wide Steve, for an account whose skin Waymark hasn't seen yet. */
+export const STEVE = 'https://textures.minecraft.net/texture/31f477eb1a7beee631c2ca64d06f8f68fa93a3386d04452ab27f43acdf1b60cb';
+
 /** The player's face from a skin, with the hat layer over it. */
 export async function skinHead(url: string): Promise<string> {
   const { loadImage } = await import('skinview-utils');

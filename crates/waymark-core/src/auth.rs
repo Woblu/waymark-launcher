@@ -6,6 +6,7 @@
 //! reaching gameplay without that proof.
 
 use std::fs;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,9 @@ pub struct Account {
     pub verified_at: OffsetDateTime,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin_url: Option<String>,
+    /// Whether that skin has slim arms, so it can be drawn right without asking Mojang.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skin_slim: bool,
     #[serde(default)]
     pub active: bool,
 }
@@ -155,6 +159,90 @@ pub(crate) struct Recent {
     until: Instant,
 }
 
+/// Where a verified session waits between runs. Without it every start signs in
+/// from scratch, and Mojang turns down sign-ins that come too close together.
+pub(crate) trait SessionVault: Send + Sync {
+    fn load(&self, uuid: &str) -> Option<Vec<u8>>;
+    fn save(&self, uuid: &str, saved: &[u8]);
+    fn forget(&self, uuid: &str);
+}
+
+/// The system keychain, beside the refresh token.
+pub(crate) struct Keychain;
+
+impl SessionVault for Keychain {
+    fn load(&self, uuid: &str) -> Option<Vec<u8>> {
+        session_keychain(uuid).ok()?.get_secret().ok()
+    }
+
+    fn save(&self, uuid: &str, saved: &[u8]) {
+        if let Err(error) = session_keychain(uuid).and_then(|entry| {
+            entry
+                .set_secret(saved)
+                .map_err(|error| Error::Auth(error.to_string()))
+        }) {
+            tracing::warn!(%error, "could not keep the Minecraft session for next time");
+        }
+    }
+
+    fn forget(&self, uuid: &str) {
+        if let Ok(entry) = session_keychain(uuid) {
+            let _ = entry.delete_credential();
+        }
+    }
+}
+
+/// Tests keep sessions here, so they never touch the computer's real keychain.
+#[derive(Default)]
+pub(crate) struct MemoryVault(Mutex<std::collections::HashMap<String, Vec<u8>>>);
+
+impl SessionVault for MemoryVault {
+    fn load(&self, uuid: &str) -> Option<Vec<u8>> {
+        self.0.lock().expect("vault poisoned").get(uuid).cloned()
+    }
+
+    fn save(&self, uuid: &str, saved: &[u8]) {
+        self.0
+            .lock()
+            .expect("vault poisoned")
+            .insert(uuid.to_string(), saved.to_vec());
+    }
+
+    fn forget(&self, uuid: &str) {
+        self.0.lock().expect("vault poisoned").remove(uuid);
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedSession {
+    name: String,
+    uuid: String,
+    access_token: String,
+    xuid: String,
+    /// When to stop using it, in seconds since 1970, already short of the real expiry.
+    until: i64,
+}
+
+/// A saved session for this account, with how long it has left, or nothing if it
+/// belongs to someone else, has run out, or can't be read.
+fn saved_session(saved: &[u8], uuid: &str, now: OffsetDateTime) -> Option<(Session, Duration)> {
+    let saved: SavedSession = serde_json::from_slice(saved).ok()?;
+    let left = saved.until - now.unix_timestamp();
+    if saved.uuid != uuid || left <= 0 {
+        return None;
+    }
+    Some((
+        Session {
+            name: saved.name,
+            uuid: saved.uuid,
+            access_token: saved.access_token,
+            xuid: saved.xuid,
+        },
+        Duration::from_secs(left as u64),
+    ))
+}
+
 /// Mojang saying no isn't the same as being offline, so it never leads to the
 /// offline session, whose token Minecraft's services would reject.
 fn refused(status: Option<reqwest::StatusCode>) -> Error {
@@ -192,6 +280,8 @@ struct Profile {
 struct Skin {
     state: String,
     url: String,
+    #[serde(default)]
+    variant: String,
 }
 
 fn xbox_problem(code: Option<u64>) -> Error {
@@ -219,6 +309,11 @@ fn keychain(uuid: &str) -> Result<keyring::Entry> {
         .map_err(|error| Error::Auth(format!("the system keychain isn't available: {error}")))
 }
 
+fn session_keychain(uuid: &str) -> Result<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, &format!("session:{uuid}"))
+        .map_err(|error| Error::Auth(format!("the system keychain isn't available: {error}")))
+}
+
 fn may_play_offline(account: &Account) -> bool {
     account.owns_game && OffsetDateTime::now_utc() - account.verified_at < OFFLINE_GRACE
 }
@@ -232,7 +327,7 @@ impl Core {
         }
     }
 
-    fn save_accounts(&self, accounts: &[Account]) -> Result<()> {
+    pub(crate) fn save_accounts(&self, accounts: &[Account]) -> Result<()> {
         fs::create_dir_all(self.paths.root())?;
         let path = self.paths.accounts();
         let part = path.with_extension("json.part");
@@ -254,14 +349,7 @@ impl Core {
     }
 
     pub fn remove_account(&self, uuid: &str) -> Result<Vec<Account>> {
-        let mut recent = self.recent.lock().expect("session poisoned");
-        if recent
-            .as_ref()
-            .is_some_and(|kept| kept.session.uuid == uuid)
-        {
-            *recent = None;
-        }
-        drop(recent);
+        self.forget_session(uuid);
         let mut accounts = self.accounts()?;
         accounts.retain(|a| a.uuid != uuid);
         if !accounts.iter().any(|a| a.active)
@@ -440,11 +528,9 @@ impl Core {
             ));
         }
         let profile: Profile = profile.error_for_status()?.json().await?;
-        let skin_url = profile
-            .skins
-            .iter()
-            .find(|s| s.state == "ACTIVE")
-            .map(|s| s.url.clone());
+        let worn = profile.skins.iter().find(|s| s.state == "ACTIVE");
+        let skin_url = worn.map(|s| s.url.clone());
+        let skin_slim = worn.is_some_and(|s| s.variant.eq_ignore_ascii_case("slim"));
 
         Ok(Verified {
             lasts: Duration::from_secs(login.expires_in),
@@ -454,6 +540,7 @@ impl Core {
                 owns_game: true,
                 verified_at: OffsetDateTime::now_utc(),
                 skin_url,
+                skin_slim,
                 active: true,
             },
             session: Session {
@@ -520,19 +607,54 @@ impl Core {
     }
 
     fn remember(&self, verified: &Verified) {
+        let left = verified.lasts.saturating_sub(TOKEN_MARGIN);
         *self.recent.lock().expect("session poisoned") = Some(Recent {
             session: verified.session.clone(),
-            until: Instant::now() + verified.lasts.saturating_sub(TOKEN_MARGIN),
+            until: Instant::now() + left,
         });
+        let session = &verified.session;
+        if left.is_zero() {
+            self.vault.forget(&session.uuid);
+            return;
+        }
+        let saved = SavedSession {
+            name: session.name.clone(),
+            uuid: session.uuid.clone(),
+            access_token: session.access_token.clone(),
+            xuid: session.xuid.clone(),
+            until: OffsetDateTime::now_utc().unix_timestamp() + left.as_secs() as i64,
+        };
+        if let Ok(bytes) = serde_json::to_vec(&saved) {
+            self.vault.save(&session.uuid, &bytes);
+        }
     }
 
-    fn kept_session(&self, uuid: &str) -> Option<Session> {
-        self.recent
-            .lock()
-            .expect("session poisoned")
+    /// The session verified most recently for this account, in this run or the last one.
+    pub(crate) fn kept_session(&self, uuid: &str) -> Option<Session> {
+        let mut recent = self.recent.lock().expect("session poisoned");
+        if let Some(kept) = recent.as_ref().filter(|kept| kept.session.uuid == uuid) {
+            return (Instant::now() < kept.until).then(|| kept.session.clone());
+        }
+        let (session, left) =
+            saved_session(&self.vault.load(uuid)?, uuid, OffsetDateTime::now_utc())?;
+        *recent = Some(Recent {
+            session: session.clone(),
+            until: Instant::now() + left,
+        });
+        Some(session)
+    }
+
+    /// Drops a session Minecraft no longer accepts, here and in the keychain.
+    pub(crate) fn forget_session(&self, uuid: &str) {
+        let mut recent = self.recent.lock().expect("session poisoned");
+        if recent
             .as_ref()
-            .filter(|kept| kept.session.uuid == uuid && Instant::now() < kept.until)
-            .map(|kept| kept.session.clone())
+            .is_some_and(|kept| kept.session.uuid == uuid)
+        {
+            *recent = None;
+        }
+        drop(recent);
+        self.vault.forget(uuid);
     }
 
     async fn refresh(&self, account: &Account) -> Result<Session> {
@@ -592,6 +714,7 @@ mod tests {
             owns_game,
             verified_at: OffsetDateTime::now_utc() - time::Duration::days(age_days),
             skin_url: None,
+            skin_slim: false,
             active: true,
         }
     }
@@ -625,12 +748,47 @@ mod tests {
     }
 
     #[test]
+    fn a_verified_session_survives_a_restart_until_it_runs_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = Core::new(dir.path(), crate::event::silent()).unwrap();
+        first.remember(&verified("abc", Duration::from_secs(A_DAY)));
+        // A new run starts with nothing in memory but the same keychain.
+        let mut next = Core::new(dir.path(), crate::event::silent()).unwrap();
+        next.vault = first.vault.clone();
+        assert_eq!(next.kept_session("abc").unwrap().access_token, "real");
+        assert!(next.kept_session("someone else").is_none());
+
+        let now = OffsetDateTime::now_utc();
+        let saved = first.vault.load("abc").unwrap();
+        assert!(saved_session(&saved, "abc", now).is_some());
+        let later = now + time::Duration::seconds(A_DAY as i64);
+        assert!(saved_session(&saved, "abc", later).is_none());
+        assert!(saved_session(b"not json", "abc", now).is_none());
+
+        next.forget_session("abc");
+        assert!(first.vault.load("abc").is_none());
+        let mut third = Core::new(dir.path(), crate::event::silent()).unwrap();
+        third.vault = first.vault.clone();
+        assert!(third.kept_session("abc").is_none());
+    }
+
+    #[test]
+    fn a_session_that_is_nearly_out_is_not_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        core.remember(&verified("abc", Duration::from_secs(A_DAY)));
+        core.remember(&verified("abc", TOKEN_MARGIN));
+        assert!(core.vault.load("abc").is_none());
+    }
+
+    #[test]
     fn signing_out_forgets_the_kept_session() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path(), crate::event::silent()).unwrap();
         core.remember(&verified("abc", Duration::from_secs(A_DAY)));
         core.remove_account("abc").unwrap();
         assert!(core.kept_session("abc").is_none());
+        assert!(core.vault.load("abc").is_none());
     }
 
     #[test]

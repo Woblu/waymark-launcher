@@ -5,7 +5,7 @@
   import SkinModel from '../components/SkinModel.svelte';
   import { api, inTauri, localImage, pickSkinFile } from '../lib/api';
   import type { DefaultSkin, SavedSkin, SkinProfile, SkinVariant, Wear } from '../lib/api';
-  import { detectVariant, skinPicture } from '../lib/skin-render';
+  import { STEVE, detectVariant, skinPicture } from '../lib/skin-render';
   import type { SkinPicture } from '../lib/skin-render';
   import { app } from '../lib/state.svelte';
 
@@ -19,11 +19,11 @@
     saved?: SavedSkin;
   }
 
-  const STEVE = 'https://textures.minecraft.net/texture/31f477eb1a7beee631c2ca64d06f8f68fa93a3386d04452ab27f43acdf1b60cb';
-
   let saved = $state<SavedSkin[]>([]);
   let defaults = $state<DefaultSkin[]>([]);
   let profile = $state<SkinProfile | null>(null);
+  /** Why Mojang couldn't be asked what's worn, if it couldn't. */
+  let unreachable = $state('');
   let selected = $state<Choice | null>(null);
   let pictures = $state<Record<string, SkinPicture>>({});
   let applying = $state(false);
@@ -42,7 +42,9 @@
   const worn = $derived(profile?.skins.find((skin) => skin.state === 'ACTIVE'));
   const wornCape = $derived(profile?.capes.find((cape) => cape.state === 'ACTIVE'));
   const wornVariant = $derived<SkinVariant>(worn?.variant === 'SLIM' ? 'slim' : 'classic');
-  const showing = $derived(selected ?? { url: worn?.url ?? STEVE, variant: wornVariant });
+  // Without an answer from Mojang, the skin Waymark saw last stands in, so a hiccup doesn't look like Steve.
+  const lastSeen = $derived(app.activeAccount?.skinUrl ? { url: app.activeAccount.skinUrl, variant: (app.activeAccount.skinSlim ? 'slim' : 'classic') as SkinVariant } : null);
+  const showing = $derived(selected ?? (worn ? { url: worn.url, variant: wornVariant } : (lastSeen ?? { url: STEVE, variant: wornVariant })));
   const pending = $derived(!!selected && !isWorn(selected));
   const signedIn = $derived(!!app.activeAccount);
   const name = $derived(profile?.name ?? app.activeAccount?.name ?? 'Player');
@@ -78,7 +80,11 @@
     } catch (error) {
       app.fail(error, 'Could not read your skins');
     }
-    profile = await api.skinProfile().catch(() => null);
+    try {
+      profile = await api.skinProfile();
+    } catch (error) {
+      unreachable = (error as { message?: string })?.message ?? String(error);
+    }
   });
 
   async function addSkin() {
@@ -142,6 +148,8 @@
     applying = true;
     try {
       profile = await api.wearSkin(selected.wear);
+      unreachable = '';
+      app.refreshAccounts().catch(() => {});
       app.toast('good', `Now wearing ${selected.name}`, 'The game shows your new skin next time you join a world.');
       selected = null;
     } catch (error) {
@@ -154,6 +162,7 @@
     const value = (event.currentTarget as HTMLSelectElement).value;
     try {
       profile = await api.wearCape(value || null);
+      unreachable = '';
     } catch (error) {
       app.fail(error, 'Could not change your cape');
     }
@@ -184,6 +193,9 @@
     <div class="preview">
       <h1>Skins</h1>
       <SkinModel skin={showing.url} variant={showing.variant} cape={wornCape?.url} {name} />
+      {#if unreachable && signedIn && !selected}
+        <p class="faint small unreachable">Could not reach Minecraft, so this is the last skin Waymark saw. <span class="selectable">{unreachable}</span></p>
+      {/if}
       <div class="actions">
         {#if pending}
           <button class="btn" disabled={applying} onclick={() => (selected = null)}><RotateCcw size={15} /> Reset</button>
@@ -269,6 +281,7 @@
   h1 { position: absolute; top: 14px; left: 16px; z-index: 1; color: #f0ebe1; pointer-events: none; }
   .actions { position: absolute; right: 0; bottom: 14px; left: 0; z-index: 1; display: flex; justify-content: center; gap: 8px; }
   .cape { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 10px; }
+  .unreachable { flex: none; margin-top: 8px; }
 
   .lists { min-width: 0; padding-top: 6px; }
   section + section { margin-top: 24px; }

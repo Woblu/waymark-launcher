@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ArrowLeft, Minus, Settings, Square, UserRound, X } from '@lucide/svelte';
   import { api, inTauri } from '../lib/api';
-  import { skinHead } from '../lib/skin-render';
+  import { STEVE, skinHead } from '../lib/skin-render';
   import { app } from '../lib/state.svelte';
   import type { View } from '../lib/state.svelte';
   import Logo from './Logo.svelte';
@@ -16,19 +16,41 @@
 
   const account = $derived(app.activeAccount);
 
+  /** The signed-in player's face, drawn from their skin. */
   let head = $state<string | null>(null);
+  let headFor = '';
 
+  // The face Waymark saw last shows straight away, and Mojang's answer replaces it
+  // if the skin has changed since. Nobody signed in keeps the plain icon.
   $effect(() => {
-    const name = account?.name;
-    head = null;
-    if (!name) return;
+    const uuid = account?.uuid;
+    const lastSeen = account?.skinUrl;
+    if (!uuid) {
+      head = null;
+      headFor = '';
+      return;
+    }
+    if (headFor !== uuid) {
+      head = null;
+      headFor = uuid;
+    }
+    let current = true;
+    let answered = false;
+    const show = async (url: string, stale: boolean) => {
+      const face = await skinHead(url).catch(() => null);
+      if (current && face && !(stale && answered)) head = face;
+    };
+    show(lastSeen ?? STEVE, true);
     api.skinProfile().then(
-      async (profile) => {
-        const worn = profile?.skins.find((skin) => skin.state === 'ACTIVE');
-        if (worn && account?.name === name) head = await skinHead(worn.url);
+      (profile) => {
+        const worn = profile?.skins.find((skin) => skin.state === 'ACTIVE')?.url;
+        if (!worn) return;
+        answered = true;
+        show(worn, false);
       },
       () => {},
     );
+    return () => (current = false);
   });
 
   async function windowAction(action: 'minimize' | 'toggleMaximize' | 'close') {
@@ -50,7 +72,7 @@
   </nav>
   <div class="right" data-tauri-drag-region>
     <button class="you" onclick={() => (account ? app.go('settings') : (app.dialog = 'signin'))}>
-      {#if head}<img src={head} alt="" />{:else}<UserRound size={17} />{/if}
+      {#if head}<img class="face" src={head} alt="" />{:else}<UserRound size={17} />{/if}
       <span class="truncate name">{account ? account.name : 'Sign in'}</span>
     </button>
     <button class="settings" class:active={app.view === 'settings'} aria-label="Settings" aria-current={app.view === 'settings' ? 'page' : undefined} title="Settings" onclick={() => app.go('settings')}><Settings size={18} /></button>

@@ -303,36 +303,65 @@ impl Core {
         Ok(skins)
     }
 
-    pub async fn skin_profile(&self) -> Result<SkinProfile> {
-        let session = self.web_session().await?;
-        Ok(self
-            .net
-            .client()
-            .get(PROFILE)
+    /// Sends a request to Minecraft's services as the active account. A session kept
+    /// from an earlier run may have been revoked since, for example by a password
+    /// change, so a 401 forgets it and signs in once more.
+    async fn signed<F>(&self, build: F) -> Result<SkinProfile>
+    where
+        F: Fn(&reqwest::Client) -> Result<reqwest::RequestBuilder>,
+    {
+        let client = self.net.client();
+        let mut session = self.web_session().await?;
+        let mut response = build(client)?
             .bearer_auth(&session.access_token)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .await?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            self.forget_session(&session.uuid);
+            session = self.web_session().await?;
+            response = build(client)?
+                .bearer_auth(&session.access_token)
+                .send()
+                .await?;
+        }
+        let profile: SkinProfile = response.error_for_status()?.json().await?;
+        self.note_skin(&profile);
+        Ok(profile)
+    }
+
+    /// Keeps the account's skin current, so it can still be shown when Mojang can't be reached.
+    fn note_skin(&self, profile: &SkinProfile) {
+        let worn = profile.skins.iter().find(|skin| skin.state == "ACTIVE");
+        let url = worn.map(|skin| skin.url.clone());
+        let slim = worn.is_some_and(|skin| skin.variant.eq_ignore_ascii_case("slim"));
+        let Ok(mut accounts) = self.accounts() else {
+            return;
+        };
+        let Some(account) = accounts.iter_mut().find(|account| account.active) else {
+            return;
+        };
+        if account.skin_url != url || account.skin_slim != slim {
+            account.skin_url = url;
+            account.skin_slim = slim;
+            let _ = self.save_accounts(&accounts);
+        }
+    }
+
+    pub async fn skin_profile(&self) -> Result<SkinProfile> {
+        self.signed(|client| Ok(client.get(PROFILE))).await
     }
 
     /// Changes the skin on the player's Minecraft account.
     pub async fn wear_skin(&self, wear: Wear) -> Result<SkinProfile> {
-        let session = self.web_session().await?;
-        let client = self.net.client();
-        let request = client
-            .post(format!("{PROFILE}/skins"))
-            .bearer_auth(&session.access_token);
-        let response = match wear {
-            Wear::Default { url, variant } => {
-                if !url.starts_with(&format!("{TEXTURES}/")) {
+        let url = format!("{PROFILE}/skins");
+        match wear {
+            Wear::Default { url: skin, variant } => {
+                if !skin.starts_with(&format!("{TEXTURES}/")) {
                     return Err(Error::Other("that isn't one of Minecraft's skins".into()));
                 }
-                request
-                    .json(&json!({ "variant": variant.name(), "url": url }))
-                    .send()
-                    .await?
+                let body = json!({ "variant": variant.name(), "url": skin });
+                self.signed(|client| Ok(client.post(&url).json(&body)))
+                    .await
             }
             Wear::Saved { id } => {
                 let skin = self
@@ -341,45 +370,31 @@ impl Core {
                     .find(|skin| skin.id == id)
                     .ok_or_else(|| Error::NotFound("that skin".into()))?;
                 let bytes = fs::read(self.paths.skins().join(format!("{}.png", skin.id)))?;
-                let file = Part::bytes(bytes)
-                    .file_name("skin.png")
-                    .mime_str("image/png")?;
-                request
-                    .multipart(
-                        Form::new()
-                            .text("variant", skin.variant.name())
-                            .part("file", file),
-                    )
-                    .send()
-                    .await?
+                self.signed(|client| {
+                    let file = Part::bytes(bytes.clone())
+                        .file_name("skin.png")
+                        .mime_str("image/png")?;
+                    let form = Form::new()
+                        .text("variant", skin.variant.name())
+                        .part("file", file);
+                    Ok(client.post(&url).multipart(form))
+                })
+                .await
             }
-        };
-        Ok(response.error_for_status()?.json().await?)
+        }
     }
 
     /// Puts on one of the player's capes, or takes it off.
     pub async fn wear_cape(&self, cape: Option<&str>) -> Result<SkinProfile> {
-        let session = self.web_session().await?;
-        let client = self.net.client();
         let active = format!("{PROFILE}/capes/active");
-        let response = match cape {
+        match cape {
             Some(id) => {
-                client
-                    .put(active)
-                    .bearer_auth(&session.access_token)
-                    .json(&json!({ "capeId": id }))
-                    .send()
-                    .await?
+                let body = json!({ "capeId": id });
+                self.signed(|client| Ok(client.put(&active).json(&body)))
+                    .await
             }
-            None => {
-                client
-                    .delete(active)
-                    .bearer_auth(&session.access_token)
-                    .send()
-                    .await?
-            }
-        };
-        Ok(response.error_for_status()?.json().await?)
+            None => self.signed(|client| Ok(client.delete(&active))).await,
+        }
     }
 }
 
@@ -467,5 +482,45 @@ mod tests {
         assert_eq!(profile.name, "Wayfarer");
         assert_eq!(profile.skins[0].variant, "SLIM");
         assert_eq!(profile.capes[0].alias.as_deref(), Some("Migrator"));
+    }
+
+    /// The account keeps the skin last seen, which is what shows when Mojang can't be reached.
+    #[test]
+    fn the_account_remembers_the_skin_last_seen() {
+        let (_dir, core) = core();
+        let account = |uuid: &str, active: bool| crate::auth::Account {
+            uuid: uuid.into(),
+            name: uuid.into(),
+            owns_game: true,
+            verified_at: time::OffsetDateTime::now_utc(),
+            skin_url: None,
+            skin_slim: false,
+            active,
+        };
+        core.save_accounts(&[account("other", false), account("me", true)])
+            .unwrap();
+        let profile: SkinProfile = serde_json::from_value(json!({
+            "name": "me",
+            "skins": [
+                { "state": "INACTIVE", "url": "https://textures.minecraft.net/texture/old", "variant": "CLASSIC" },
+                { "state": "ACTIVE", "url": "https://textures.minecraft.net/texture/new", "variant": "SLIM" },
+            ],
+        }))
+        .unwrap();
+        core.note_skin(&profile);
+        let accounts = core.accounts().unwrap();
+        let me = accounts
+            .iter()
+            .find(|account| account.uuid == "me")
+            .unwrap();
+        assert_eq!(
+            me.skin_url.as_deref(),
+            Some("https://textures.minecraft.net/texture/new")
+        );
+        assert!(me.skin_slim);
+        assert!(
+            accounts[0].skin_url.is_none(),
+            "another account was changed"
+        );
     }
 }
