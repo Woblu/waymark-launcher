@@ -40,7 +40,7 @@ An update never installs while a game or a hosted server is running, because the
 
 If BetaCraft has added builds or LegacyFix has a new release, run `node tools/old-versions.mjs <cache folder>` first, set the `LEGACYFIX` version at the top if it changed, and start the new builds before shipping. It rebuilds `crates/waymark-core/data/old-versions.json` and fetches one file at a time, so keep its cache folder between runs.
 
-After publishing, point `/download` in `apps/site/vercel.json` at the new installer and deploy the site. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
+The site's Download button needs no change for a new version. `/download` in `apps/site/vercel.json` points at `releases/latest/download/Waymark_x64-setup.exe`, and the release workflow adds a copy of the Windows installer under that name to every release, so the button follows whichever release was published last. Deploy the site only when its pages change. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
 
 ## Signing the installers
 
