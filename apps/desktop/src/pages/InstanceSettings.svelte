@@ -40,22 +40,34 @@
       .map((line) => [line.slice(0, line.indexOf('=')).trim(), line.slice(line.indexOf('=') + 1)]);
   }
 
+  /**
+   * What this form shows came from when it opened. Something outside Waymark can
+   * change the instance meanwhile, like an installer adding a pre-launch command,
+   * so a field this form didn't change keeps whatever is saved now.
+   */
+  function unlessChanged<T>(mine: T, opened: T, saved: T): T {
+    return JSON.stringify(mine) === JSON.stringify(opened) ? saved : mine;
+  }
+
   async function save(event: SubmitEvent) {
     event.preventDefault();
     try {
+      await app.refresh();
+      const saved = app.library.find((other) => other.id === entry.id) ?? original;
+      const field = <T,>(mine: T, read: (from: LibraryEntry) => T) => unlessChanged(mine, read(original), read(saved));
       await api.updateInstance(entry.id, {
-        name: name.trim() || entry.name,
-        memoryMb: useDefaultMemory ? null : memory,
-        javaPath: javaPath.trim() || null,
-        jvmArgs: jvmArgs.trim() ? jvmArgs.trim().split(/\s+/) : [],
+        name: field(name.trim() || entry.name, (from) => from.name),
+        memoryMb: field(useDefaultMemory ? null : memory, (from) => from.memoryMb ?? null),
+        javaPath: field(javaPath.trim() || null, (from) => from.javaPath ?? null),
+        jvmArgs: field(jvmArgs.trim() ? jvmArgs.trim().split(/\s+/) : [], (from) => from.jvmArgs ?? []),
         options: {
-          width: Number(width) || null,
-          height: Number(height) || null,
-          fullscreen,
-          env: parseEnv(env),
-          preLaunch: preLaunch.trim() || null,
-          wrapper: wrapper.trim() || null,
-          postExit: postExit.trim() || null,
+          width: field(Number(width) || null, (from) => from.width ?? null),
+          height: field(Number(height) || null, (from) => from.height ?? null),
+          fullscreen: field(fullscreen, (from) => from.fullscreen ?? false),
+          env: field(parseEnv(env), (from) => from.env ?? []),
+          preLaunch: field(preLaunch.trim() || null, (from) => from.preLaunch ?? null),
+          wrapper: field(wrapper.trim() || null, (from) => from.wrapper ?? null),
+          postExit: field(postExit.trim() || null, (from) => from.postExit ?? null),
         },
       });
       await app.refresh();

@@ -219,6 +219,9 @@ class AppState {
 
   async start() {
     onCoreEvent((event) => this.handle(event));
+    // Instances can change while Waymark is in the background, for example when
+    // a tool's installer adds a pre-launch command, so coming back rereads them.
+    window.addEventListener('focus', () => this.refresh().catch(() => {}));
     onGameLog((batch) => {
       const lines = this.logs.get(batch.instance) ?? [];
       lines.push(...batch.lines);

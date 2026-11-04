@@ -126,7 +126,12 @@ fn window_arguments(options: &LaunchOptions) -> Vec<String> {
 }
 
 /// The same names other launchers give hook commands, so scripts carry over.
-fn hook_environment(paths: &Paths, instance: &Instance) -> [(&'static str, String); 5] {
+/// Toolscreen's setup, for one, runs itself with `$INST_JAVA`.
+fn hook_environment(
+    paths: &Paths,
+    instance: &Instance,
+    java: &std::path::Path,
+) -> [(&'static str, String); 6] {
     [
         ("INST_ID", instance.id.clone()),
         ("INST_NAME", instance.name.clone()),
@@ -139,15 +144,74 @@ fn hook_environment(paths: &Paths, instance: &Instance) -> [(&'static str, Strin
             paths.game(&instance.id).to_string_lossy().into_owned(),
         ),
         ("INST_MC_VER", instance.minecraft.clone()),
+        ("INST_JAVA", java.to_string_lossy().into_owned()),
     ]
 }
 
-/// cmd has its own quoting, so a script has to reach it exactly as typed.
+const HOOK_NAMES: [&str; 6] = [
+    "INST_ID",
+    "INST_NAME",
+    "INST_DIR",
+    "INST_MC_DIR",
+    "INST_MC_VER",
+    "INST_JAVA",
+];
+
+/// Prism and MultiMC hooks are written as `$INST_JAVA` or `${INST_JAVA}` on every
+/// system, and cmd only reads `%INST_JAVA%`, so those names are turned into its
+/// form. Anything else with a dollar sign is left as typed.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn cmd_names(script: &str) -> String {
+    let mut out = String::with_capacity(script.len());
+    let mut rest = script;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let braced = after.strip_prefix('{');
+        let found = HOOK_NAMES.iter().find_map(|name| match braced {
+            Some(inner) => inner
+                .strip_prefix(name)
+                .and_then(|tail| tail.strip_prefix('}'))
+                .map(|tail| (name, tail)),
+            None => after
+                .strip_prefix(name)
+                .filter(|tail| {
+                    !tail
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                })
+                .map(|tail| (name, tail)),
+        });
+        match found {
+            Some((name, tail)) => {
+                out.push('%');
+                out.push_str(name);
+                out.push('%');
+                rest = tail;
+            }
+            None => {
+                out.push('$');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// cmd has its own quoting, so a script has to reach it exactly as typed. Without
+/// /S, a script that starts with a quote and has more than two, like
+/// `"C:\My Tools\run.cmd" "a b"`, loses its first and last quote. With /S, cmd
+/// removes exactly the pair put around it here. /D skips AutoRun scripts.
 #[cfg(windows)]
 fn shell(script: &str) -> Command {
     use std::os::windows::process::CommandExt;
     let mut command = Command::new("cmd");
-    command.as_std_mut().raw_arg("/C").raw_arg(script);
+    command
+        .as_std_mut()
+        .raw_arg("/D /S /C")
+        .raw_arg(format!("\"{}\"", cmd_names(script)));
     command
 }
 
@@ -400,7 +464,7 @@ impl Core {
             .await
             .map_err(|e| Error::Other(e.to_string()))??;
 
-        let hooks = hook_environment(&self.paths, instance);
+        let hooks = hook_environment(&self.paths, instance, &java);
 
         if let Some(script) = instance
             .options
@@ -443,20 +507,20 @@ impl Core {
         command
             .args(&args)
             .envs(instance.options.env.iter().map(|(key, value)| (key, value)))
-            .envs(hooks)
+            .envs(hooks.clone())
             .current_dir(self.paths.game(&instance.id))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         crate::loaders::hide_console(&mut command);
         let child = command.spawn()?;
-        self.watch(instance.clone(), child);
+        self.watch(instance.clone(), child, hooks);
         Ok(())
     }
 
     /// Follows a running game until it exits, then records the session and
     /// explains the crash if there was one.
-    fn watch(&self, instance: Instance, mut child: Child) {
+    fn watch(&self, instance: Instance, mut child: Child, hooks: [(&'static str, String); 6]) {
         let id = instance.id.clone();
         let events = self.events.clone();
         let core = self.clone();
@@ -516,8 +580,7 @@ impl Core {
                 .filter(|s| !s.trim().is_empty())
             {
                 let mut hook = shell(script);
-                hook.current_dir(core.paths.game(&id))
-                    .envs(hook_environment(&core.paths, &instance));
+                hook.current_dir(core.paths.game(&id)).envs(hooks);
                 crate::loaders::hide_console(&mut hook);
                 let _ = hook.status().await;
             }
@@ -634,12 +697,109 @@ mod tests {
         };
         let (paths, instance, _) = fixture(VersionMeta::default());
         let status = shell(&script)
-            .envs(hook_environment(&paths, &instance))
+            .envs(hook_environment(
+                &paths,
+                &instance,
+                std::path::Path::new("java"),
+            ))
             .status()
             .await
             .unwrap();
         assert!(status.success());
         assert_eq!(std::fs::read_to_string(out).unwrap().trim(), "Pack");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_hook_can_start_with_a_quoted_path_that_has_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = dir.path().join("My Tools");
+        std::fs::create_dir(&tools).unwrap();
+        std::fs::write(tools.join("say.cmd"), "@echo %~1> \"%~2\"\r\n").unwrap();
+        let out = dir.path().join("said here.txt");
+        let script = format!(
+            "\"{}\" \"hello there\" \"{}\"",
+            tools.join("say.cmd").display(),
+            out.display()
+        );
+        let status = shell(&script).status().await.unwrap();
+        assert!(status.success());
+        assert_eq!(std::fs::read_to_string(out).unwrap().trim(), "hello there");
+    }
+
+    /// The command Toolscreen's installer writes into a Waymark instance, run the way
+    /// Waymark runs it, with a stand-in for java that reports what it was given.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn toolscreen_s_command_reaches_java_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("Java Runtime");
+        std::fs::create_dir(&runtime).unwrap();
+        let out = dir.path().join("args.txt");
+        std::fs::write(
+            runtime.join("java.cmd"),
+            format!("@echo %1^|%~2^|%3> \"{}\"\r\n", out.display()),
+        )
+        .unwrap();
+        let (paths, instance, _) = fixture(VersionMeta::default());
+        let script = r#""$INST_JAVA" -jar "$INST_MC_DIR/Toolscreen.jar" --prelaunch"#;
+        let status = shell(script)
+            .envs(hook_environment(
+                &paths,
+                &instance,
+                &runtime.join("java.cmd"),
+            ))
+            .status()
+            .await
+            .unwrap();
+        assert!(status.success());
+        let game = paths.game(&instance.id);
+        assert_eq!(
+            std::fs::read_to_string(out).unwrap().trim(),
+            format!("-jar|{}/Toolscreen.jar|--prelaunch", game.display())
+        );
+    }
+
+    #[test]
+    fn prism_style_names_become_cmd_names() {
+        assert_eq!(
+            cmd_names(r#""$INST_JAVA" -jar "${INST_MC_DIR}/Toolscreen.jar""#),
+            r#""%INST_JAVA%" -jar "%INST_MC_DIR%/Toolscreen.jar""#
+        );
+        assert_eq!(
+            cmd_names(r"$INST_DIR\x $INST_ID."),
+            r"%INST_DIR%\x %INST_ID%."
+        );
+        // Only the names a launcher sets, and only whole ones.
+        assert_eq!(
+            cmd_names("$INST_DIRECTORY $HOME ${INST_JAVA"),
+            "$INST_DIRECTORY $HOME ${INST_JAVA"
+        );
+        assert_eq!(cmd_names("cost $5 and $"), "cost $5 and $");
+        assert_eq!(cmd_names("%INST_NAME% stays"), "%INST_NAME% stays");
+    }
+
+    #[tokio::test]
+    async fn a_prism_style_hook_reads_the_java_it_will_run_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("java.txt");
+        let script = if cfg!(windows) {
+            format!("echo $INST_JAVA> \"{}\"", out.display())
+        } else {
+            format!("echo $INST_JAVA > '{}'", out.display())
+        };
+        let (paths, instance, _) = fixture(VersionMeta::default());
+        let java = dir.path().join("runtime").join("javaw.exe");
+        let status = shell(&script)
+            .envs(hook_environment(&paths, &instance, &java))
+            .status()
+            .await
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(
+            std::fs::read_to_string(out).unwrap().trim(),
+            java.to_string_lossy()
+        );
     }
 
     #[test]

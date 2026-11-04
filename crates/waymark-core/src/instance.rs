@@ -397,6 +397,45 @@ mod tests {
         (dir, core)
     }
 
+    /// Toolscreen's installer edits instance.toml from outside Waymark, putting a
+    /// top-level preLaunch line above the blank line before the first table.
+    #[test]
+    fn a_pre_launch_command_written_by_an_installer_is_kept() {
+        let (_dir, core) = core();
+        let loader = Loader {
+            kind: crate::lock::LoaderKind::Fabric,
+            version: Some("0.16.9".into()),
+        };
+        let instance = core
+            .register_instance("Speedrun", "1.16.1", loader, "x".into(), None)
+            .unwrap();
+        let mut saved = core.instance(&instance.id).unwrap();
+        saved.options.env = vec![("A".into(), "b".into())];
+        core.save_instance(&saved).unwrap();
+        let path = core.paths.instance(&instance.id).join(INSTANCE_FILE);
+        let text = fs::read_to_string(&path).unwrap();
+        let at = text
+            .find("\n\n[loader]")
+            .expect("a blank line before the first table");
+        let line =
+            r#"preLaunch = "\"$INST_JAVA\" -jar \"$INST_MC_DIR/Toolscreen.jar\" --prelaunch""#;
+        fs::write(&path, format!("{}\n{line}{}", &text[..at], &text[at..])).unwrap();
+
+        let read = core.instance(&instance.id).unwrap();
+        let command = r#""$INST_JAVA" -jar "$INST_MC_DIR/Toolscreen.jar" --prelaunch"#;
+        assert_eq!(read.options.pre_launch.as_deref(), Some(command));
+        assert_eq!(read.options.env, saved.options.env);
+        core.save_instance(&read).unwrap();
+        assert_eq!(
+            core.instance(&instance.id)
+                .unwrap()
+                .options
+                .pre_launch
+                .as_deref(),
+            Some(command)
+        );
+    }
+
     #[test]
     fn a_copy_is_separate_and_starts_fresh() {
         let (_dir, core) = core();
