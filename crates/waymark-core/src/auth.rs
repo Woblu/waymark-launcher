@@ -321,7 +321,17 @@ fn may_play_offline(account: &Account) -> bool {
 impl Core {
     pub fn accounts(&self) -> Result<Vec<Account>> {
         match fs::read(self.paths.accounts()) {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Ok(bytes) => {
+                let mut accounts: Vec<Account> = serde_json::from_slice(&bytes)?;
+                // Older versions saved Mojang's http address, which the window won't load.
+                for account in &mut accounts {
+                    account.skin_url = account
+                        .skin_url
+                        .as_deref()
+                        .map(crate::skins::secure_texture);
+                }
+                Ok(accounts)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
             Err(error) => Err(error.into()),
         }
@@ -529,7 +539,7 @@ impl Core {
         }
         let profile: Profile = profile.error_for_status()?.json().await?;
         let worn = profile.skins.iter().find(|s| s.state == "ACTIVE");
-        let skin_url = worn.map(|s| s.url.clone());
+        let skin_url = worn.map(|s| crate::skins::secure_texture(&s.url));
         let skin_slim = worn.is_some_and(|s| s.variant.eq_ignore_ascii_case("slim"));
 
         Ok(Verified {
@@ -594,7 +604,7 @@ impl Core {
         }
     }
 
-    fn active_account(&self) -> Result<Account> {
+    pub(crate) fn active_account(&self) -> Result<Account> {
         let account = self
             .accounts()?
             .into_iter()

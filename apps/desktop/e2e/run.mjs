@@ -97,7 +97,16 @@ const HELPERS = `
     modRow(name) {
       return [...document.querySelectorAll('.mod')].find((row) => row.querySelector('.name').innerText.trim() === name);
     },
+    // Popups vanish after a few seconds, so a failed step can still say what they told the player.
+    toasts: [],
   };
+  new MutationObserver((changes) => {
+    for (const change of changes) {
+      for (const node of change.addedNodes) {
+        if (node.nodeType === 1 && node.matches('.toast')) e2e.toasts.push(node.innerText.replace(/\\s+/g, ' ').trim());
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 `;
 
 async function click(label, timeout = 15000) {
@@ -146,6 +155,7 @@ async function step(name, body) {
     console.log(`ok    ${name} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
   } catch (error) {
     console.log(`FAIL  ${name}: ${error.message}`);
+    console.log(`      last popups: ${await run(`JSON.stringify((window.e2e?.toasts ?? []).slice(-3))`)}`);
     console.log(await run(`JSON.stringify({ url: location.href, state: document.readyState, html: document.documentElement.outerHTML.length, text: document.body?.innerText.slice(0, 200) })`));
     await shot(`failed-${name.replace(/\W+/g, '-')}`);
     finish(1);

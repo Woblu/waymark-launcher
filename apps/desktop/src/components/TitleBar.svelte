@@ -15,6 +15,10 @@
   ];
 
   const account = $derived(app.activeAccount);
+  // Plain values, so the face is looked up again only when one of them changes,
+  // not every time the account list is reread.
+  const accountId = $derived(account?.uuid);
+  const accountSkin = $derived(account?.skinUrl);
 
   /** The signed-in player's face, drawn from their skin. */
   let head = $state<string | null>(null);
@@ -23,8 +27,8 @@
   // The face Waymark saw last shows straight away, and Mojang's answer replaces it
   // if the skin has changed since. Nobody signed in keeps the plain icon.
   $effect(() => {
-    const uuid = account?.uuid;
-    const lastSeen = account?.skinUrl;
+    const uuid = accountId;
+    const lastSeen = accountSkin;
     if (!uuid) {
       head = null;
       headFor = '';

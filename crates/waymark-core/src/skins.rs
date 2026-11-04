@@ -193,6 +193,36 @@ pub struct SkinProfile {
     pub capes: Vec<Cape>,
 }
 
+/// How long Mojang's answer is used again before asking anew. Every page that
+/// shows a skin asks, and Mojang answers 429 when that happens too often.
+const PROFILE_FRESH: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Mojang's last answer for one account, and when it came.
+pub(crate) struct KnownProfile {
+    uuid: String,
+    at: std::time::Instant,
+    profile: SkinProfile,
+}
+
+/// Mojang lists textures at http addresses, which the window's security policy
+/// won't load. The same files are served over https.
+pub(crate) fn secure_texture(url: &str) -> String {
+    match url.strip_prefix("http://textures.minecraft.net/") {
+        Some(rest) => format!("https://textures.minecraft.net/{rest}"),
+        None => url.to_string(),
+    }
+}
+
+fn secured(mut profile: SkinProfile) -> SkinProfile {
+    for skin in &mut profile.skins {
+        skin.url = secure_texture(&skin.url);
+    }
+    for cape in &mut profile.capes {
+        cape.url = secure_texture(&cape.url);
+    }
+    profile
+}
+
 /// Reads a PNG's size from its header, without decoding the image.
 fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 24 || bytes[..8] != PNG_SIGNATURE || &bytes[12..16] != b"IHDR" {
@@ -324,9 +354,29 @@ impl Core {
                 .send()
                 .await?;
         }
-        let profile: SkinProfile = response.error_for_status()?.json().await?;
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(Error::Auth(
+                "Minecraft asked Waymark to slow down. Try again in a minute.".into(),
+            ));
+        }
+        let profile = secured(response.error_for_status()?.json().await?);
         self.note_skin(&profile);
+        *self.profile.lock().expect("profile poisoned") = Some(KnownProfile {
+            uuid: session.uuid.clone(),
+            at: std::time::Instant::now(),
+            profile: profile.clone(),
+        });
         Ok(profile)
+    }
+
+    /// Mojang's last answer for this account, if it's no older than `within`.
+    fn known_profile(&self, uuid: &str, within: std::time::Duration) -> Option<SkinProfile> {
+        self.profile
+            .lock()
+            .expect("profile poisoned")
+            .as_ref()
+            .filter(|known| known.uuid == uuid && known.at.elapsed() <= within)
+            .map(|known| known.profile.clone())
     }
 
     /// Keeps the account's skin current, so it can still be shown when Mojang can't be reached.
@@ -347,8 +397,19 @@ impl Core {
         }
     }
 
+    /// What the player wears. A recent answer is used again, and if Mojang can't be
+    /// asked, an older one is better than nothing.
     pub async fn skin_profile(&self) -> Result<SkinProfile> {
-        self.signed(|client| Ok(client.get(PROFILE))).await
+        let account = self.active_account()?;
+        if let Some(known) = self.known_profile(&account.uuid, PROFILE_FRESH) {
+            return Ok(known);
+        }
+        match self.signed(|client| Ok(client.get(PROFILE))).await {
+            Ok(profile) => Ok(profile),
+            Err(error) => self
+                .known_profile(&account.uuid, std::time::Duration::MAX)
+                .ok_or(error),
+        }
     }
 
     /// Changes the skin on the player's Minecraft account.
@@ -482,6 +543,70 @@ mod tests {
         assert_eq!(profile.name, "Wayfarer");
         assert_eq!(profile.skins[0].variant, "SLIM");
         assert_eq!(profile.capes[0].alias.as_deref(), Some("Migrator"));
+    }
+
+    #[test]
+    fn mojang_s_http_texture_addresses_become_https() {
+        assert_eq!(
+            secure_texture("http://textures.minecraft.net/texture/abc"),
+            "https://textures.minecraft.net/texture/abc"
+        );
+        assert_eq!(
+            secure_texture("https://textures.minecraft.net/texture/abc"),
+            "https://textures.minecraft.net/texture/abc"
+        );
+        assert_eq!(
+            secure_texture("http://example.com/texture/abc"),
+            "http://example.com/texture/abc"
+        );
+        let profile = secured(
+            serde_json::from_value(json!({
+                "name": "me",
+                "skins": [{ "state": "ACTIVE", "url": "http://textures.minecraft.net/texture/s" }],
+                "capes": [{ "id": "c", "state": "ACTIVE", "url": "http://textures.minecraft.net/texture/c" }],
+            }))
+            .unwrap(),
+        );
+        assert!(profile.skins[0].url.starts_with("https://"));
+        assert!(profile.capes[0].url.starts_with("https://"));
+    }
+
+    #[test]
+    fn saved_accounts_with_an_http_skin_are_read_as_https() {
+        let (_dir, core) = core();
+        core.save_accounts(&[crate::auth::Account {
+            uuid: "me".into(),
+            name: "me".into(),
+            owns_game: true,
+            verified_at: time::OffsetDateTime::now_utc(),
+            skin_url: Some("http://textures.minecraft.net/texture/old".into()),
+            skin_slim: false,
+            active: true,
+        }])
+        .unwrap();
+        assert_eq!(
+            core.accounts().unwrap()[0].skin_url.as_deref(),
+            Some("https://textures.minecraft.net/texture/old")
+        );
+    }
+
+    #[test]
+    fn mojang_s_answer_is_shared_for_a_while_and_only_for_its_account() {
+        let (_dir, core) = core();
+        let profile: SkinProfile = serde_json::from_value(json!({ "name": "me" })).unwrap();
+        *core.profile.lock().unwrap() = Some(KnownProfile {
+            uuid: "me".into(),
+            at: std::time::Instant::now(),
+            profile,
+        });
+        assert!(core.known_profile("me", PROFILE_FRESH).is_some());
+        assert!(core.known_profile("someone else", PROFILE_FRESH).is_none());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(
+            core.known_profile("me", std::time::Duration::from_millis(1))
+                .is_none()
+        );
+        assert!(core.known_profile("me", std::time::Duration::MAX).is_some());
     }
 
     /// The account keeps the skin last seen, which is what shows when Mojang can't be reached.

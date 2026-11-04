@@ -135,6 +135,8 @@ pub struct Core {
     pub(crate) signing: Arc<tokio::sync::Mutex<()>>,
     /// Keeps that session between runs.
     pub(crate) vault: Arc<dyn auth::SessionVault>,
+    /// Mojang's last answer about what the player wears, so pages can share it.
+    pub(crate) profile: Arc<Mutex<Option<skins::KnownProfile>>>,
 }
 
 /// The real keychain, except in tests, which must never write to it.
@@ -164,6 +166,7 @@ impl Core {
             recent: Arc::default(),
             signing: Arc::default(),
             vault: session_vault(),
+            profile: Arc::default(),
         })
     }
 
