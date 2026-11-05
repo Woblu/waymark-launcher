@@ -146,6 +146,13 @@ impl Core {
         Ok(())
     }
 
+    /// Housekeeping at every start: the trash's expired items go, and every
+    /// stored file is sealed read-only, including any stored by older versions.
+    pub fn tidy(&self) -> Result<()> {
+        self.store.seal_all();
+        self.purge_trash()
+    }
+
     /// Erases what's been here longer than the 30 days it was promised.
     pub fn purge_trash(&self) -> Result<()> {
         let oldest = OffsetDateTime::now_utc() - KEEP_FOR;

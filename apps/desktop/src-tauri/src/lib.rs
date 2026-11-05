@@ -487,6 +487,16 @@ async fn set_waymark(
 }
 
 #[tauri::command]
+async fn undo_change(
+    launcher: State<'_, Launcher>,
+    id: String,
+    waymark: String,
+) -> Reply<WaymarkSummary> {
+    let _editing = launcher.editing(&id).await;
+    off_thread(&launcher, move |core| core.undo_change(&id, &waymark)).await
+}
+
+#[tauri::command]
 async fn return_to_waymark(
     launcher: State<'_, Launcher>,
     id: String,
@@ -1332,7 +1342,7 @@ pub fn run() {
             }
             let core = Core::new(root, emitter)?;
             let tidying = core.clone();
-            tauri::async_runtime::spawn_blocking(move || tidying.purge_trash());
+            tauri::async_runtime::spawn_blocking(move || tidying.tidy());
             app.manage(Launcher {
                 core,
                 pending_login: Mutex::new(None),
@@ -1403,6 +1413,7 @@ pub fn run() {
             pending_changes,
             set_waymark,
             return_to_waymark,
+            undo_change,
             search_content,
             search_categories,
             curseforge_available,

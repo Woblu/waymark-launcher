@@ -451,6 +451,8 @@ export const api = {
   pending: (id: string) => call<Pending>('pending_changes', { id }),
   setWaymark: (id: string, label: string) => call<Waymark | null>('set_waymark', { id, label }),
   returnTo: (id: string, waymark: string) => call<Waymark>('return_to_waymark', { id, waymark }),
+  /** Goes back to just before one change, while it's still the newest. */
+  undoChange: (id: string, waymark: string) => call<Waymark>('undo_change', { id, waymark }),
   search: (source: ContentSource, query: SearchQuery) => call<ContentPage>('search_content', { source, query }),
   searchCategories: (source: ContentSource, kind: ContentKind) => call<SearchCategory[]>('search_categories', { source, kind }),
   curseforgeAvailable: () => call<boolean>('curseforge_available'),

@@ -136,7 +136,7 @@
       app.contentTick++;
       await app.refresh();
       const title = `Copied settings from ${source?.name ?? 'that instance'}`;
-      app.changed(entry.id, mark ?? title, 'You can undo this from Waymarks.', title);
+      app.changed(entry.id, mark ?? title, undefined, title);
       copyFrom = '';
     } catch (error) {
       app.fail(error, 'Could not copy settings');

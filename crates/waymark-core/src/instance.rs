@@ -191,6 +191,27 @@ impl Core {
         self.trail(id).restore(waymark)
     }
 
+    /// Undoes one change: goes back to the waymark just before `waymark`. Only
+    /// while that change is still the newest, since going back further would
+    /// quietly undo whatever came after it too.
+    pub fn undo_change(&self, id: &str, waymark: &str) -> Result<crate::waymarks::WaymarkSummary> {
+        let marks = self.trail(id).list()?;
+        let at = marks
+            .iter()
+            .position(|mark| mark.id == waymark)
+            .ok_or_else(|| Error::NotFound("that change".into()))?;
+        if at + 1 != marks.len() {
+            return Err(Error::Other(
+                "Something else changed after this. Open Waymarks to choose how far back to go.".into(),
+            ));
+        }
+        let before = at
+            .checked_sub(1)
+            .map(|before| marks[before].id.clone())
+            .ok_or_else(|| Error::Other("There's nothing before this change to go back to.".into()))?;
+        self.return_to_waymark(id, &before)
+    }
+
     pub fn lockfile(&self, id: &str) -> Result<Lockfile> {
         Lockfile::load(&self.paths.instance(id))
     }
@@ -425,6 +446,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path().join("data"), crate::event::silent()).unwrap();
         (dir, core)
+    }
+
+    #[test]
+    fn one_change_can_be_undone_while_it_is_the_newest() {
+        let (_dir, core) = core();
+        let id = core
+            .register_instance("Undo", "1.21.4", Loader::default(), "1.21.4".into(), None)
+            .unwrap()
+            .id;
+        let game = core.paths.game(&id);
+        let trail = core.trail(&id);
+        fs::create_dir_all(game.join("config")).unwrap();
+        fs::write(game.join("config/settings.toml"), "a = 1").unwrap();
+        trail.mark("Before", WaymarkKind::Manual).unwrap().unwrap();
+        fs::create_dir_all(game.join("mods")).unwrap();
+        fs::write(game.join("mods/added.jar"), b"jar").unwrap();
+        let added = trail.mark("Added a mod", WaymarkKind::Install).unwrap().unwrap();
+
+        core.undo_change(&id, &added.id).unwrap();
+        assert!(!game.join("mods/added.jar").exists());
+        assert!(game.join("config/settings.toml").is_file());
+
+        // Once something else has happened, the older change can't be undone alone.
+        fs::write(game.join("mods/second.jar"), b"jar 2").unwrap();
+        let second = trail.mark("Second", WaymarkKind::Install).unwrap().unwrap();
+        assert!(core.undo_change(&id, &added.id).is_err());
+        core.undo_change(&id, &second.id).unwrap();
+        assert!(!game.join("mods/second.jar").exists());
     }
 
     /// Toolscreen's installer edits instance.toml from outside Waymark, putting a

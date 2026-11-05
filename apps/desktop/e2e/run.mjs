@@ -7,7 +7,7 @@
 //
 // Set E2E_SHOTS to a folder to save screenshots along the way.
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -115,6 +115,13 @@ async function click(label, timeout = 15000) {
 }
 
 const setValue = (selector, value) => run(`e2e.setValue(${text(selector)}, ${text(value)})`);
+
+/** Undo on the newest message, since older ones keep theirs for a while. */
+const NEWEST_UNDO = `[...document.querySelectorAll('.toast')].reverse().map((t) => [...t.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Undo')).find(Boolean)`;
+async function clickNewestUndo() {
+  await waitFor('an Undo button', `!!${NEWEST_UNDO}`, 10000);
+  await run(`${NEWEST_UNDO}.click()`);
+}
 
 async function shot(name) {
   if (!SHOTS) return;
@@ -296,7 +303,9 @@ await step('sets a named waymark and goes back to an earlier one', async () => {
 await step('launches the game, shows its log and stops it', async () => {
   await click('Logs');
   await click('Play');
-  await waitFor('the game to start', `document.querySelector('footer .running') !== null`, 120000);
+  // A first launch downloads the game, its assets and Java, about 600 MB, so a
+  // slow connection needs far longer than starting the game itself.
+  await waitFor('the game to start', `document.querySelector('footer .running') !== null`, 900000);
   await waitFor('log lines', hasText('Setting user'), 90000);
   const refused = await run(`window.__TAURI_INTERNALS__.invoke('install_update').then(() => 'installed', (error) => error.message ?? String(error))`);
   expect(/game/.test(refused), `an update must not install during a game: ${refused}`);
@@ -522,6 +531,14 @@ await step('installs a resource pack, lists it and removes it', async () => {
   await run(`document.querySelector('.pack .content-remove').click()`);
   await waitFor('the list to empty', hasText('This instance has no resource packs.'));
   expect(readdirSync(packs).length === 0, 'the pack is still on disk');
+  // Undo on the newest message puts it straight back, as a read-only stored file.
+  await clickNewestUndo();
+  await waitFor('the pack to come back', `[...document.querySelectorAll('.pack .name')].some((n) => n.innerText === ${text(title)})`, 15000);
+  expect(readdirSync(packs).length === 1, 'Undo did not put the pack back on disk');
+  expect((statSync(join(packs, readdirSync(packs)[0])).mode & 0o200) === 0, 'the restored pack can be written to');
+  await run(`document.querySelector('.pack .content-remove').click()`);
+  await waitFor('the list to empty again', hasText('This instance has no resource packs.'));
+  expect(readdirSync(packs).length === 0, 'the pack is still on disk after removing it again');
   await tab('Mods');
 });
 
@@ -595,7 +612,7 @@ await step('shows worlds, pings a server and restores a deleted world', async ()
   await run(`document.querySelector('[aria-label="Delete River Base"]').click()`);
   await waitFor('the world to go', `!document.querySelector('.world')`);
   expect(!existsSync(world), 'the world is still in the instance');
-  await click('Undo');
+  await clickNewestUndo();
   await waitFor('the world to come back', hasText('River Base'));
   expect(existsSync(join(world, 'level.dat')), 'the world was not restored');
 
@@ -818,7 +835,7 @@ await step('changes theme, shows screenshots and browses Feed The Beast', async 
   await run(`document.querySelector('[aria-label^="Delete 2026"]').click()`);
   await waitFor('it to go', `!document.querySelector('.picture')`);
   expect(readdirSync(shots).length === 0, 'the screenshot is still in the folder');
-  await click('Undo');
+  await clickNewestUndo();
   await waitFor('it to come back', `!!document.querySelector('.picture')`);
 
   await nav('Settings');
@@ -1244,7 +1261,9 @@ await step('shares game settings between instances', async () => {
   while (!existsSync(vanillaOptions) && Date.now() < deadline) await sleep(100);
   const given = existsSync(vanillaOptions) ? readFileSync(vanillaOptions, 'utf8') : '';
   expect(/^version:\d+/.test(given) && /\nkey_key\.\w+:key\./.test(given), `the launch did not share settings: ${given.slice(0, 120)}`);
-  await waitFor('the game to start', `document.querySelector('footer .running') !== null`, 120000);
+  // A first launch downloads the game, its assets and Java, about 600 MB, so a
+  // slow connection needs far longer than starting the game itself.
+  await waitFor('the game to start', `document.querySelector('footer .running') !== null`, 900000);
   await click('Stop');
   await waitFor('the game to stop', `document.querySelector('footer .running') === null`, 20000);
 
@@ -1331,7 +1350,7 @@ await step('deletes an instance and brings it back', async () => {
   await waitFor('it to disappear', `!${named}`);
   expect(!existsSync(join(HOME, 'instances', ID)), 'the instance folder is still on disk');
 
-  await click('Undo');
+  await clickNewestUndo();
   await waitFor('Undo to bring it back', named);
   expect(existsSync(join(HOME, 'instances', ID, 'waymark.lock')), 'Undo did not restore the instance');
 

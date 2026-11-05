@@ -89,14 +89,14 @@ impl Store {
             .expect("store lock poisoned")
             .insert(stored.hash.clone());
         let target = self.path_of(&stored.hash);
-        if target.is_file() {
-            return Ok(stored);
+        if !target.is_file() {
+            fs::create_dir_all(target.parent().expect("store paths have a parent"))?;
+            match placement {
+                Placement::Link if fs::hard_link(source, &target).is_ok() => {}
+                _ => copy_atomic(source, &target)?,
+            }
         }
-        fs::create_dir_all(target.parent().expect("store paths have a parent"))?;
-        match placement {
-            Placement::Link if fs::hard_link(source, &target).is_ok() => {}
-            _ => copy_atomic(source, &target)?,
-        }
+        seal(&target);
         Ok(stored)
     }
 
@@ -112,9 +112,28 @@ impl Store {
         let source = self.path_of(hash);
         match placement {
             Placement::Link if fs::hard_link(&source, dest).is_ok() => {}
-            _ => copy_atomic(&source, dest)?,
+            _ => {
+                // A copy carries the store's read-only mark along, but it's the
+                // instance's own file, so it can be changed like any other.
+                copy_atomic(&source, dest)?;
+                unseal(dest);
+            }
         }
         Ok(())
+    }
+
+    /// Marks every stored file read-only, including ones stored before
+    /// stored files were sealed. Cheap, so it runs at every start.
+    pub fn seal_all(&self) {
+        for entry in WalkDir::new(&self.root)
+            .min_depth(2)
+            .max_depth(2)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_file())
+        {
+            seal(entry.path());
+        }
     }
 
     pub fn verify(&self, hash: &str) -> bool {
@@ -138,6 +157,37 @@ impl Store {
         }
         Ok(freed)
     }
+}
+
+/// Stored files never change. Jars and zips are hard-linked into every
+/// instance and waymark that uses them, so an edit made through one instance
+/// would reach all of them; marking the file read-only makes the file system
+/// refuse it instead. Renaming and deleting a link still work, so turning a mod
+/// off or removing it is unaffected.
+fn seal(path: &Path) {
+    if let Ok(meta) = fs::metadata(path)
+        && !meta.permissions().readonly()
+    {
+        let mut permissions = meta.permissions();
+        permissions.set_readonly(true);
+        let _ = fs::set_permissions(path, permissions);
+    }
+}
+
+fn unseal(path: &Path) {
+    let Ok(meta) = fs::metadata(path) else { return };
+    let mut permissions = meta.permissions();
+    // `set_readonly(false)` would make the file writable by everyone on Unix.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(permissions.mode() | 0o200);
+    }
+    // On Windows this only clears the read-only attribute.
+    #[cfg(not(unix))]
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    let _ = fs::set_permissions(path, permissions);
 }
 
 fn copy_atomic(source: &Path, target: &Path) -> Result<()> {
@@ -181,6 +231,51 @@ mod tests {
         store.place(&stored.hash, &placed, Placement::Copy).unwrap();
         fs::write(&placed, b"edited by the game").unwrap();
         assert!(store.verify(&stored.hash));
+    }
+
+    #[test]
+    fn a_linked_jar_cannot_be_edited_through_one_instance() {
+        let (dir, store) = setup();
+        let source = dir.path().join("downloaded.jar");
+        fs::write(&source, b"jar").unwrap();
+        let stored = store.add(&source, Placement::Link).unwrap();
+        let (a, b) = (dir.path().join("a/mods/m.jar"), dir.path().join("b/mods/m.jar"));
+        store.place(&stored.hash, &a, Placement::Link).unwrap();
+        store.place(&stored.hash, &b, Placement::Link).unwrap();
+
+        assert!(fs::OpenOptions::new().write(true).open(&a).is_err());
+        assert!(store.verify(&stored.hash));
+        // Turning it off and removing it still work.
+        let disabled = a.with_extension("jar.disabled");
+        fs::rename(&a, &disabled).unwrap();
+        fs::remove_file(&disabled).unwrap();
+        assert!(b.is_file() && store.verify(&stored.hash));
+    }
+
+    #[test]
+    fn files_stored_before_sealing_are_sealed_at_start() {
+        let (dir, store) = setup();
+        let source = dir.path().join("old.jar");
+        fs::write(&source, b"jar").unwrap();
+        let stored = store.add(&source, Placement::Copy).unwrap();
+        let path = store.path_of(&stored.hash);
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+        fs::set_permissions(&path, permissions).unwrap();
+
+        store.seal_all();
+        assert!(fs::metadata(&path).unwrap().permissions().readonly());
+    }
+
+    #[test]
+    fn storing_a_copy_leaves_the_original_writable() {
+        let (dir, store) = setup();
+        let original = dir.path().join("other-launcher/mods/m.jar");
+        fs::create_dir_all(original.parent().unwrap()).unwrap();
+        fs::write(&original, b"jar").unwrap();
+        store.add(&original, Placement::Copy).unwrap();
+        assert!(!fs::metadata(&original).unwrap().permissions().readonly());
     }
 
     #[test]

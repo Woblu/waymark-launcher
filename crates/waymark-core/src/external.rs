@@ -340,7 +340,9 @@ pub(crate) fn copy_game_dir(
             .iter()
             .any(|folder| text.starts_with(folder));
         if stored_folder && Placement::for_path(&text) == Placement::Link {
-            let stored = core.store.add(source, Placement::Link)?;
+            // Copied into the store, never linked: a link would share the other
+            // launcher's file, and the store marks its files read-only.
+            let stored = core.store.add(source, Placement::Copy)?;
             core.store.place(&stored.hash, &target, Placement::Link)?;
         } else {
             fs::copy(source, &target)?;

@@ -348,10 +348,29 @@ class AppState {
    * Says a change was saved as a waymark, with a button to the Waymarks tab, where
    * the one before it is already selected so going back is one more press.
    */
-  changed(instance: string, mark: Waymark | string, detail = 'You can undo this from Waymarks.', title?: string) {
-    const after = typeof mark === 'string' ? undefined : mark.id;
+  /**
+   * Says a change was made. When the change has its own waymark, Undo puts the
+   * instance straight back; otherwise the way back is through Waymarks.
+   */
+  changed(instance: string, mark: Waymark | string, detail?: string, title?: string) {
     const label = title ?? (typeof mark === 'string' ? mark : mark.label);
-    this.toast('good', label, detail, { label: 'Open Waymarks', run: () => this.showWaymarks(instance, after) });
+    if (typeof mark === 'string') {
+      this.toast('good', label, detail ?? 'You can undo this from Waymarks.', { label: 'Open Waymarks', run: () => this.showWaymarks(instance) });
+      return;
+    }
+    this.toast('good', label, detail, { label: 'Undo', run: () => this.undo(instance, mark) });
+  }
+
+  /** Puts an instance back the way it was just before one change. */
+  async undo(instance: string, mark: Waymark) {
+    try {
+      await api.undoChange(instance, mark.id);
+      await Promise.all([this.refresh(), this.loadInstalled(instance)]);
+      this.contentTick++;
+      this.toast('good', `Undid ${mark.label}`, undefined, { label: 'Open Waymarks', run: () => this.showWaymarks(instance) });
+    } catch (error) {
+      this.fail(error, "Couldn't undo that");
+    }
   }
 
   showWaymarks(instance: string, after?: string) {
