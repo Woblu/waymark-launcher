@@ -283,7 +283,7 @@ mod tests {
         std::fs::write(&java, b"").unwrap();
         std::fs::write(dir.path().join("target"), b"").unwrap();
         let link = dir.path().join("link");
-        finish_runtime(&[java.clone()], &[(link.clone(), "target".into())]).unwrap();
+        finish_runtime(std::slice::from_ref(&java), &[(link.clone(), "target".into())]).unwrap();
         assert_eq!(std::fs::metadata(&java).unwrap().permissions().mode() & 0o777, 0o755);
         assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
     }
