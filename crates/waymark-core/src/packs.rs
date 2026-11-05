@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
@@ -69,7 +69,21 @@ struct MrpackFile {
 
 #[derive(Deserialize)]
 struct MrpackHashes {
+    /// Checked here because it also names the file while it's staged, and a
+    /// pack is anyone's to write.
+    #[serde(deserialize_with = "sha512_hex")]
     sha512: String,
+}
+
+fn sha512_hex<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<String, D::Error> {
+    let hash = String::deserialize(d)?;
+    if hash.len() == 128 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(hash.to_ascii_lowercase())
+    } else {
+        Err(serde::de::Error::custom(
+            "a file in this pack has a damaged sha512 hash",
+        ))
+    }
 }
 
 #[derive(Deserialize)]
@@ -142,6 +156,9 @@ pub struct ManualFile {
 pub struct PackResult {
     pub instance: Instance,
     pub manual: Vec<ManualFile>,
+    /// Program files the pack carried itself instead of naming on a mod site.
+    /// See `unverified_code`.
+    pub unverified: Vec<String>,
 }
 
 /// Where a pack came from, so a newer version can be found later.
@@ -810,11 +827,13 @@ impl Core {
         })
     }
 
-    fn staging_dir(&self) -> std::path::PathBuf {
-        self.paths
-            .cache()
-            .join("staging")
-            .join(uuid::Uuid::new_v4().simple().to_string())
+    fn staging_dir(&self) -> Staging {
+        Staging(
+            self.paths
+                .cache()
+                .join("staging")
+                .join(uuid::Uuid::new_v4().simple().to_string()),
+        )
     }
 
     /// Stores the override folders. Later folders win over earlier ones.
@@ -825,7 +844,7 @@ impl Core {
         files: &mut BTreeMap<String, TreeFile>,
     ) -> Result<()> {
         let staged = self.staging_dir();
-        let (archive, target) = (pack.to_path_buf(), staged.clone());
+        let (archive, target) = (pack.to_path_buf(), staged.to_path_buf());
         blocking(move || {
             let prefixes: Vec<&str> = prefixes.iter().map(String::as_str).collect();
             extract_overrides(&archive, &prefixes, &target)
@@ -1080,7 +1099,7 @@ impl Core {
         files: &mut BTreeMap<String, TreeFile>,
     ) -> Result<()> {
         let staged = self.staging_dir();
-        let (from, to) = (archive.to_path_buf(), staged.clone());
+        let (from, to) = (archive.to_path_buf(), staged.to_path_buf());
         blocking(move || extract_except(&from, &[""], skip, &to)).await?;
         if staged.is_dir() {
             for entry in WalkDir::new(&staged)
@@ -1275,9 +1294,11 @@ impl Core {
         self.trail(&instance.id)
             .mark("Installed from modpack", WaymarkKind::Import)?;
         self.save_manual_files(&instance.id, &tree.manual)?;
+        let unverified = unverified_code(&tree, origin.as_ref());
         Ok(PackResult {
             instance,
             manual: tree.manual,
+            unverified,
         })
     }
 
@@ -1287,10 +1308,7 @@ impl Core {
             let _ = fs::remove_file(path);
             return Ok(());
         }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, serde_json::to_vec(files)?)?;
+        crate::atomic::write(&path, &serde_json::to_vec(files)?)?;
         Ok(())
     }
 
@@ -1748,7 +1766,7 @@ impl Core {
                 origin: origin.clone(),
                 files,
             };
-            fs::write(instance_dir.join(PACK_STATE), serde_json::to_vec(&state)?)?;
+            crate::atomic::write(&instance_dir.join(PACK_STATE), &serde_json::to_vec(&state)?)?;
         }
         Ok(report)
     }
@@ -1861,10 +1879,132 @@ fn conclude(task: Task, outcome: Result<PackResult>) -> Result<PackResult> {
     }
 }
 
+/// Program files a pack brought along itself instead of naming them on
+/// Modrinth or CurseForge, which scan what they host. Packs that carried
+/// malware have hidden it exactly this way, so the player gets to look before
+/// the first launch. Technic packs carry every file themselves, so a list of
+/// all of them would only teach people to ignore it.
+fn unverified_code(tree: &PackTree, origin: Option<&PackOrigin>) -> Vec<String> {
+    if origin.is_some_and(|origin| origin.source == ContentSource::Technic) {
+        return Vec::new();
+    }
+    tree.files
+        .iter()
+        .filter(|file| matches!(file.source, Source::Manual) && is_code(&file.path))
+        .map(|file| file.path.clone())
+        .collect()
+}
+
+fn is_code(path: &str) -> bool {
+    const CODE: [&str; 15] = [
+        ".jar", ".jar.disabled", ".class", ".exe", ".dll", ".so", ".dylib", ".jnilib",
+        ".bat", ".cmd", ".ps1", ".vbs", ".sh", ".scr", ".msi",
+    ];
+    let lower = path.to_ascii_lowercase();
+    CODE.iter().any(|ending| lower.ends_with(ending))
+}
+
+/// A scratch folder for one pack. It goes however the install ends, so a
+/// failed download or a bad pack can't leave gigabytes behind in the cache.
+struct Staging(PathBuf);
+
+impl std::ops::Deref for Staging {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for Staging {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Clears scratch folders left by a launcher that was closed mid-install.
+/// Only old ones, since another install may be using a new one right now.
+pub(crate) fn tidy_staging(cache: &Path) {
+    let Ok(entries) = fs::read_dir(cache.join("staging")) else {
+        return;
+    };
+    let day = std::time::Duration::from_secs(24 * 60 * 60);
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let old = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age > day);
+        if old {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn program_files_a_pack_carries_itself_are_pointed_out() {
+        let file = |path: &str, source: Source| TreeFile {
+            path: path.into(),
+            size: 1,
+            hash: String::new(),
+            source,
+            remote_hash: None,
+            name: None,
+            version: None,
+            icon: None,
+        };
+        let listed = Source::Modrinth {
+            project: "p".into(),
+            version: "v".into(),
+        };
+        let tree = PackTree {
+            name: "Pack".into(),
+            minecraft: "1.21.4".into(),
+            loader: Loader::default(),
+            files: vec![
+                file("mods/listed.jar", listed),
+                file("mods/Hidden.JAR", Source::Manual),
+                file("config/run.ps1", Source::Manual),
+                file("config/mod.toml", Source::Manual),
+                file("resourcepacks/art.zip", Source::Manual),
+            ],
+            manual: Vec::new(),
+        };
+        assert_eq!(unverified_code(&tree, None), ["mods/Hidden.JAR", "config/run.ps1"]);
+        let technic = PackOrigin {
+            source: ContentSource::Technic,
+            project: "p".into(),
+            version_id: "1".into(),
+            version: "1".into(),
+        };
+        assert!(unverified_code(&tree, Some(&technic)).is_empty());
+    }
+
+    #[test]
+    fn a_pack_with_a_damaged_hash_is_refused_instead_of_crashing() {
+        let file = |sha512: &str| {
+            format!(
+                r#"{{"path":"mods/a.jar","hashes":{{"sha512":"{sha512}"}},"downloads":[],"fileSize":1}}"#
+            )
+        };
+        let good = "AB".repeat(64);
+        let parsed: MrpackFile = serde_json::from_str(&file(&good)).unwrap();
+        assert_eq!(parsed.hashes.sha512, good.to_ascii_lowercase());
+        for bad in ["abc", "", &"é".repeat(64), &"zz".repeat(64), &"ab".repeat(65)] {
+            assert!(serde_json::from_str::<MrpackFile>(&file(bad)).is_err(), "{bad}");
+        }
+    }
 
     /// A server asks for one exact pack version, and only from its own project.
     #[tokio::test]

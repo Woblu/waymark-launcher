@@ -59,6 +59,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Waymark Launcher ${{ github.ref_name }}
           releaseDraft: true
+          # A tag like v1.0.0-beta.1 makes a pre-release. GitHub's "latest" skips those,
+          # so only players who turned on beta updates get them.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           includeUpdaterJson: true
           args: --bundles ${{ matrix.bundles }}${{ matrix.target && format(' --target {0}', matrix.target) || '' }}
 
@@ -77,3 +80,23 @@ jobs:
           Copy-Item $installer[0].FullName Waymark-Launcher_x64-setup.exe
           Copy-Item $installer[0].FullName Waymark_x64-setup.exe
           gh release upload '${{ github.ref_name }}' Waymark-Launcher_x64-setup.exe Waymark_x64-setup.exe --clobber
+
+  # One file to check every download against, since the installers aren't code signed yet.
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Add SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir assets && cd assets
+          gh release download "$TAG" --repo "$REPO"
+          rm -f SHA256SUMS.txt
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$REPO" --clobber

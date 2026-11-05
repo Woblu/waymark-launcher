@@ -93,6 +93,12 @@ impl Core {
     pub async fn resolve_version(&self, id: &str) -> Result<(VersionMeta, String)> {
         let mut chain = vec![self.load_meta(id).await?];
         while let Some(parent) = chain.last().and_then(|m| m.inherits_from.clone()) {
+            // A version that leads back to itself would otherwise loop forever.
+            if chain.len() > 16 || chain.iter().any(|m| m.id == parent) {
+                return Err(Error::Other(format!(
+                    "the version {id} inherits from itself through {parent}"
+                )));
+            }
             chain.push(self.load_meta(&parent).await?);
         }
         let base = chain.last().map(|m| m.id.clone()).unwrap_or_default();

@@ -38,6 +38,14 @@ An update never installs while a game or a hosted server is running, because the
 2. Push a tag like `v0.2.0`. GitHub builds Windows, macOS (Apple silicon and Intel) and Linux, and creates a draft release.
 3. Test the draft, then publish it. Drafts are invisible to the app, and publishing is the moment every installed copy starts updating, so a bad release reaches people within hours.
 
+### Betas first
+
+Ship anything big as a beta before it reaches everyone. Tag it with a hyphen, like `v1.0.0-beta.1`, and set the same version in `tauri.conf.json` and `Cargo.toml`. The workflow marks it as a pre-release. Players who turned on **Get beta versions** in Settings pick it up through the GitHub releases list (`RELEASES_API` in `brand.rs`); everyone else follows `/updates/latest.json`, which GitHub points at the newest full release and never at a pre-release.
+
+When a beta has been out for a few days without trouble, tag the full version (`v1.0.0`). Beta players move to it too, since it's higher than any `1.0.0-beta`.
+
+Every release also gets a `SHA256SUMS.txt` listing every file, from the `checksums` job, for anyone checking a download by hand.
+
 If BetaCraft has added builds or LegacyFix has a new release, run `node tools/old-versions.mjs <cache folder>` first, set the `LEGACYFIX` version at the top if it changed, and start the new builds before shipping. It rebuilds `crates/waymark-core/data/old-versions.json` and fetches one file at a time, so keep its cache folder between runs.
 
 The site's Download button needs no change for a new version. `/download` in `apps/site/vercel.json` points at `releases/latest/download/Waymark-Launcher_x64-setup.exe`, and the release workflow adds a copy of the Windows installer under that name to every release, so the button follows whichever release was published last. It also adds one as `Waymark_x64-setup.exe`, the name from before the rename, for links that are already out there. Deploy the site only when its pages change. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.

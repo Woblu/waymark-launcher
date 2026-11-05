@@ -152,3 +152,42 @@ mod tests {
         assert_eq!(read(&["hello"])[0].text, "hello");
     }
 }
+
+/// The next line of a game's output. Java writes in the system's own code page
+/// on many non-English Windows setups, so a line that isn't UTF-8 is converted
+/// as well as it can be instead of ending the log there.
+pub(crate) async fn next_line_lossy<R>(reader: &mut R) -> Option<String>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    use tokio::io::AsyncBufReadExt;
+    let mut bytes = Vec::new();
+    match reader.read_until(b'\n', &mut bytes).await {
+        Ok(0) | Err(_) => None,
+        Ok(_) => {
+            while bytes.last().is_some_and(|b| *b == b'\n' || *b == b'\r') {
+                bytes.pop();
+            }
+            Some(String::from_utf8_lossy(&bytes).into_owned())
+        }
+    }
+}
+
+#[cfg(test)]
+mod lossy_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_line_in_another_code_page_does_not_end_the_log() {
+        let output: &[u8] = b"first\r\nCaf\xe9 in Windows-1252\nlast";
+        let mut reader = tokio::io::BufReader::new(output);
+        let mut lines = Vec::new();
+        while let Some(line) = next_line_lossy(&mut reader).await {
+            lines.push(line);
+        }
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "first");
+        assert!(lines[1].starts_with("Caf") && lines[1].ends_with("Windows-1252"));
+        assert_eq!(lines[2], "last");
+    }
+}

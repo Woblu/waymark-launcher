@@ -20,6 +20,7 @@ use waymark_core::content::{
     ContentKind, ContentPage, ContentSource, ModUpdate, SearchCategory, SearchQuery, UpdatePick,
 };
 use waymark_core::crash::CrashReport;
+use waymark_core::diagnostics;
 use waymark_core::event::Event;
 use waymark_core::export::ServerExport;
 use waymark_core::external::ExternalInstance;
@@ -67,6 +68,8 @@ struct Launcher {
     pending_crash: Mutex<Option<CrashNotice>>,
     /// The instance a desktop shortcut asked to start.
     pending_launch: Mutex<Option<String>>,
+    /// One change to an instance at a time. See `Launcher::editing`.
+    edits: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -193,6 +196,22 @@ fn forward_events(app: AppHandle, mut events: mpsc::UnboundedReceiver<Event>) {
 }
 
 /// Filesystem work runs off the async threads so the UI never waits on a disk.
+impl Launcher {
+    /// Waits for any other change to the same instance to finish. A change
+    /// reads the lockfile, works (often downloading for a while), then writes
+    /// it back, so two at once would quietly lose one of them.
+    async fn editing(&self, id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = self
+            .edits
+            .lock()
+            .expect("edit list poisoned")
+            .entry(id.to_string())
+            .or_default()
+            .clone();
+        lock.lock_owned().await
+    }
+}
+
 async fn off_thread<T: Send + 'static>(
     launcher: &State<'_, Launcher>,
     work: impl FnOnce(&Core) -> Reply<T> + Send + 'static,
@@ -277,6 +296,7 @@ async fn set_content_enabled(
     world: Option<String>,
     enabled: bool,
 ) -> Reply<Vec<LockedMod>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.set_content_enabled(&id, kind, &hash, world.as_deref(), enabled)
     })
@@ -291,6 +311,7 @@ async fn remove_content(
     hashes: Vec<String>,
     world: Option<String>,
 ) -> Reply<Option<WaymarkSummary>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.remove_content(&id, kind, &hashes, world.as_deref())
     })
@@ -304,6 +325,7 @@ async fn set_mods_enabled(
     hashes: Vec<String>,
     enabled: bool,
 ) -> Reply<Vec<LockedMod>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.set_mods_enabled(&id, &hashes, enabled)
     })
@@ -317,6 +339,7 @@ async fn set_mods_group(
     hashes: Vec<String>,
     group: Option<String>,
 ) -> Reply<Vec<LockedMod>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.set_mods_group(&id, &hashes, group)
     })
@@ -330,6 +353,7 @@ async fn toggle_mods_tag(
     hashes: Vec<String>,
     tag: String,
 ) -> Reply<Vec<LockedMod>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.toggle_mods_tag(&id, &hashes, &tag)
     })
@@ -343,6 +367,7 @@ async fn identify_content(
     id: String,
     kind: ContentKind,
 ) -> Reply<Option<Vec<LockedMod>>> {
+    let _editing = launcher.editing(&id).await;
     if !launcher.core.identify_mods(&id).await? {
         return Ok(None);
     }
@@ -356,6 +381,7 @@ async fn check_pack_update(launcher: State<'_, Launcher>, id: String) -> Reply<O
 
 #[tauri::command]
 async fn update_pack(launcher: State<'_, Launcher>, id: String) -> Reply<PackUpdateReport> {
+    let _editing = launcher.editing(&id).await;
     launcher.core.update_pack(&id).await
 }
 
@@ -404,6 +430,30 @@ async fn recent_logs(launcher: State<'_, Launcher>, id: String) -> Reply<Vec<Log
         .unwrap_or_default())
 }
 
+/// Where the launcher's own log lives, and the note from a crash of the
+/// launcher itself that the player hasn't seen yet.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LauncherDiagnostics {
+    folder: PathBuf,
+    last_crash: Option<String>,
+}
+
+#[tauri::command]
+async fn launcher_diagnostics(launcher: State<'_, Launcher>) -> Reply<LauncherDiagnostics> {
+    let root = launcher.core.paths.root();
+    Ok(LauncherDiagnostics {
+        folder: diagnostics::folder(root),
+        last_crash: diagnostics::take_last_crash(root),
+    })
+}
+
+/// Text for a support email or an issue, with folder names and tokens removed.
+#[tauri::command]
+async fn diagnostics_report(launcher: State<'_, Launcher>) -> Reply<String> {
+    Ok(diagnostics::report(launcher.core.paths.root()))
+}
+
 #[tauri::command]
 async fn take_pending_crash(launcher: State<'_, Launcher>) -> Reply<Option<CrashNotice>> {
     Ok(launcher
@@ -429,6 +479,7 @@ async fn set_waymark(
     id: String,
     label: String,
 ) -> Reply<Option<WaymarkSummary>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.trail(&id).mark(&label, WaymarkKind::Manual)
     })
@@ -441,7 +492,8 @@ async fn return_to_waymark(
     id: String,
     waymark: String,
 ) -> Reply<WaymarkSummary> {
-    off_thread(&launcher, move |core| core.trail(&id).restore(&waymark)).await
+    let _editing = launcher.editing(&id).await;
+    off_thread(&launcher, move |core| core.return_to_waymark(&id, &waymark)).await
 }
 
 #[tauri::command]
@@ -543,6 +595,7 @@ async fn install_content(
     version: Option<String>,
     world: Option<String>,
 ) -> Reply<Option<WaymarkSummary>> {
+    let _editing = launcher.editing(&id).await;
     launcher
         .core
         .install_content(
@@ -581,6 +634,7 @@ async fn apply_updates(
     id: String,
     picks: Vec<UpdatePick>,
 ) -> Reply<Option<WaymarkSummary>> {
+    let _editing = launcher.editing(&id).await;
     launcher.core.apply_updates(&id, &picks).await
 }
 
@@ -836,6 +890,7 @@ async fn add_local_files(
     kind: ContentKind,
     paths: Vec<PathBuf>,
 ) -> Reply<Option<WaymarkSummary>> {
+    let _editing = launcher.editing(&id).await;
     off_thread(&launcher, move |core| {
         core.add_local_files(&id, kind, &paths)
     })
@@ -869,6 +924,7 @@ async fn collect_manual_files(
     launcher: State<'_, Launcher>,
     id: String,
 ) -> Reply<Vec<ManualFile>> {
+    let _editing = launcher.editing(&id).await;
     let downloads = app
         .path()
         .download_dir()
@@ -1018,6 +1074,7 @@ async fn install_share(launcher: State<'_, Launcher>, code: String) -> Reply<Sha
 
 #[tauri::command]
 async fn add_starters(launcher: State<'_, Launcher>, id: String) -> Reply<StarterResult> {
+    let _editing = launcher.editing(&id).await;
     launcher.core.add_starters(&id).await
 }
 
@@ -1270,6 +1327,9 @@ pub fn run() {
                 Some(path) => PathBuf::from(path),
                 None => Paths::default_root()?,
             };
+            if let Err(error) = diagnostics::start(&root) {
+                eprintln!("could not start the launcher log: {error}");
+            }
             let core = Core::new(root, emitter)?;
             let tidying = core.clone();
             tauri::async_runtime::spawn_blocking(move || tidying.purge_trash());
@@ -1279,6 +1339,7 @@ pub fn run() {
                 logs: Mutex::new(HashMap::new()),
                 pending_crash: Mutex::new(None),
                 pending_launch: Mutex::new(launch_request(std::env::args())),
+                edits: Mutex::new(HashMap::new()),
             });
             forward_events(app.handle().clone(), receiver);
             app.manage(updates::Updates::default());
@@ -1335,6 +1396,8 @@ pub fn run() {
             copy_settings,
             export_server,
             recent_logs,
+            launcher_diagnostics,
+            diagnostics_report,
             take_pending_crash,
             trail,
             pending_changes,

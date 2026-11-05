@@ -620,9 +620,7 @@ impl Core {
             kept.insert(0, server);
         }
         let path = self.paths.root().join(SAVED_FILE);
-        let part = path.with_extension("json.part");
-        fs::write(&part, serde_json::to_vec_pretty(&kept)?)?;
-        fs::rename(part, path)?;
+        crate::atomic::write(&path, &serde_json::to_vec_pretty(&kept)?)?;
         Ok(kept)
     }
 

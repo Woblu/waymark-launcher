@@ -2,12 +2,14 @@
 //! layers over this crate, so everything here can be tested on its own.
 
 pub mod atlauncher;
+pub mod atomic;
 pub mod auth;
 pub mod bisect;
 pub mod brand;
 pub mod content;
 pub mod crash;
 pub mod curseforge;
+pub mod diagnostics;
 pub mod discord;
 pub mod error;
 pub mod event;
@@ -95,6 +97,8 @@ pub struct Settings {
     pub language: String,
     /// Checks for new versions of Waymark and installs them when it closes.
     pub auto_update: bool,
+    /// Also takes pre-releases, which reach people who asked for them first.
+    pub beta_updates: bool,
     /// Starts a game out of sight after an update, and undoes the update if it won't load.
     pub check_updates: bool,
     /// Starter mods by Minecraft version, plus `*` for every version.
@@ -120,6 +124,7 @@ impl Default for Settings {
             custom_themes: Vec::new(),
             language: "system".to_string(),
             auto_update: true,
+            beta_updates: false,
             check_updates: true,
             starters: BTreeMap::new(),
             share_settings: false,
@@ -192,15 +197,28 @@ impl Core {
     }
 
     pub fn settings(&self) -> Result<Settings> {
-        match fs::read_to_string(self.paths.settings()) {
-            Ok(text) => Ok(toml::from_str(&text)?),
+        let path = self.paths.settings();
+        match fs::read_to_string(&path) {
+            Ok(text) => match toml::from_str(&text) {
+                Ok(settings) => Ok(settings),
+                // A torn or hand-broken file must never stop anyone playing.
+                // It's kept beside the new one for a look, and the defaults
+                // carry on until the player changes something.
+                Err(error) => {
+                    let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+                    let aside = path.with_extension(format!("toml.broken-{stamp}"));
+                    let _ = fs::rename(&path, &aside);
+                    tracing::warn!(%error, kept = %aside.display(), "settings.toml couldn't be read, using defaults");
+                    Ok(Settings::default())
+                }
+            },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
             Err(error) => Err(error.into()),
         }
     }
 
     pub fn save_settings(&self, settings: &Settings) -> Result<()> {
-        fs::write(self.paths.settings(), toml::to_string_pretty(settings)?)?;
+        crate::atomic::write(&self.paths.settings(), toml::to_string_pretty(settings)?.as_bytes())?;
         // Turning presence on or off takes effect at once, even mid-game.
         self.update_presence();
         Ok(())
@@ -209,13 +227,15 @@ impl Core {
     /// Deletes stored files nothing refers to any more and reports the bytes freed.
     pub fn reclaim_space(&self) -> Result<u64> {
         let mut live = HashSet::new();
-        for instance in self.instances()? {
-            live.extend(self.trail(&instance.id).live_hashes()?);
-            live.extend(
-                self.lockfile(&instance.id)?
-                    .everything()
-                    .map(|(_, entry)| entry.hash.clone()),
-            );
+        // Folders, not the instance list: an instance whose instance.toml
+        // can't be read right now drops out of the list but still owns files.
+        if let Ok(entries) = fs::read_dir(self.paths.instances()) {
+            for entry in entries {
+                let folder = entry?.path();
+                if folder.is_dir() {
+                    live.extend(self.folder_hashes(&folder)?);
+                }
+            }
         }
         live.extend(self.trash_hashes()?);
         self.purge_trash()?;
@@ -244,5 +264,19 @@ mod tests {
         };
         core.save_settings(&settings).unwrap();
         assert_eq!(core.settings().unwrap(), settings);
+    }
+
+    #[test]
+    fn broken_settings_fall_back_to_defaults_and_are_kept_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), event::silent()).unwrap();
+        fs::write(core.paths.settings(), "memory_mb = [torn").unwrap();
+
+        assert_eq!(core.settings().unwrap(), Settings::default());
+        let kept = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| e.file_name().to_string_lossy().contains(".broken-"));
+        assert!(kept, "the broken file should be kept for a look");
     }
 }

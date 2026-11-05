@@ -10,7 +10,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::Core;
 use crate::error::{Error, Result};
-use crate::lock::Lockfile;
+use crate::lock::{LOCK_FILE, Lockfile};
 use crate::waymarks::Trail;
 
 const ITEM_FILE: &str = "item.json";
@@ -152,24 +152,45 @@ impl Core {
         for item in self.trashed()?.into_iter().filter(|item| item.at < oldest) {
             fs::remove_dir_all(self.paths.trash().join(item.id))?;
         }
+        crate::packs::tidy_staging(&self.paths.cache());
         Ok(())
     }
 
     /// A deleted instance can come back, so its stored files have to stay.
+    /// Every folder in the trash counts, even one whose item.json can't be
+    /// read, because clearing space must never guess.
     pub(crate) fn trash_hashes(&self) -> Result<HashSet<String>> {
         let mut live = HashSet::new();
-        for item in self
-            .trashed()?
-            .into_iter()
-            .filter(|item| item.kind == TrashKind::Instance)
-        {
-            let files = self.paths.trash().join(&item.id).join(FILES_DIR);
-            live.extend(Trail::new(&files, self.store.clone()).live_hashes()?);
-            if let Ok(lock) = Lockfile::load(&files) {
-                live.extend(lock.everything().map(|(_, entry)| entry.hash.clone()));
+        let Ok(entries) = fs::read_dir(self.paths.trash()) else {
+            return Ok(live);
+        };
+        for entry in entries {
+            let files = entry?.path().join(FILES_DIR);
+            if files.is_dir() {
+                live.extend(self.folder_hashes(&files)?);
             }
         }
         Ok(live)
+    }
+
+    /// Every stored file a folder's waymarks and lockfile point at. Anything
+    /// there that can't be read stops the caller, since the alternative is
+    /// deleting files that might be all that's left of someone's setup.
+    pub(crate) fn folder_hashes(&self, folder: &Path) -> Result<Vec<String>> {
+        let unreadable = |what: &str, error: Error| {
+            Error::Other(format!(
+                "Couldn't read the {what} in {} ({error}), so no space was cleared and nothing was deleted.",
+                folder.display()
+            ))
+        };
+        let mut hashes = Trail::new(folder, self.store.clone())
+            .live_hashes()
+            .map_err(|error| unreadable("waymarks", error))?;
+        if folder.join(LOCK_FILE).exists() {
+            let lock = Lockfile::load(folder).map_err(|error| unreadable("lockfile", error))?;
+            hashes.extend(lock.everything().map(|(_, entry)| entry.hash.clone()));
+        }
+        Ok(hashes)
     }
 }
 
@@ -289,5 +310,49 @@ mod tests {
         core.reclaim_space().unwrap();
 
         assert!(core.store.contains(&stored.hash));
+    }
+
+    /// A marked jar's hash, after a fresh start so nothing counts as mid-install.
+    fn marked_jar(dir: &Path, core: &Core, id: &str) -> (Core, String) {
+        fs::write(core.paths.game(id).join("mods/keep.jar"), b"jar").unwrap();
+        core.trail(id)
+            .mark("Before", crate::waymarks::WaymarkKind::Manual)
+            .unwrap();
+        let hash = core.lockfile(id).unwrap().mods[0].hash.clone();
+        (Core::new(dir, crate::event::silent()).unwrap(), hash)
+    }
+
+    #[test]
+    fn an_instance_that_cannot_be_read_still_keeps_its_files() {
+        let (dir, core, id) = setup();
+        let (core, hash) = marked_jar(dir.path(), &core, &id);
+        fs::write(core.paths.instance(&id).join("instance.toml"), "torn [").unwrap();
+        assert!(core.instances().unwrap().is_empty());
+
+        core.reclaim_space().unwrap();
+        assert!(core.store.contains(&hash));
+    }
+
+    #[test]
+    fn a_lockfile_that_cannot_be_read_stops_cleaning_up() {
+        let (dir, core, id) = setup();
+        let (core, hash) = marked_jar(dir.path(), &core, &id);
+        fs::write(core.paths.instance(&id).join(LOCK_FILE), "torn [").unwrap();
+
+        assert!(core.reclaim_space().is_err());
+        assert!(core.store.contains(&hash));
+    }
+
+    #[test]
+    fn a_trashed_instance_without_its_note_still_keeps_its_files() {
+        let (dir, core, id) = setup();
+        let (core, hash) = marked_jar(dir.path(), &core, &id);
+        core.delete_instance(&id).unwrap();
+        let item = core.trashed().unwrap().remove(0);
+        fs::remove_file(core.paths.trash().join(&item.id).join(ITEM_FILE)).unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+
+        core.reclaim_space().unwrap();
+        assert!(core.store.contains(&hash));
     }
 }

@@ -35,6 +35,8 @@ In a browser the UI runs on sample data, and `http://localhost:1420/#mods` style
 
 Set `WAYMARK_HOME` to use a throwaway data folder instead of your real one.
 
+The launcher writes its own log to `logs/launcher.log` in the data folder (two files of up to 5 MB each), and a crash of the launcher itself leaves `logs/last-crash.txt`, which the app shows once on the next start. Set `WAYMARK_LOG=debug` for more detail. **Copy diagnostics** in Settings gathers both for a support email, with folder names and tokens removed.
+
 ## End-to-end test
 
 `apps/desktop/e2e/run.mjs` drives the real app like a player: it creates an instance, adds mods, rolls back, launches the game, runs a crash search, imports, installs a pack and deletes, then checks each result on disk. It fails on any console error or security policy violation. It opens a Minecraft window during the launch step.

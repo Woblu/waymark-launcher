@@ -16,7 +16,7 @@ use sha1::{Digest, Sha1};
 use sha2::Sha512;
 use tokio::io::AsyncWriteExt;
 
-use crate::brand::USER_AGENT;
+use crate::brand::{CURSEFORGE_API_KEY, USER_AGENT};
 use crate::error::{Error, Result};
 use crate::mojang::RESOURCES_URL;
 
@@ -197,7 +197,11 @@ impl Net {
         part: &Path,
         on_bytes: &(dyn Fn(u64) + Sync),
     ) -> Result<()> {
-        let response = self.client.get(&item.url).send().await?;
+        let mut request = self.client.get(&item.url);
+        if let Some(key) = curseforge_key_for(&item.url, CURSEFORGE_API_KEY) {
+            request = request.header("x-api-key", key);
+        }
+        let response = request.send().await?;
         check(&item.url, &response)?;
         let mut file = tokio::fs::File::create(part).await?;
         let mut hashing = Hashing::new(&item.hash);
@@ -248,6 +252,16 @@ impl Net {
 fn older_copy(url: &str) -> Option<String> {
     let path = url.strip_prefix(RESOURCES_URL)?;
     Some(format!("{OLD_RESOURCES_URL}{path}"))
+}
+
+/// CurseForge's CDN has wanted the app's key on every file download since
+/// 16 July 2026 and answers 401 without it. Only its own hosts get the key.
+fn curseforge_key_for(url: &str, key: Option<&'static str>) -> Option<&'static str> {
+    let key = key?;
+    let url = Url::parse(url).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    let theirs = host == "forgecdn.net" || host.ends_with(".forgecdn.net");
+    (url.scheme() == "https" && theirs).then_some(key)
 }
 
 /// Whether an address points at this computer or its home network. A stranger's
@@ -309,13 +323,7 @@ async fn already_there(item: &Fetch) -> bool {
     }
 }
 
-fn temp_beside(dest: &Path) -> PathBuf {
-    let name = dest
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("download");
-    dest.with_file_name(format!("{name}.{}.part", uuid::Uuid::new_v4().simple()))
-}
+use crate::atomic::temp_beside;
 
 async fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
     let bytes = tokio::fs::read(path).await.ok()?;
@@ -323,12 +331,10 @@ async fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
 }
 
 pub async fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let part = temp_beside(path);
-    tokio::fs::write(&part, bytes).await?;
-    tokio::fs::rename(&part, path).await?;
+    let (path, bytes) = (path.to_path_buf(), bytes.to_vec());
+    tokio::task::spawn_blocking(move || crate::atomic::write(&path, &bytes))
+        .await
+        .map_err(|error| Error::Other(error.to_string()))??;
     Ok(())
 }
 
@@ -346,6 +352,20 @@ mod tests {
         let hello = Expected::Md5("5d41402abc4b2a76b9719d911017c592".to_string());
         assert!(hashed("hello").matches(&hello));
         assert!(!hashed("hullo").matches(&hello));
+    }
+
+    #[test]
+    fn only_curseforge_downloads_carry_the_key() {
+        let key = Some("secret");
+        let sent = |url: &str| curseforge_key_for(url, key).is_some();
+        assert!(sent("https://edge.forgecdn.net/files/4712/866/jei.jar"));
+        assert!(sent("https://mediafilez.forgecdn.net/files/4712/866/jei.jar"));
+        assert!(sent("https://EDGE.ForgeCDN.net/files/1/2/a.jar"));
+        assert!(!sent("http://edge.forgecdn.net/files/1/2/a.jar"));
+        assert!(!sent("https://cdn.modrinth.com/data/abc/a.jar"));
+        assert!(!sent("https://forgecdn.net.example.com/a.jar"));
+        assert!(!sent("https://evilforgecdn.net/a.jar"));
+        assert_eq!(curseforge_key_for("https://edge.forgecdn.net/a", None), None);
     }
 
     #[test]

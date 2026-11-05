@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
@@ -16,6 +17,10 @@ use crate::error::Result;
 #[derive(Clone, Debug)]
 pub struct Store {
     root: PathBuf,
+    /// Everything stored since the launcher started. An install stores its
+    /// files before any lockfile names them, so clearing space never takes
+    /// these until the next start.
+    fresh: Arc<Mutex<HashSet<String>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,10 +62,19 @@ pub fn hash_file(path: &Path) -> Result<Stored> {
 
 impl Store {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Store { root: root.into() }
+        Store {
+            root: root.into(),
+            fresh: Arc::default(),
+        }
     }
 
+    /// Hashes also come back from lockfiles and waymarks on disk, so anything
+    /// that isn't a BLAKE3 hex digest gets a path that can never exist instead
+    /// of a crash or a path outside the store.
     pub fn path_of(&self, hash: &str) -> PathBuf {
+        if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return self.root.join("not-a-hash");
+        }
         self.root.join(&hash[..2]).join(hash)
     }
 
@@ -70,6 +84,10 @@ impl Store {
 
     pub fn add(&self, source: &Path, placement: Placement) -> Result<Stored> {
         let stored = hash_file(source)?;
+        self.fresh
+            .lock()
+            .expect("store lock poisoned")
+            .insert(stored.hash.clone());
         let target = self.path_of(&stored.hash);
         if target.is_file() {
             return Ok(stored);
@@ -106,13 +124,14 @@ impl Store {
     /// Deletes everything no waymark or instance refers to any more, and
     /// reports the bytes freed.
     pub fn collect_garbage(&self, live: &HashSet<String>) -> Result<u64> {
+        let fresh = self.fresh.lock().expect("store lock poisoned").clone();
         let mut freed = 0;
         for entry in WalkDir::new(&self.root).min_depth(2).max_depth(2) {
             let entry = entry.map_err(io::Error::from)?;
             let Some(name) = entry.file_name().to_str() else {
                 continue;
             };
-            if entry.file_type().is_file() && !live.contains(name) {
+            if entry.file_type().is_file() && !live.contains(name) && !fresh.contains(name) {
                 freed += entry.metadata().map_err(io::Error::from)?.len();
                 fs::remove_file(entry.path())?;
             }
@@ -122,11 +141,7 @@ impl Store {
 }
 
 fn copy_atomic(source: &Path, target: &Path) -> Result<()> {
-    let name = target
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
-    let part = target.with_file_name(format!("{name}.{}.part", uuid::Uuid::new_v4().simple()));
+    let part = crate::atomic::temp_beside(target);
     if let Err(error) = fs::copy(source, &part).and_then(|_| fs::rename(&part, target)) {
         let _ = fs::remove_file(&part);
         return Err(error.into());
@@ -188,12 +203,34 @@ mod tests {
         fs::write(&b, b"drop").unwrap();
         let keep = store.add(&a, Placement::Copy).unwrap();
         let drop = store.add(&b, Placement::Copy).unwrap();
+        // The next start, when nothing is mid-install.
+        let store = Store::new(dir.path().join("store"));
         let freed = store
             .collect_garbage(&HashSet::from([keep.hash.clone()]))
             .unwrap();
         assert_eq!(freed, 4);
         assert!(store.contains(&keep.hash));
         assert!(!store.contains(&drop.hash));
+    }
+
+    #[test]
+    fn files_stored_during_this_run_survive_garbage_collection() {
+        let (dir, store) = setup();
+        let path = dir.path().join("mid-install.jar");
+        fs::write(&path, b"no lockfile names me yet").unwrap();
+        let stored = store.add(&path, Placement::Link).unwrap();
+        assert_eq!(store.clone().collect_garbage(&HashSet::new()).unwrap(), 0);
+        assert!(store.contains(&stored.hash));
+    }
+
+    #[test]
+    fn a_hash_that_is_not_a_hash_never_leaves_the_store() {
+        let (dir, store) = setup();
+        for bad in ["", "a", "../../../../etc/passwd", &"g".repeat(64), &"a".repeat(65)] {
+            let path = store.path_of(bad);
+            assert!(path.starts_with(dir.path().join("store")), "{bad}");
+            assert!(!store.contains(bad));
+        }
     }
 
     #[test]

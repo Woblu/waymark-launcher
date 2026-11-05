@@ -849,15 +849,37 @@ impl Core {
         let name = url.rsplit('/').next().unwrap_or("installer.jar");
         let installer = self.paths.cache().join("installers").join(name);
         task.progress(0, 1, "Downloading loader");
+        let hash = match self.maven_sha1(url).await {
+            Some(sha1) => Expected::Sha1(sha1),
+            None => Expected::Nothing,
+        };
         self.net
             .fetch(&Fetch {
                 url: url.to_string(),
                 dest: installer.clone(),
-                hash: Expected::Nothing,
+                hash,
                 size: None,
             })
             .await?;
         Ok(installer)
+    }
+
+    /// The checksum a Maven repository publishes beside every file. Installers
+    /// get run, so they're worth the extra request; a repository without one
+    /// still works, as before.
+    async fn maven_sha1(&self, url: &str) -> Option<String> {
+        let response = self
+            .net
+            .client()
+            .get(format!("{url}.sha1"))
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?;
+        let text = response.text().await.ok()?;
+        let sha1 = text.split_whitespace().next()?.to_ascii_lowercase();
+        (sha1.len() == 40 && sha1.bytes().all(|b| b.is_ascii_hexdigit())).then_some(sha1)
     }
 
     async fn run_installer(&self, url: &str, minecraft: &str, task: &Task) -> Result<String> {

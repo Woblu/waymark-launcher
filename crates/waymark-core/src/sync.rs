@@ -215,11 +215,8 @@ impl Core {
     }
 
     fn write_shared(&self, family: Family, shared: &SharedOptions) -> Result<()> {
-        fs::create_dir_all(self.shared_dir())?;
         let path = self.shared_dir().join(family.file());
-        let part = path.with_extension("json.part");
-        fs::write(&part, serde_json::to_vec_pretty(shared)?)?;
-        fs::rename(part, path)?;
+        crate::atomic::write(&path, &serde_json::to_vec_pretty(shared)?)?;
         Ok(())
     }
 

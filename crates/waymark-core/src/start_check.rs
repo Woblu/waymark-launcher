@@ -23,8 +23,14 @@ pub enum StartCheck {
     Undone {
         reason: String,
     },
-    /// Still loading when time ran out, so the update stayed.
+    /// Still loading when time ran out, or the game closed without saying
+    /// why, so the update stayed.
     Unclear,
+    /// The update stopped the game loading, but the instance changed while
+    /// the check ran, so nothing was undone automatically.
+    Failed {
+        reason: String,
+    },
     /// Not checked: turned off, cancelled, not signed in, or not possible on this system.
     Skipped,
 }
@@ -79,6 +85,9 @@ mod check {
     enum Outcome {
         Loaded,
         Failed(String),
+        /// Closed with no crash report or loader error. On a hidden desktop that
+        /// is as likely the graphics or sound driver as the update.
+        Unexplained,
         OutOfTime,
         Cancelled,
     }
@@ -115,6 +124,7 @@ mod check {
             let Some(before) = marks.iter().rev().nth(1).map(|mark| mark.id.clone()) else {
                 return Ok(StartCheck::Skipped);
             };
+            let update = marks.last().map(|mark| mark.id.clone());
             let task = Task::start(
                 &self.events,
                 format!("Checking that {} still starts", instance.name),
@@ -125,7 +135,21 @@ mod check {
                 .expect("check list poisoned")
                 .insert(id.to_string(), stop.clone());
             let outcome = self.watch_hidden(&instance, &session, &stop, &task).await;
+            // The check stays listed until any undo is done, so pressing Play in
+            // the meantime waits for it instead of starting mid-swap.
+            let result = self.settle_check(&trail, outcome, &before, update.as_deref(), task);
             self.checks.lock().expect("check list poisoned").remove(id);
+            result
+        }
+
+        fn settle_check(
+            &self,
+            trail: &crate::waymarks::Trail,
+            outcome: Result<Outcome>,
+            before: &str,
+            update: Option<&str>,
+            task: Task,
+        ) -> Result<StartCheck> {
             let outcome = match outcome {
                 Ok(outcome) => outcome,
                 Err(error) => {
@@ -136,11 +160,18 @@ mod check {
             task.finish();
             Ok(match outcome {
                 Outcome::Loaded => StartCheck::Passed,
-                Outcome::OutOfTime => StartCheck::Unclear,
+                Outcome::OutOfTime | Outcome::Unexplained => StartCheck::Unclear,
                 Outcome::Cancelled => StartCheck::Skipped,
                 Outcome::Failed(reason) => {
-                    trail.restore(&before)?;
-                    StartCheck::Undone { reason }
+                    // Anything the player did during the check is newer than the
+                    // update, and undoing it behind their back would be worse.
+                    let newest = trail.list()?.last().map(|mark| mark.id.clone());
+                    if newest.as_deref() == update {
+                        trail.restore(before)?;
+                        StartCheck::Undone { reason }
+                    } else {
+                        StartCheck::Failed { reason }
+                    }
                 }
             })
         }
@@ -193,7 +224,10 @@ mod check {
                     loaded = Some(Instant::now());
                 }
                 if game.exited() {
-                    return Ok(Outcome::Failed(reason_for(&game_dir, began)));
+                    return Ok(match reason_for(&game_dir, began) {
+                        Some(reason) => Outcome::Failed(reason),
+                        None => Outcome::Unexplained,
+                    });
                 }
                 if loaded.is_some_and(|at| at.elapsed() >= SETTLE) {
                     game.stop();
@@ -221,14 +255,11 @@ mod check {
         Some(line.trim().to_string())
     }
 
-    fn reason_for(game_dir: &Path, began: SystemTime) -> String {
+    fn reason_for(game_dir: &Path, began: SystemTime) -> Option<String> {
         crash::inspect(game_dir, began)
             .findings
             .first()
-            .map_or_else(
-                || "the game closed before it finished loading".to_string(),
-                |finding| finding.title.clone(),
-            )
+            .map(|finding| finding.title.clone())
     }
 
     #[cfg(test)]

@@ -338,11 +338,8 @@ impl Core {
     }
 
     pub(crate) fn save_accounts(&self, accounts: &[Account]) -> Result<()> {
-        fs::create_dir_all(self.paths.root())?;
-        let path = self.paths.accounts();
-        let part = path.with_extension("json.part");
-        fs::write(&part, serde_json::to_vec_pretty(accounts)?)?;
-        fs::rename(part, path)?;
+        let bytes = serde_json::to_vec_pretty(accounts)?;
+        crate::atomic::write(&self.paths.accounts(), &bytes)?;
         Ok(())
     }
 
@@ -570,19 +567,28 @@ impl Core {
         let _turn = self.signing.lock().await;
         match self.refresh(&account).await {
             Ok(session) => Ok(session),
-            // A session verified minutes ago is still proof, so a busy server doesn't stop play.
-            Err(Error::Http(error)) if error.is_status() => self
-                .kept_session(&account.uuid)
-                .ok_or_else(|| refused(error.status())),
-            Err(Error::Http(_)) if may_play_offline(&account) => Ok(Session {
-                name: account.name,
-                uuid: account.uuid,
-                access_token: "0".into(),
-                xuid: "0".into(),
-            }),
-            Err(Error::Http(_)) => Err(Error::Auth(
-                "Connect to the internet so we can confirm your account.".into(),
-            )),
+            // A session verified recently is still proof, and servers still
+            // accept it, so a busy or unreachable sign-in server doesn't stop
+            // play or turn into "Invalid session" on every server.
+            Err(Error::Http(error)) => {
+                if let Some(kept) = self.kept_session(&account.uuid) {
+                    return Ok(kept);
+                }
+                if error.is_status() {
+                    Err(refused(error.status()))
+                } else if may_play_offline(&account) {
+                    Ok(Session {
+                        name: account.name,
+                        uuid: account.uuid,
+                        access_token: "0".into(),
+                        xuid: "0".into(),
+                    })
+                } else {
+                    Err(Error::Auth(
+                        "Connect to the internet so we can confirm your account.".into(),
+                    ))
+                }
+            }
             Err(error) => Err(error),
         }
     }

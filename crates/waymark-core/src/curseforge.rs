@@ -544,3 +544,34 @@ pub fn latest_file(
 pub fn pick(files: &[File]) -> Option<&File> {
     files.iter().find(|f| f.release_type == 1).or(files.first())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::net::{Expected, Fetch};
+
+    /// CurseForge's CDN has refused downloads without the app's key since July
+    /// 2026. CI runs this with the real key, so a release can't ship without it.
+    #[tokio::test]
+    #[ignore = "talks to CurseForge and needs WAYMARK_CURSEFORGE_API_KEY at build time"]
+    async fn live_curseforge_files_download_with_the_key() {
+        assert!(available(), "build with WAYMARK_CURSEFORGE_API_KEY set");
+        let net = Net::new().unwrap();
+        // Just Enough Items, which has allowed third-party downloads for years.
+        let (files, _) = files_page(&net, 238222, None, None, 0).await.unwrap();
+        let file = files
+            .iter()
+            .find(|f| f.download_url.is_some() && f.sha1().is_some())
+            .expect("a downloadable file");
+        let dir = tempfile::tempdir().unwrap();
+        net.fetch(&Fetch {
+            url: file.download_url.clone().unwrap(),
+            dest: dir.path().join(&file.file_name),
+            hash: Expected::Sha1(file.sha1().unwrap()),
+            size: Some(file.file_length),
+        })
+        .await
+        .unwrap();
+        assert!(dir.path().join(&file.file_name).is_file());
+    }
+}

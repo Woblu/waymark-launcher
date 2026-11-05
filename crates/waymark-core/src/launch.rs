@@ -9,7 +9,7 @@ use std::process::Stdio;
 use std::time::{Instant, SystemTime};
 
 use time::OffsetDateTime;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 use tokio::process::{Child, Command};
 
 use crate::Core;
@@ -17,6 +17,7 @@ use crate::auth::Session;
 use crate::brand::{PRODUCT_NAME, VERSION};
 use crate::crash;
 use crate::error::{Error, Result};
+use crate::gamelog::next_line_lossy;
 use crate::event::{Event, Task};
 use crate::install::Prepared;
 use crate::instance::{Instance, LaunchOptions};
@@ -420,7 +421,10 @@ impl Core {
         self.skip_sound_restart(instance)?;
         self.link_resources(instance, &prepared).await?;
 
-        let memory = instance.memory_mb.unwrap_or(self.settings()?.memory_mb);
+        let memory = match instance.memory_mb {
+            Some(memory) => memory,
+            None => self.settings()?.memory_mb,
+        };
         let mut args = build_arguments(&self.paths, instance, &prepared, session, memory)?;
         args.extend(window_arguments(&instance.options));
         args.extend(extra);
@@ -547,9 +551,9 @@ impl Core {
             let Some(stream) = stream else { continue };
             let (events, id) = (events.clone(), id.clone());
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stream).lines();
+                let mut lines = BufReader::new(stream);
                 let mut reader = crate::gamelog::LogReader::default();
-                while let Ok(Some(line)) = lines.next_line().await {
+                while let Some(line) = next_line_lossy(&mut lines).await {
                     for line in reader.feed(&line) {
                         let error = error || line.is_error;
                         events(Event::GameLog {

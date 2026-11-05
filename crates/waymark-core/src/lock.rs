@@ -225,9 +225,7 @@ impl Lockfile {
 
     pub fn save(&self, instance_dir: &Path) -> Result<()> {
         let path = instance_dir.join(LOCK_FILE);
-        let part = instance_dir.join(format!("{LOCK_FILE}.part"));
-        fs::write(&part, toml::to_string_pretty(self)?)?;
-        fs::rename(part, path)?;
+        crate::atomic::write(&path, toml::to_string_pretty(self)?.as_bytes())?;
         Ok(())
     }
 

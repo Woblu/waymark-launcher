@@ -253,11 +253,8 @@ impl Core {
     }
 
     fn save_skins(&self, skins: &[SavedSkin]) -> Result<()> {
-        fs::create_dir_all(self.paths.skins())?;
         let path = self.paths.skins().join(LIBRARY_FILE);
-        let part = path.with_extension("json.part");
-        fs::write(&part, serde_json::to_vec_pretty(skins)?)?;
-        fs::rename(part, path)?;
+        crate::atomic::write(&path, &serde_json::to_vec_pretty(skins)?)?;
         Ok(())
     }
 

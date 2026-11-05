@@ -11,12 +11,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{Notify, mpsc};
 
 use crate::Core;
 use crate::error::{Error, Result};
+use crate::gamelog::next_line_lossy;
 use crate::event::{Event, Task};
 use crate::port_map;
 
@@ -209,8 +210,9 @@ impl Core {
         let folder = self.host_folder(id);
         let outcome = if folder.join("start.bat").is_file() {
             self.refresh_host(id, &folder)
+        } else if let Err(error) = clear_for_rebuild(&folder) {
+            Err(error)
         } else {
-            let _ = fs::remove_dir_all(&folder);
             let parent = folder.parent().map(PathBuf::from).unwrap_or_default();
             match fs::create_dir_all(&parent) {
                 Ok(()) => self
@@ -297,8 +299,8 @@ impl Core {
             let Some(stream) = stream else { continue };
             let (events, key) = (self.events.clone(), log_key.clone());
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stream).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
+                let mut lines = BufReader::new(stream);
+                while let Some(line) = next_line_lossy(&mut lines).await {
                     events(Event::GameLog {
                         instance: key.clone(),
                         line,
@@ -383,10 +385,62 @@ fn boxed<R: tokio::io::AsyncRead + Send + Unpin + 'static>(
     Box::new(stream)
 }
 
+/// Makes way for a fresh server folder. A half-built one goes, but one that
+/// holds a world is set aside under a new name instead, because a missing
+/// start script (an antivirus quarantine, say) is no reason to lose a world.
+fn clear_for_rebuild(folder: &std::path::Path) -> Result<()> {
+    if !folder.exists() {
+        return Ok(());
+    }
+    let has_world = walkdir::WalkDir::new(folder)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .any(|entry| entry.file_name() == "level.dat");
+    if has_world {
+        let name = folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+        let aside = folder.with_file_name(format!("{name}-kept-{stamp}"));
+        fs::rename(folder, &aside)?;
+        tracing::warn!(kept = %aside.display(), "server folder had no start script; its worlds were set aside");
+    } else {
+        fs::remove_dir_all(folder)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lock::Loader;
+
+    #[test]
+    fn a_server_folder_with_a_world_is_set_aside_not_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("abc-server");
+        fs::create_dir_all(folder.join("world")).unwrap();
+        fs::write(folder.join("world/level.dat"), b"precious").unwrap();
+
+        clear_for_rebuild(&folder).unwrap();
+
+        assert!(!folder.exists());
+        let kept: Vec<_> = fs::read_dir(dir.path()).unwrap().filter_map(|e| e.ok()).collect();
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].file_name().to_string_lossy().starts_with("abc-server-kept-"));
+        assert_eq!(fs::read(kept[0].path().join("world/level.dat")).unwrap(), b"precious");
+    }
+
+    #[test]
+    fn a_half_built_server_folder_is_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("abc-server");
+        fs::create_dir_all(folder.join("libraries")).unwrap();
+        clear_for_rebuild(&folder).unwrap();
+        assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
+    }
 
     fn setup() -> (tempfile::TempDir, Core, String) {
         let dir = tempfile::tempdir().unwrap();

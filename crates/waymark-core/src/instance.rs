@@ -171,15 +171,24 @@ impl Core {
     }
 
     pub fn save_instance(&self, instance: &Instance) -> Result<()> {
-        let dir = self.paths.instance(&instance.id);
-        let part = dir.join(format!("{INSTANCE_FILE}.part"));
-        fs::write(&part, toml::to_string_pretty(instance)?)?;
-        fs::rename(part, dir.join(INSTANCE_FILE))?;
+        let path = self.paths.instance(&instance.id).join(INSTANCE_FILE);
+        crate::atomic::write(&path, toml::to_string_pretty(instance)?.as_bytes())?;
         Ok(())
     }
 
     pub fn trail(&self, id: &str) -> Trail {
         Trail::new(&self.paths.instance(id), self.store.clone())
+    }
+
+    /// Returns an instance to a waymark, unless something is using its files.
+    pub fn return_to_waymark(&self, id: &str, waymark: &str) -> Result<crate::waymarks::WaymarkSummary> {
+        let checking = self.checks.lock().expect("check list poisoned").contains_key(id);
+        if self.game_running(id) || checking {
+            return Err(Error::Other(
+                "Close the game first. Its files can't change while it's running.".into(),
+            ));
+        }
+        self.trail(id).restore(waymark)
     }
 
     pub fn lockfile(&self, id: &str) -> Result<Lockfile> {

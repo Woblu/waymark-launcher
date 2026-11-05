@@ -6,10 +6,11 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, Url};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use waymark_core::Error;
+use waymark_core::brand::RELEASES_API;
 
 use crate::Launcher;
 
@@ -60,7 +61,11 @@ pub fn exit_would_interrupt(app: &AppHandle) -> bool {
 /// Downloads a newer version if there is one. The plugin checks its signature
 /// before this returns, and again before it installs.
 async fn fetch(app: &AppHandle) -> tauri_plugin_updater::Result<Option<String>> {
-    let Some(update) = app.updater()?.check().await? else {
+    let updater = match beta_endpoint(app).await {
+        Some(endpoint) => app.updater_builder().endpoints(vec![endpoint])?.build()?,
+        None => app.updater()?,
+    };
+    let Some(update) = updater.check().await? else {
         return Ok(None);
     };
     let version = update.version.clone();
@@ -74,6 +79,47 @@ async fn fetch(app: &AppHandle) -> tauri_plugin_updater::Result<Option<String>> 
         .expect("update slot poisoned") = Some(Ready { update, bytes });
     let _ = app.emit(READY_EVENT, &version);
     Ok(Some(version))
+}
+
+#[derive(Deserialize)]
+struct Release {
+    tag_name: String,
+    draft: bool,
+    assets: Vec<Asset>,
+}
+
+#[derive(Deserialize)]
+struct Asset {
+    name: String,
+    browser_download_url: String,
+}
+
+/// For players who turned on beta updates: the manifest of the newest published
+/// release, pre-releases included. Anyone else, or any trouble reaching GitHub,
+/// falls back to the usual address. Either way the plugin checks the signature.
+async fn beta_endpoint(app: &AppHandle) -> Option<Url> {
+    let core = &app.state::<Launcher>().core;
+    if !core.settings().is_ok_and(|settings| settings.beta_updates) {
+        return None;
+    }
+    let releases: Vec<Release> = core.net.json(RELEASES_API).await.ok()?;
+    newest_manifest(releases)?.parse().ok()
+}
+
+fn newest_manifest(releases: Vec<Release>) -> Option<String> {
+    releases
+        .into_iter()
+        .filter(|release| !release.draft)
+        .filter_map(|release| {
+            let version = semver::Version::parse(release.tag_name.trim_start_matches('v')).ok()?;
+            let manifest = release
+                .assets
+                .into_iter()
+                .find(|asset| asset.name == "latest.json")?;
+            Some((version, manifest.browser_download_url))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, url)| url)
 }
 
 fn wanted(app: &AppHandle) -> bool {
@@ -137,4 +183,47 @@ pub fn install_update(app: AppHandle) -> Result<(), Error> {
         .install(&bytes)
         .map_err(|error| Error::Other(error.to_string()))?;
     app.restart()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn release(tag: &str, draft: bool, manifest: bool) -> Release {
+        let mut assets = vec![Asset {
+            name: "Waymark.Launcher_x64-setup.exe".into(),
+            browser_download_url: format!("https://example.com/{tag}/setup.exe"),
+        }];
+        if manifest {
+            assets.push(Asset {
+                name: "latest.json".into(),
+                browser_download_url: format!("https://example.com/{tag}/latest.json"),
+            });
+        }
+        Release {
+            tag_name: tag.into(),
+            draft,
+            assets,
+        }
+    }
+
+    #[test]
+    fn beta_players_get_the_newest_published_version_with_a_manifest() {
+        let releases = vec![
+            release("v1.1.0-beta.1", true, true),
+            release("v1.0.0-beta.2", false, true),
+            release("v1.0.0", false, true),
+            release("v1.0.1-beta.1", false, false),
+            release("not-a-version", false, true),
+        ];
+        assert_eq!(
+            newest_manifest(releases).as_deref(),
+            Some("https://example.com/v1.0.0/latest.json")
+        );
+        let ahead = vec![release("v1.0.0", false, true), release("v1.1.0-beta.1", false, true)];
+        assert_eq!(
+            newest_manifest(ahead).as_deref(),
+            Some("https://example.com/v1.1.0-beta.1/latest.json")
+        );
+    }
 }

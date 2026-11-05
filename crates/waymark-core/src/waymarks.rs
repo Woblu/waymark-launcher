@@ -418,9 +418,7 @@ fn diff(
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    let part = path.with_extension("json.part");
-    fs::write(&part, serde_json::to_vec(value)?)?;
-    fs::rename(part, path)?;
+    crate::atomic::write(path, &serde_json::to_vec(value)?)?;
     Ok(())
 }
 
