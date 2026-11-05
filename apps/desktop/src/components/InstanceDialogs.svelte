@@ -87,8 +87,13 @@
     try {
       const report = await api.exportPack(dialog.id, target, format, name.trim(), version.trim());
       const inside = report.bundled.length;
-      const note = inside ? ` ${inside} ${inside === 1 ? 'file is' : 'files are'} inside the pack, so check you're allowed to share ${inside === 1 ? 'it' : 'them'}: ${report.bundled.slice(0, 6).join(', ')}${inside > 6 ? ' and more' : ''}.` : '';
-      app.toast('good', 'Pack exported', `${report.linked} files linked to the store.${note}`);
+      const names = report.bundled.slice(0, 6).join(', ');
+      // A sentence a line, so each one is translated on its own.
+      const lines = [report.linked === 1 ? '1 file linked to the store.' : `${report.linked} files linked to the store.`];
+      if (inside === 1) lines.push(`1 file is inside the pack, so check you're allowed to share it: ${names}.`);
+      else if (inside > 6) lines.push(`${inside} files are inside the pack, so check you're allowed to share them: ${names}, and more.`);
+      else if (inside) lines.push(`${inside} files are inside the pack, so check you're allowed to share them: ${names}.`);
+      app.toast('good', 'Pack exported', lines.join('\n'));
       close();
     } catch (error) {
       app.fail(error, 'Could not export this instance');
@@ -148,7 +153,11 @@
     {#if share}
       <textarea class="field mono code" readonly rows="5" aria-label="Share code" value={share.code}></textarea>
       {#if share.leftOut.length}
-        <p class="form-hint">Left out because no store has them: {share.leftOut.slice(0, 6).join(', ')}{share.leftOut.length > 6 ? ' and more' : ''}.</p>
+        <p class="form-hint">
+          {share.leftOut.length > 6
+            ? `Left out because no store has them: ${share.leftOut.slice(0, 6).join(', ')}, and more.`
+            : `Left out because no store has them: ${share.leftOut.join(', ')}.`}
+        </p>
       {/if}
     {/if}
     <div class="buttons">

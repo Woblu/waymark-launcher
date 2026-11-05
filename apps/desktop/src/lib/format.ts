@@ -1,31 +1,54 @@
+// Dates and numbers are written the way the app's language writes them, not the
+// computer's, so a German interface on an English Windows still reads 1.234,5.
+
+import { currentLocale } from './i18n';
+
 const MINUTE = 60;
 const HOUR = 3600;
 const DAY = 86400;
+
+let relativeFormat: Intl.RelativeTimeFormat | null = null;
+
+/** `3 days ago` in English, `hace 3 días` in Spanish, with each language's own plurals. */
+function ago(count: number, unit: Intl.RelativeTimeFormatUnit): string {
+  try {
+    relativeFormat ??= new Intl.RelativeTimeFormat(currentLocale(), { numeric: 'always' });
+    return relativeFormat.format(-count, unit);
+  } catch {
+    return `${count} ${unit}${count === 1 ? '' : 's'} ago`;
+  }
+}
 
 export function timeAgo(date: string | null | undefined): string {
   if (!date) return 'never';
   const seconds = (Date.now() - new Date(date).getTime()) / 1000;
   if (seconds < 60) return 'just now';
-  if (seconds < HOUR) return plural(Math.floor(seconds / MINUTE), 'minute');
-  if (seconds < DAY) return plural(Math.floor(seconds / HOUR), 'hour');
-  if (seconds < DAY * 30) return plural(Math.floor(seconds / DAY), 'day');
-  return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  if (seconds < HOUR) return ago(Math.floor(seconds / MINUTE), 'minute');
+  if (seconds < DAY) return ago(Math.floor(seconds / HOUR), 'hour');
+  if (seconds < DAY * 30) return ago(Math.floor(seconds / DAY), 'day');
+  return day(date);
 }
 
-function plural(count: number, unit: string): string {
-  return `${count} ${unit}${count === 1 ? '' : 's'} ago`;
+/** A number with the app language's separators, like 1,234 or 1 234. */
+export function number(value: number, digits?: number): string {
+  const options = digits === undefined ? {} : { minimumFractionDigits: digits, maximumFractionDigits: digits };
+  try {
+    return value.toLocaleString(currentLocale(), options);
+  } catch {
+    return digits === undefined ? String(value) : value.toFixed(digits);
+  }
 }
 
 export function playtime(seconds: number): string {
-  if (seconds < HOUR) return `${Math.round(seconds / MINUTE)} min played`;
-  return `${(seconds / HOUR).toFixed(seconds < 10 * HOUR ? 1 : 0)} hours played`;
+  if (seconds < HOUR) return `${number(Math.round(seconds / MINUTE))} min played`;
+  return `${number(seconds / HOUR, seconds < 10 * HOUR ? 1 : 0)} hours played`;
 }
 
 export function bytes(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1048576) return `${(size / 1024).toFixed(0)} KB`;
-  if (size < 1073741824) return `${(size / 1048576).toFixed(1)} MB`;
-  return `${(size / 1073741824).toFixed(2)} GB`;
+  if (size < 1024) return `${number(size)} B`;
+  if (size < 1048576) return `${number(size / 1024, 0)} KB`;
+  if (size < 1073741824) return `${number(size / 1048576, 1)} MB`;
+  return `${number(size / 1073741824, 2)} GB`;
 }
 
 export function count(value: number): string {
@@ -60,7 +83,12 @@ export function acceptedLoaders(kind: string): string[] {
 }
 
 export function day(date: string): string {
-  return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(date).toLocaleDateString(currentLocale(), { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** A date with its time, like `Nov 4, 2026, 9:41 PM`. */
+export function dateTime(date: string): string {
+  return new Date(date).toLocaleString(currentLocale(), { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function titleCase(slug: string): string {

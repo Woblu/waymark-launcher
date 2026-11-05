@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Copy, Search, Share2 } from '@lucide/svelte';
   import VirtualList from '../components/VirtualList.svelte';
   import Modal from '../components/Modal.svelte';
@@ -16,11 +17,29 @@
   let files = $state<LogFile[]>([]);
   let chosen = $state(LIVE);
   let saved = $state<LogLine[]>([]);
+  /** Which file `saved` holds, so a log still loading can't be shared half read. */
+  let savedPath = $state<string | null>(null);
   let sharing = $state(false);
   let uploading = $state(false);
 
+  // A log asked for from elsewhere, like the crash dialog's Open crash report,
+  // whether this tab opens for it or was already open.
   $effect(() => {
-    app.logTick;
+    const pick = app.logPick;
+    if (pick?.instance !== id) return;
+    untrack(() => {
+      app.logPick = null;
+      chosen = pick.path;
+      sharing = !!pick.share;
+    });
+  });
+
+  const running = $derived(app.entry(id)?.running ?? false);
+
+  // Listed when the tab opens and again when the game starts or stops, which is
+  // when files appear, rather than with every batch of lines.
+  $effect(() => {
+    void running;
     api.logFiles(id).then((found) => (files = found), () => {});
   });
 
@@ -30,19 +49,29 @@
     let current = true;
     api.readLog(id, path).then(
       (text) => {
-        if (current) saved = text.split('\n').map((line) => ({ text: line, error: /\/(ERROR|FATAL)\]|^Caused by|Exception/.test(line) }));
+        if (!current) return;
+        saved = text.split('\n').map((line) => ({ text: line, error: /\/(ERROR|FATAL)\]|^Caused by|Exception/.test(line) }));
+        savedPath = path;
       },
       (error) => app.fail(error, 'Could not read that log'),
     );
     return () => (current = false);
   });
 
+  /**
+   * The live log grows in place, so with nothing filtered it's shown as it is,
+   * and logTick tells the list it has more lines. Only a filter makes a copy.
+   */
   const lines = $derived.by(() => {
-    app.logTick;
+    void app.logTick;
     const all = chosen === LIVE ? (app.logs.get(id) ?? []) : saved;
     const text = query.trim().toLowerCase();
-    if (!text && !errorsOnly) return all.slice();
+    if (!text && !errorsOnly) return all;
     return all.filter((line) => (!errorsOnly || line.error) && (!text || line.text.toLowerCase().includes(text)));
+  });
+  const count = $derived.by(() => {
+    void app.logTick;
+    return lines.length;
   });
 
   function tone(line: LogLine): string {
@@ -74,18 +103,19 @@
   <div class="tools">
     <select class="field which" aria-label="Which log" bind:value={chosen}>
       <option value={LIVE}>This session</option>
+      {#if chosen !== LIVE && !files.some((file) => file.path === chosen)}<option value={chosen}>{chosen.split('/').pop()}</option>{/if}
       {#each files as file (file.path)}<option value={file.path}>{file.path.split('/').pop()}</option>{/each}
     </select>
     <label class="search-box search"><Search size={16} /><input class="field" placeholder="Search the log" aria-label="Search the log" bind:value={query} /></label>
     <label class="check"><input type="checkbox" bind:checked={errorsOnly} /> Errors only</label>
     <span class="spacer"></span>
-    <button class="btn" disabled={!lines.length} onclick={copyAll}><Copy size={15} /> Copy</button>
-    <button class="btn" disabled={!lines.length} onclick={() => (sharing = true)}><Share2 size={15} /> Share</button>
+    <button class="btn" disabled={!count} onclick={copyAll}><Copy size={15} /> Copy</button>
+    <button class="btn" disabled={!count} onclick={() => (sharing = true)}><Share2 size={15} /> Share</button>
   </div>
 
   <div class="console">
-    {#if lines.length}
-      <VirtualList items={lines} rowHeight={20} stickToEnd>
+    {#if count}
+      <VirtualList items={lines} rowHeight={20} tick={app.logTick} stickToEnd>
         {#snippet row(line: LogLine)}
           <div class="line mono selectable {tone(line)}">{line.text}</div>
         {/snippet}
@@ -101,7 +131,7 @@
     <p class="muted">This uploads the log to mclo.gs, and anyone with the link can read it. Waymark Launcher removes your folder names and account tokens first, but other details from your game can still be in there.</p>
     <div class="buttons">
       <button class="btn" onclick={() => (sharing = false)}>Cancel</button>
-      <button class="btn primary" disabled={uploading} onclick={upload}>{uploading ? 'Uploading' : 'Upload'}</button>
+      <button class="btn primary" disabled={uploading || (chosen !== LIVE && savedPath !== chosen)} onclick={upload}>{uploading ? 'Uploading' : 'Upload'}</button>
     </div>
   </Modal>
 {/if}

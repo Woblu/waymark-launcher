@@ -7,7 +7,9 @@
   import RichText from '../components/RichText.svelte';
   import { api, openExternal } from '../lib/api';
   import type { PublicServer, ServerDetails, ServerStatus, Shot } from '../lib/api';
-  import { count } from '../lib/format';
+  import { asSentence, explain } from '../lib/errors';
+  import type { Explained } from '../lib/errors';
+  import { count, number } from '../lib/format';
   import { categoryName, contentLine, languageName, linkedInstance, packLine, playersLine, regionName } from '../lib/servers';
   import type { ServerPreview } from '../lib/servers';
   import { app } from '../lib/state.svelte';
@@ -22,7 +24,7 @@
   const BACK_BUTTON = 3;
 
   let details = $state<ServerDetails | null>(null);
-  let problem = $state('');
+  let problem = $state<Explained | null>(null);
   let live = $state<ServerStatus | null>(null);
   let pinging = $state(true);
   let confirming = $state(false);
@@ -35,17 +37,24 @@
   const online = $derived(live ? live.online : (server.online ?? false));
   const versions = $derived(server.content?.kind === 'vanilla' ? server.content.versions : []);
 
+  async function loadDetails() {
+    problem = null;
+    try {
+      details = await api.publicServer(preview.id);
+      app.reached();
+    } catch (error) {
+      problem = explain(error);
+      if (problem.code === 'network') app.unreachable = true;
+    }
+  }
+
   onMount(async () => {
     api
       .serverStatus(preview.address)
       .then((status) => (live = status))
       .catch(() => {})
       .finally(() => (pinging = false));
-    try {
-      details = await api.publicServer(preview.id);
-    } catch (error) {
-      problem = (error as { message?: string })?.message ?? String(error);
-    }
+    await loadDetails();
   });
 
   function join() {
@@ -76,7 +85,7 @@
   const statusLine = $derived.by(() => {
     if (live?.online) {
       if (live.players == null) return 'Online';
-      return live.capacity ? `${live.players.toLocaleString()} of ${live.capacity.toLocaleString()} online` : `${live.players.toLocaleString()} online`;
+      return live.capacity ? `${number(live.players)} of ${number(live.capacity)} online` : `${number(live.players)} online`;
     }
     if (live && !live.online) return 'Offline';
     return server.content ? playersLine(server as PublicServer) : '';
@@ -121,7 +130,11 @@
   <div class="columns">
     <div class="main">
       {#if problem}
-        <p class="note">{`Could not load this server's page. ${problem}`}</p>
+        <div class="note problem">
+          <p>This server's page didn't load.</p>
+          <p class="muted">{problem.sentence || asSentence(problem.technical)}</p>
+          <button class="btn" onclick={loadDetails}>Try again</button>
+        </div>
       {:else if !details}
         <p class="faint">Loading</p>
       {:else}
@@ -134,7 +147,7 @@
           <h2 class="gallery-title">Gallery</h2>
           <ul class="gallery">
             {#each shots as shot, index (shot.url)}
-              <li><button aria-label="View picture {index + 1}" onclick={() => (viewing = { shots, start: index })}><img src={shot.url} alt="" loading="lazy" referrerpolicy="no-referrer" /></button></li>
+              <li><button class="focus-inset" aria-label="View picture {index + 1}" onclick={() => (viewing = { shots, start: index })}><img src={shot.url} alt="" loading="lazy" referrerpolicy="no-referrer" /></button></li>
             {/each}
           </ul>
         {/if}
@@ -152,7 +165,7 @@
           <p class="faint">Checking</p>
         {:else if live?.online}
           <dl>
-            <dt>Players</dt><dd class="tabular">{live.players != null ? (live.capacity ? `${live.players.toLocaleString()} of ${live.capacity.toLocaleString()}` : live.players.toLocaleString()) : 'Hidden'}</dd>
+            <dt>Players</dt><dd class="tabular">{live.players != null ? (live.capacity ? `${number(live.players)} of ${number(live.capacity)}` : number(live.players)) : 'Hidden'}</dd>
             {#if live.latencyMs != null}<dt>Ping</dt><dd class="tabular">{`${live.latencyMs} ms`}</dd>{/if}
             {#if live.version}<dt>Version</dt><dd class="selectable">{live.version}</dd>{/if}
           </dl>
@@ -252,6 +265,8 @@
   .columns { display: grid; grid-template-columns: minmax(0, 1fr) var(--side); gap: 32px; padding: 16px var(--gutter) 40px; border-top: 1px solid var(--line); }
   .main { min-width: 0; }
   .note { padding: 10px 14px; background: var(--panel); clip-path: var(--stepped); color: var(--text-2); }
+  .problem { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: var(--text); }
+  .problem .btn { margin-top: 8px; }
   .gallery-title { margin: 24px 0 10px; }
   .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .gallery button { display: block; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--panel); clip-path: var(--stepped); cursor: zoom-in; }

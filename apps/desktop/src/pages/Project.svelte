@@ -15,6 +15,7 @@
   import type { ContentSource, Fit, LocalMod, LockedMod, ProjectTarget, Shot, World } from '../lib/api';
   import { bytes, count, day, environment, loaderName, minecraftRange, timeAgo, titleCase } from '../lib/format';
   import { app } from '../lib/state.svelte';
+  import { tabKeys } from '../lib/tabs';
   import ProjectVersions from './ProjectVersions.svelte';
 
   let { target }: { target: ProjectTarget } = $props();
@@ -129,7 +130,7 @@
     busy = true;
     try {
       const mark = await api.applyUpdates(instanceId, [{ hash: installed.hash, version }]);
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
+      if (mark) app.changed(instanceId, mark);
       app.contentTick++;
       if (mark) app.checkUpdate(instanceId);
     } catch (error) {
@@ -196,7 +197,7 @@
             <button class="btn primary" disabled={busy} onclick={() => add()}><Download size={16} /> {busy ? 'Installing' : 'Install as a new instance'}</button>
           {/if}
         {:else if build}
-          <p class="have">Installed build {build.version ?? ''}</p>
+          <p class="have">{build.version ? `Installed build ${build.version}` : 'Installed build'}</p>
         {:else if !targets.length}
           <p class="faint small">{app.library.length ? 'Create a modded instance to install this.' : 'Create an instance to install this.'}</p>
         {:else}
@@ -219,9 +220,13 @@
             {#if isDataPack && !worlds.length}
               Data packs go in a world, and {instance?.name} has none yet
             {:else if installed}
-              {installed.version ? `Version ${installed.version} is in this ${isDataPack ? 'world' : 'instance'}` : `Already in this ${isDataPack ? 'world' : 'instance'}`}
+              {#if isDataPack}
+                {installed.version ? `Version ${installed.version} is in this world` : 'Already in this world'}
+              {:else}
+                {installed.version ? `Version ${installed.version} is in this instance` : 'Already in this instance'}
+              {/if}
             {:else if inInstance}
-              In {instance?.name}
+              {`Already in ${instance?.name}`}
             {:else if fit}
               Installs {fit.version}
             {:else if fit === null && instance}
@@ -269,21 +274,21 @@
     </div>
   {:else if page}
     <div class="bar">
-      <nav class="tabs" aria-label="Project">
-        <button class:active={tab === 'description'} onclick={() => (tab = 'description')}>Description</button>
+      <div class="tabs" role="tablist" aria-label="Project" use:tabKeys>
+        <button role="tab" aria-selected={tab === 'description'} tabindex={tab === 'description' ? 0 : -1} class:active={tab === 'description'} onclick={() => (tab = 'description')}>Description</button>
         {#if page.gallery.length}
-          <button class:active={tab === 'gallery'} onclick={() => (tab = 'gallery')}>Gallery <span class="faint tabular">{page.gallery.length}</span></button>
+          <button role="tab" aria-selected={tab === 'gallery'} tabindex={tab === 'gallery' ? 0 : -1} class:active={tab === 'gallery'} onclick={() => (tab = 'gallery')}>Gallery <span class="faint tabular">{page.gallery.length}</span></button>
         {/if}
-        <button class:active={tab === 'versions'} onclick={() => (tab = 'versions')}>Versions</button>
-      </nav>
+        <button role="tab" aria-selected={tab === 'versions'} tabindex={tab === 'versions' ? 0 : -1} class:active={tab === 'versions'} onclick={() => (tab = 'versions')}>Versions</button>
+      </div>
     </div>
 
     <div class="columns" class:wide={tab === 'versions'}>
       <div class="main">
         {#if build}
           <p class="note">
-            You have <span class="selectable">{build.file}</span>, a different build from the ones Modrinth lists. This page is about the original project,
-            so its details and versions may not match your file.
+            <span>Your file is a different build from the ones Modrinth lists. This page is about the original project, so its details and versions may not match your file.</span>
+            <span class="file mono selectable">{build.file}</span>
           </p>
         {/if}
         {#if tab === 'description'}
@@ -296,7 +301,7 @@
           <ul class="gallery">
             {#each page.gallery as shot, index (shot.url)}
               <li>
-                <button aria-label={shot.title ?? `Image ${index + 1}`} onclick={() => (viewing = { shots: page!.gallery, start: index })}>
+                <button class="focus-inset" aria-label={shot.title ?? `Image ${index + 1}`} onclick={() => (viewing = { shots: page!.gallery, start: index })}>
                   <img src={shot.url} alt="" loading="lazy" referrerpolicy="no-referrer" />
                 </button>
                 {#if shot.title}<p class="truncate">{shot.title}</p>{/if}
@@ -432,6 +437,7 @@
   .columns.wide { grid-template-columns: minmax(0, 1fr); }
   .main { min-width: 0; }
   .note { margin-bottom: 16px; padding: 10px 14px; background: var(--panel); clip-path: var(--stepped); color: var(--text-2); }
+  .note .file { display: block; margin-top: 4px; font-size: var(--text-xs); overflow-wrap: anywhere; }
   .plain { font-size: var(--text-m); line-height: 1.62; white-space: pre-line; }
 
   aside { min-width: 0; }

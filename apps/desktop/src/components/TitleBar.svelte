@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ArrowLeft, Minus, Settings, Square, UserRound, X } from '@lucide/svelte';
+  import { onMount } from 'svelte';
+  import { ArrowLeft, Copy, Minus, Settings, Square, UserRound, X } from '@lucide/svelte';
   import { api, inTauri } from '../lib/api';
   import { STEVE, skinHead } from '../lib/skin-render';
   import { app } from '../lib/state.svelte';
@@ -63,6 +64,28 @@
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow()[action]();
   }
+
+  /** Whether the window fills the screen, so the middle button can offer to restore it. */
+  let maximized = $state(false);
+
+  onMount(() => {
+    if (!inTauri) return;
+    let alive = true;
+    let stop: (() => void) | undefined;
+    (async () => {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const current = getCurrentWindow();
+      const check = () => current.isMaximized().then((now) => (maximized = now), () => {});
+      await check();
+      const unlisten = await current.onResized(() => check());
+      if (alive) stop = unlisten;
+      else unlisten();
+    })().catch(() => {});
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  });
 </script>
 
 <header data-tauri-drag-region>
@@ -76,14 +99,17 @@
     {/each}
   </nav>
   <div class="right" data-tauri-drag-region>
-    <button class="you" title={account ? account.name : 'Sign in'} aria-label={account ? account.name : 'Sign in'} onclick={() => (account ? app.go('settings') : (app.dialog = 'signin'))}>
+    <button class="you" title={account ? account.name : 'Sign in'} aria-label={account ? account.name : 'Sign in'} onclick={() => (account ? app.go('settings') : app.askToSignIn())}>
       {#if head}<img class="face" src={head} alt="" />{:else}<UserRound size={17} />{/if}
-      <span class="truncate name">{account ? account.name : 'Sign in'}</span>
+      <!-- A player's name is left as it is, and Sign in is translated like any other label. -->
+      {#if account}<span class="truncate label name">{account.name}</span>{:else}<span class="truncate label">Sign in</span>{/if}
     </button>
     <button class="settings" class:active={app.view === 'settings'} aria-label="Settings" aria-current={app.view === 'settings' ? 'page' : undefined} title="Settings" onclick={() => app.go('settings')}><Settings size={18} /></button>
     <div class="controls">
-      <button aria-label="Minimize" onclick={() => windowAction('minimize')}><Minus size={15} /></button>
-      <button aria-label="Maximize" onclick={() => windowAction('toggleMaximize')}><Square size={12} /></button>
+      <button aria-label="Minimize" title="Minimize" onclick={() => windowAction('minimize')}><Minus size={15} /></button>
+      <button aria-label={maximized ? 'Restore' : 'Maximize'} title={maximized ? 'Restore' : 'Maximize'} onclick={() => windowAction('toggleMaximize')}>
+        {#if maximized}<Copy size={12} />{:else}<Square size={12} />{/if}
+      </button>
       <button class="close" aria-label="Close" onclick={() => windowAction('close')}><X size={16} /></button>
     </div>
   </div>
@@ -116,10 +142,10 @@
   .you:hover { color: var(--text); }
   .you img { display: block; width: 22px; height: 22px; image-rendering: pixelated; }
   /* A narrow window keeps the face and drops the name, instead of cutting it down to a letter. */
-  @media (max-width: 1180px) { .you .name { display: none; } }
+  @media (max-width: 1180px) { .you .label { display: none; } }
   .settings { display: grid; place-items: center; width: 34px; height: 34px; color: var(--text-2); }
   .settings:hover { color: var(--text); }
-  .settings.active { color: var(--accent); }
+  .settings.active { color: var(--accent-text); }
   .controls { flex: none; display: flex; align-self: stretch; margin-left: 6px; }
   .controls button { display: grid; place-items: center; width: 46px; color: var(--text-3); }
   .controls button:hover { background: var(--panel); color: var(--text); }

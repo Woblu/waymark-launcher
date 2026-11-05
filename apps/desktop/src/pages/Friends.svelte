@@ -3,7 +3,9 @@
   import { Check, Ellipsis, Plus, Send, Trash2, UserPlus, X } from '@lucide/svelte';
   import Art from '../components/Art.svelte';
   import Modal from '../components/Modal.svelte';
+  import OfflineLine from '../components/OfflineLine.svelte';
   import { api } from '../lib/api';
+  import { tabKeys } from '../lib/tabs';
   import type { Friend, OtherPlayer, SharedByFriend } from '../lib/api';
   import { timeAgo } from '../lib/format';
   import { app } from '../lib/state.svelte';
@@ -26,6 +28,11 @@
   /** Gets their setup if it's new here, then goes straight into their server. */
   async function join(friend: Friend) {
     if (!friend.hosting) return;
+    // Asked before their setup downloads, not after.
+    if (!app.activeAccount) {
+      app.askToSignIn(`Sign in to join ${friend.username}.`);
+      return;
+    }
     joining = friend.id;
     try {
       const result = await api.friendJoin(friend.id);
@@ -189,10 +196,11 @@
     </div>
   {:else if !app.friendAccount}
     <div class="entry">
-      <nav class="tabs" aria-label="Account">
-        <button class:active={mode === 'in'} onclick={() => (mode = 'in')}>Sign in</button>
-        <button class:active={mode === 'new'} onclick={() => (mode = 'new')}>Create account</button>
-      </nav>
+      {#if app.offline}<OfflineLine what="Signing in to friends needs a connection." />{/if}
+      <div class="tabs" role="tablist" aria-label="Account" use:tabKeys>
+        <button role="tab" aria-selected={mode === 'in'} tabindex={mode === 'in' ? 0 : -1} class:active={mode === 'in'} onclick={() => (mode = 'in')}>Sign in</button>
+        <button role="tab" aria-selected={mode === 'new'} tabindex={mode === 'new' ? 0 : -1} class:active={mode === 'new'} onclick={() => (mode = 'new')}>Create account</button>
+      </div>
       <form onsubmit={enter}>
         <label for="friend-name">Username</label>
         <input id="friend-name" class="field" autocomplete="username" required bind:value={username} />
@@ -207,6 +215,7 @@
   {:else if overview}
     <div class="body">
       <div class="people">
+        {#if app.offline}<OfflineLine what="Who's online may be out of date until the connection is back." onretry={() => app.loadFriends()} />{/if}
         <form class="adder" onsubmit={add}>
           <input class="field" placeholder="Add a friend by username" aria-label="Add a friend by username" bind:value={adding} />
           <button class="btn primary" disabled={!adding.trim()}><UserPlus size={16} /> Add</button>

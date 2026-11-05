@@ -7,6 +7,7 @@ const KEY = 'waymark.language';
 /** Anything the player or a store wrote, which is never translated. */
 const LEAVE_ALONE = '.rich, .selectable, .mono, .name, .title, input, textarea, script, style';
 const ATTRIBUTES = ['placeholder', 'title', 'aria-label'];
+const PLURAL = /^(zero|one|two|few|many|other):\s?/;
 
 export const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
@@ -18,21 +19,50 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   zh: '简体中文',
 };
 
+/** The full locale for each language, for dates, numbers and plural rules. */
+const LOCALES: Record<string, string> = { en: 'en', es: 'es', pt: 'pt-BR', fr: 'fr', de: 'de', ru: 'ru', zh: 'zh-CN' };
+
 let exact = new Map<string, string>();
 let patterns: ReturnType<typeof compile>[] = [];
+let rules: Intl.PluralRules | null = null;
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Turns `Update {n} mods` into something that can match `Update 3 mods`. */
+/**
+ * Turns `Update {n} mods` into something that can match `Update 3 mods`. A number
+ * can be written `1,234`, `1.234` or `1 234`, depending on the language.
+ */
 function compile(english: string, translated: string) {
   const names: string[] = [];
   const source = escapeRegex(english).replace(/\\\{(n|x|y)\\\}/g, (_, name: string) => {
     names.push(name);
-    return name === 'n' ? '(\\d[\\d,.]*)' : '(.+?)';
+    return name === 'n' ? '(\\d(?:[\\d,.]|[\\u00a0\\u202f ](?=\\d))*)' : '(.+?)';
   });
-  return { match: new RegExp(`^${source}$`), names, translated };
+  return { match: new RegExp(`^${source}$`), names, translated, weight: english.replace(/\{(n|x|y)\}/g, '').length };
+}
+
+/**
+ * A translation can give a form for each plural category, like
+ * `one: {n} мод | few: {n} мода | many: {n} модов | other: {n} мода`, and the
+ * first number in the text picks the form the language's own rules call for.
+ */
+function pluralForm(translated: string, count: string | undefined): string {
+  if (!translated.includes('|')) return translated;
+  const forms = translated.split('|').map((part) => part.trim());
+  if (!forms.every((form) => PLURAL.test(form))) return translated;
+  const byCategory = new Map(forms.map((form) => [PLURAL.exec(form)![1], form.replace(PLURAL, '')]));
+  const value = parseCount(count ?? '');
+  const category = rules && Number.isFinite(value) ? rules.select(value) : 'other';
+  return byCategory.get(category) ?? byCategory.get('other') ?? forms[0].replace(PLURAL, '');
+}
+
+/** Reads `1,234`, `1 234` and `2.5` alike: a separator before three digits groups them. */
+function parseCount(text: string): number {
+  if (!text) return NaN;
+  const joined = text.replace(/[\s  ]/g, '').replace(/[.,](?=\d{3}(?:\D|$))/g, '');
+  return Number(joined.replace(',', '.'));
 }
 
 export function translate(text: string): string | null {
@@ -43,8 +73,9 @@ export function translate(text: string): string | null {
     for (const { match, names, translated } of patterns) {
       const parts = match.exec(trimmed);
       if (!parts) continue;
+      const count = names.includes('n') ? parts[names.indexOf('n') + 1] : undefined;
       // Sentences get built from smaller pieces, so the pieces are translated too.
-      found = names.reduce((text, name, index) => text.replace(`{${name}}`, translate(parts[index + 1]) ?? parts[index + 1]), translated);
+      found = names.reduce((text, name, index) => text.replace(`{${name}}`, translate(parts[index + 1]) ?? parts[index + 1]), pluralForm(translated, count));
       break;
     }
   }
@@ -85,6 +116,14 @@ export function currentLanguage(): string {
   return resolve(savedLanguage());
 }
 
+let locale: string | null = null;
+
+/** Where dates and numbers take their format from: the app's language, not the computer's. */
+export function currentLocale(): string {
+  locale ??= LOCALES[currentLanguage()] ?? 'en';
+  return locale;
+}
+
 export function savedLanguage(): string {
   try {
     return localStorage.getItem(KEY) ?? 'system';
@@ -101,10 +140,18 @@ export async function startTranslation() {
   const { LANGUAGES, ROWS } = await import('./catalog');
   const column = LANGUAGES.indexOf(language as (typeof LANGUAGES)[number]) + 1;
   if (!column) return;
+  try {
+    rules = new Intl.PluralRules(currentLocale());
+  } catch {
+    rules = null;
+  }
   for (const row of ROWS) {
     if (row[0].includes('{')) patterns.push(compile(row[0], row[column]));
     else exact.set(row[0], row[column]);
   }
+  // The row with the most fixed words goes first, so `Remove {x} from your servers`
+  // wins over `Remove {x}` wherever each sits in the catalog.
+  patterns.sort((a, b) => b.weight - a.weight);
   fixTree(document.body);
   new MutationObserver((records) => {
     for (const record of records) {

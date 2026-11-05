@@ -172,7 +172,7 @@
 {#snippet tile(choice: Choice)}
   {@const picture = pictures[choice.key]}
   <div class="tile" class:selected={selected?.key === choice.key} class:worn={isWorn(choice)}>
-    <button class="pick" title={choice.name} aria-pressed={selected?.key === choice.key} aria-label="Preview {choice.name}" onclick={() => (selected = choice)}>
+    <button class="pick focus-inset" title={choice.name} aria-pressed={selected?.key === choice.key} aria-label="Preview {choice.name}" onclick={() => (selected = choice)}>
       {#if picture}
         <img class="front" src={picture.front} alt="" />
         <img class="back" src={picture.back} alt="" />
@@ -182,7 +182,7 @@
     </button>
     {#if selected?.key === choice.key}<span class="tick"><Check size={13} strokeWidth={3} /></span>{/if}
     {#if choice.saved}
-      <button class="edit" aria-label="Edit {choice.name}" title="Edit" onclick={() => startEditing(choice.saved!)}><Pencil size={13} /></button>
+      <button class="edit focus-inset" aria-label="Edit {choice.name}" title="Edit" onclick={() => startEditing(choice.saved!)}><Pencil size={13} /></button>
     {/if}
     <span class="label truncate">{choice.name}</span>
   </div>

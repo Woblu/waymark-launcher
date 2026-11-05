@@ -9,7 +9,10 @@ export type LoaderKind = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' |
 export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher' | 'technic';
 export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack';
 export type Verdict = 'crashes' | 'works';
-export type StartCheck = { result: 'passed' | 'unclear' | 'skipped' } | { result: 'undone'; reason: string };
+export type StartCheck = { result: 'passed' | 'unclear' | 'skipped' } | { result: 'undone' | 'failed'; reason: string };
+/** A new instance from a pack, with any program files it carried itself instead of naming on a mod site. */
+export interface PackResult { instance: LibraryEntry; manual: ManualFile[]; unverified: string[] }
+export interface LauncherDiagnostics { folder: string; lastCrash: string | null }
 export type GameVersion = { id: string; kind: string; era: string; released: string };
 
 export interface Loader { kind: LoaderKind; version?: string }
@@ -287,6 +290,7 @@ export interface Settings {
   customThemes: CustomTheme[];
   language: string;
   autoUpdate: boolean;
+  betaUpdates: boolean;
   checkUpdates: boolean;
   /** Starter mods by Minecraft version, with `*` for every version. */
   starters: Record<string, Starter[]>;
@@ -440,6 +444,8 @@ export const api = {
   copySettings: (from: string, to: string) => call<Waymark | null>('copy_settings', { from, to }),
   exportServer: (id: string, folder: string) => call<ServerExport>('export_server', { id, folder }),
   recentLogs: (id: string) => call<{ text: string; error: boolean }[]>('recent_logs', { id }),
+  launcherDiagnostics: () => call<LauncherDiagnostics | null>('launcher_diagnostics'),
+  diagnosticsReport: () => call<string | null>('diagnostics_report'),
   takePendingCrash: () => call<{ instance: string; report: CrashReport } | null>('take_pending_crash'),
   trail: (id: string) => call<Waymark[]>('trail', { id }),
   pending: (id: string) => call<Pending>('pending_changes', { id }),
@@ -456,8 +462,8 @@ export const api = {
   installedModPage: (id: string, hash: string) => call<InstalledPage>('installed_mod_page', { id, hash }),
   installContent: (id: string, source: ContentSource, project: string, kind: ContentKind, version?: string, world?: string) =>
     call<Waymark | null>('install_content', { id, source, project, kind, version, world }),
-  installPack: (source: ContentSource, project: string) => call<{ instance: LibraryEntry; manual: ManualFile[] }>('install_pack', { source, project }),
-  installPackFile: (path: string) => call<{ instance: LibraryEntry; manual: ManualFile[] }>('install_pack_file', { path }),
+  installPack: (source: ContentSource, project: string) => call<PackResult>('install_pack', { source, project }),
+  installPackFile: (path: string) => call<PackResult>('install_pack_file', { path }),
   checkUpdates: (id: string) => call<ModUpdate[]>('check_updates', { id }),
   applyUpdates: (id: string, picks: UpdatePick[]) => call<Waymark | null>('apply_updates', { id, picks }),
   accounts: () => call<Account[]>('accounts'),

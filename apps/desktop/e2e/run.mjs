@@ -1010,11 +1010,17 @@ await step('imports from another launcher when one is present', async () => {
   await nav('Library');
   await click('New instance');
   await click(`Import (1)`, 8000).catch(() => {});
-  const available = await run(`!!e2e.button('Import')`);
+  // The Library has its own Import button now, so look only inside the dialog.
+  const rowImport = `[...document.querySelectorAll('[role="dialog"] button')].find((b) => !b.disabled && b.textContent.trim() === 'Import')`;
+  const available = await run(`!!${rowImport}`);
   await shot('09-import');
   if (available) {
-    await click('Import');
-    await waitFor('the import to finish', `!!document.querySelector('.names h1') && !document.querySelector('.names h1').innerText.includes('E2E')`, 90000);
+    await run(`${rowImport}.click()`);
+    // The dialog stays open so the rest can be imported too; Open goes to the new one.
+    const rowOpen = `[...document.querySelectorAll('[role="dialog"] button')].find((b) => !b.disabled && b.textContent.trim() === 'Open')`;
+    await waitFor('the import to finish', `!!${rowOpen}`, 90000);
+    await run(`${rowOpen}.click()`);
+    await waitFor('the imported instance', `!!document.querySelector('.names h1') && !document.querySelector('.names h1').innerText.includes('E2E')`, 20000);
     await waitFor('the imported mods', `document.querySelectorAll('.mod').length > 3`, 20000);
     await waitFor('images for imported mods', `document.querySelectorAll('.mod .content-icon img').length > 3`, 30000);
     await sleep(800);

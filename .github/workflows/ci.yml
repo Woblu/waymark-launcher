@@ -45,12 +45,25 @@ jobs:
         run: npm run check
         working-directory: apps/desktop
 
+      # Text is translated by matching it exactly, so a new or reworded string
+      # without a catalog row would quietly stay English.
+      - name: Check every string has a translation
+        run: npm run check:i18n
+        working-directory: apps/desktop
+
       - name: Build the UI
         run: npm run build
         working-directory: apps/desktop
 
       - name: Test the core
         run: cargo test -p waymark-core
+
+      # CurseForge's CDN refuses downloads without the app's key, and only CI has it.
+      - name: Download a file from CurseForge with the real key
+        if: runner.os == 'Linux' && github.event_name == 'push'
+        env:
+          WAYMARK_CURSEFORGE_API_KEY: ${{ secrets.WAYMARK_CURSEFORGE_API_KEY }}
+        run: cargo test -p waymark-core live_curseforge -- --ignored
 
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings

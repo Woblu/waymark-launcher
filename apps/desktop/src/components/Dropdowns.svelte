@@ -57,10 +57,13 @@
     select = field;
 
     await tick();
-    const start = menu?.querySelector('input') ?? menu;
+    const start = menu?.querySelector('input') ?? list;
     start?.focus();
     list?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'center' });
   }
+
+  /** The option the arrow keys are on, which screen readers follow through aria-activedescendant. */
+  const activeId = $derived(shown[at] ? `dropdown-option-${at}` : undefined);
 
   function close(refocus = true) {
     const field = select;
@@ -148,22 +151,46 @@
 <svelte:window onmousedowncapture={onPress} onkeydowncapture={onField} onscrollcapture={onScroll} onresize={() => close(false)} onblur={() => close(false)} />
 
 {#if select}
+  {@const label = select.getAttribute('aria-label') ?? (select.id ? document.querySelector(`label[for="${select.id}"]`)?.textContent?.trim() : undefined)}
   <div class="float" style:left="{place.left}px" style:top={place.top === null ? null : `${place.top}px`} style:bottom={place.bottom === null ? null : `${place.bottom}px`} style:width="{place.width}px">
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="dropdown" role="listbox" tabindex="-1" aria-label={select.getAttribute('aria-label') ?? undefined} style:max-height="{place.height}px" bind:this={menu} onkeydown={onKey}>
+    <div class="dropdown" style:max-height="{place.height}px" bind:this={menu}>
       {#if searchable}
-        <label class="find"><Search size={15} /><input placeholder="Search" aria-label="Search" bind:value={query} /></label>
+        <label class="find">
+          <Search size={15} />
+          <input
+            placeholder="Search"
+            aria-label="Search"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="dropdown-list"
+            aria-autocomplete="list"
+            aria-activedescendant={activeId}
+            bind:value={query}
+            onkeydown={onKey}
+          />
+        </label>
       {/if}
-      <ul bind:this={list}>
+      <ul id="dropdown-list" role="listbox" tabindex="-1" aria-label={label || undefined} aria-activedescendant={searchable ? undefined : activeId} bind:this={list} onkeydown={onKey}>
         {#each shown as item, index (item.value)}
-          <li>
-            <button tabindex="-1" role="option" aria-selected={item.value === select.value} class:active={index === at} class:chosen={item.value === select.value} disabled={item.disabled} onmousemove={() => (at = index)} onclick={() => choose(item)}>
+          <li role="none">
+            <button
+              id="dropdown-option-{index}"
+              tabindex="-1"
+              role="option"
+              aria-selected={item.value === select.value}
+              aria-disabled={item.disabled || undefined}
+              class:active={index === at}
+              class:chosen={item.value === select.value}
+              disabled={item.disabled}
+              onmousemove={() => (at = index)}
+              onclick={() => choose(item)}
+            >
               <span class="truncate">{item.label}</span>
               {#if item.value === select.value}<Check size={15} strokeWidth={3} />{/if}
             </button>
           </li>
         {:else}
-          <li class="none">Nothing found.</li>
+          <li role="none" class="none">Nothing found.</li>
         {/each}
       </ul>
     </div>
@@ -177,9 +204,11 @@
   .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); }
   .find input::placeholder { color: var(--text-3); }
   ul { flex: 1; min-height: 0; overflow-y: auto; }
+  /* The highlighted row shows where the keyboard is, so the list needs no ring of its own. */
+  ul:focus-visible { outline: none; }
   li button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 34px; padding: 0 9px; font-weight: 500; text-align: left; }
   li button.active { background: var(--control); }
-  li button.chosen { color: var(--accent); }
+  li button.chosen { color: var(--accent-text); }
   li button:disabled { color: var(--text-3); opacity: 0.6; cursor: not-allowed; }
   li button :global(svg) { flex: none; }
   .none { padding: 8px 9px; color: var(--text-3); }

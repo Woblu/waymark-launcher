@@ -3,6 +3,8 @@
   import VirtualList from '../components/VirtualList.svelte';
   import { api, openExternal, openFolder } from '../lib/api';
   import type { HostStatus } from '../lib/api';
+  import { asSentence, explain } from '../lib/errors';
+  import type { Explained } from '../lib/errors';
   import { app } from '../lib/state.svelte';
   import type { LogLine } from '../lib/state.svelte';
 
@@ -16,13 +18,26 @@
   let command = $state('');
 
   const key = $derived(`server:${id}`);
+  /** The server log grows in place, and logTick says when, so it's never copied. */
   const lines = $derived.by((): LogLine[] => {
-    app.logTick;
-    return (app.logs.get(key) ?? []).slice();
+    void app.logTick;
+    return app.logs.get(key) ?? [];
+  });
+  const count = $derived.by(() => {
+    void app.logTick;
+    return lines.length;
   });
 
+  /** Why the server's state couldn't be read, instead of a blank tab. */
+  let problem = $state<Explained | null>(null);
+
   async function load() {
-    status = await api.hostStatus(id).catch(() => null);
+    try {
+      status = await api.hostStatus(id);
+      problem = null;
+    } catch (error) {
+      problem = explain(error);
+    }
   }
 
   $effect(() => {
@@ -127,15 +142,18 @@
         </div>
       {/if}
       {#if status.friends}
-        <p class="faint small note">Friends join at <span class="selectable">{status.friends.address}</span>{status.friends.internet ? '.' : ', which only works on your network.'}</p>
+        <p class="faint small note">
+          <span>{status.friends.internet ? 'Friends join at this address:' : 'Friends join at this address, which only works on your network:'}</span>
+          <span class="selectable">{status.friends.address}</span>
+        </p>
       {:else}
         <p class="faint small note">
           People on your network can join at the address above. To let friends join over the internet, forward port {status.port} on your router, and only share that address with people you trust.
         </p>
       {/if}
       <div class="console">
-        {#if lines.length}
-          <VirtualList items={lines} rowHeight={20} stickToEnd>
+        {#if count}
+          <VirtualList items={lines} rowHeight={20} tick={app.logTick} stickToEnd>
             {#snippet row(line: LogLine)}
               <div class="line mono selectable">{line.text}</div>
             {/snippet}
@@ -149,6 +167,15 @@
         <button class="btn" disabled={!status.running || !command.trim()}>Send</button>
       </form>
     {/if}
+  {:else if problem}
+    <div class="tools problem">
+      <div class="intro">
+        <strong>The server's state couldn't be read</strong>
+        <p class="muted">{problem.sentence || asSentence(problem.technical)}</p>
+        {#if !problem.complete && problem.sentence}<p class="faint small selectable mono">{problem.technical}</p>{/if}
+      </div>
+      <button class="btn" onclick={load}>Try again</button>
+    </div>
   {/if}
 </div>
 

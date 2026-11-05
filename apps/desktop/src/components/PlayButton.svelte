@@ -5,6 +5,10 @@
 
   let { entry }: { entry: LibraryEntry } = $props();
 
+  // Task events carry only an id and a title, and the core names a launch
+  // `Launching <instance name>`, so the title is all there is to match. It comes
+  // from Rust in English whatever the interface language, so translation can't
+  // break it, but renaming the instance mid-launch or rewording the core's title would.
   const starting = $derived(app.tasks.some((t) => t.title === `Launching ${entry.name}`));
 </script>
 

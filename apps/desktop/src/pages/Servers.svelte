@@ -3,10 +3,14 @@
   import { Bookmark, BookmarkCheck, Play, Search } from '@lucide/svelte';
   import Art from '../components/Art.svelte';
   import JoinServer from '../components/JoinServer.svelte';
+  import OfflineLine from '../components/OfflineLine.svelte';
   import Pager from '../components/Pager.svelte';
   import { api, inTauri } from '../lib/api';
   import type { KeptServer, KnownServer, PublicServer, SearchCategory, ServerKind, ServerSort, ServerStatus } from '../lib/api';
-  import { titleCase } from '../lib/format';
+  import { asSentence, explain } from '../lib/errors';
+  import type { Explained } from '../lib/errors';
+  import { number, titleCase } from '../lib/format';
+  import { tabKeys } from '../lib/tabs';
   import { GROUP_NAMES, GROUP_ORDER, LANGUAGE_IDS, REGION_IDS, categoryName, contentLine, languageName, linkedInstance, playersLine, regionName, serverPicture } from '../lib/servers';
   import type { ServerPreview } from '../lib/servers';
   import { app } from '../lib/state.svelte';
@@ -33,7 +37,7 @@
   let total = $state(0);
   let page = $state(1);
   let loading = $state(true);
-  let problem = $state('');
+  let problem = $state<Explained | null>(null);
   let results = $state<HTMLElement>();
 
   let kept = $state<KeptServer[]>([]);
@@ -69,12 +73,14 @@
       total = found.total;
       // The browser preview opens the first server's page for screenshots.
       if (!inTauri && !opened && location.hash === '#server') opened = servers[0] ?? null;
-      problem = '';
+      problem = null;
+      app.reached();
       results?.scrollTo({ top: 0 });
     } catch (error) {
       servers = [];
       total = 0;
-      problem = (error as { message?: string })?.message ?? String(error);
+      problem = explain(error);
+      if (problem.code === 'network') app.unreachable = true;
     }
     loading = false;
   }
@@ -141,7 +147,7 @@
     if (status === undefined || status === null) return 'Checking';
     if (!status.online) return 'Offline';
     if (status.players == null) return 'Online';
-    return status.capacity ? `${status.players.toLocaleString()} of ${status.capacity.toLocaleString()} online` : `${status.players.toLocaleString()} online`;
+    return status.capacity ? `${number(status.players)} of ${number(status.capacity)} online` : `${number(status.players)} online`;
   }
 </script>
 
@@ -152,10 +158,10 @@
 {:else}
   <div class="page">
     <div class="toolbar">
-      <nav class="tabs" aria-label="Server lists">
-        <button class:active={tab === 'browse'} onclick={() => (tab = 'browse')}>Browse</button>
-        <button class:active={tab === 'yours'} onclick={() => (tab = 'yours')}>Your servers{#if kept.length}<span class="count faint tabular">{kept.length}</span>{/if}</button>
-      </nav>
+      <div class="tabs" role="tablist" aria-label="Server lists" use:tabKeys>
+        <button role="tab" aria-selected={tab === 'browse'} tabindex={tab === 'browse' ? 0 : -1} class:active={tab === 'browse'} onclick={() => (tab = 'browse')}>Browse</button>
+        <button role="tab" aria-selected={tab === 'yours'} tabindex={tab === 'yours' ? 0 : -1} class:active={tab === 'yours'} onclick={() => (tab = 'yours')}>Your servers{#if kept.length}<span class="count faint tabular">{kept.length}</span>{/if}</button>
+      </div>
       {#if tab === 'browse'}
         <div class="filters">
           <label class="search-box wide"><Search size={16} /><input class="field search" placeholder="Search servers" aria-label="Search servers" bind:value={text} /></label>
@@ -205,9 +211,12 @@
         </section>
 
         <div class="results" class:loading bind:this={results}>
+          {#if app.offline}
+            <OfflineLine what="The server list comes from Modrinth, so it needs a connection." onretry={() => run(page)} />
+          {/if}
           {#if servers.length}
             <div class="found">
-              <span class="faint tabular">{`${total.toLocaleString()} servers`}</span>
+              <span class="faint tabular">{`${number(total)} servers`}</span>
               <Pager {page} {pages} onpage={run} />
             </div>
           {/if}
@@ -215,7 +224,7 @@
             {#each servers as server (server.id)}
               {@const linked = linkedInstance(app.library, server.id)}
               <li>
-                <button class="open" onclick={() => (opened = server)}>
+                <button class="open focus-inset" onclick={() => (opened = server)}>
                   <span class="banner">{#if server.banner}<img src={server.banner} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Art seed={server.name} width={150} height={68} />{/if}</span>
                   <span class="icon">{#if server.icon}<img src={server.icon} alt="" loading="lazy" />{:else}{server.name.charAt(0).toUpperCase()}{/if}</span>
                   <span class="info">
@@ -241,8 +250,15 @@
               </li>
             {/each}
           </ul>
-          {#if !loading && !servers.length}
-            <p class="none muted">{problem ? `Could not load the server list. ${problem}` : 'No servers match.'}</p>
+          {#if !loading && problem && !app.offline}
+            <div class="message">
+              <p>The server list didn't load.</p>
+              <p class="muted">{problem.sentence || asSentence(problem.technical)}</p>
+              {#if !problem.complete && problem.sentence}<p class="faint small selectable mono">{problem.technical}</p>{/if}
+              <button class="btn" onclick={() => run(page)}>Try again</button>
+            </div>
+          {:else if !loading && !servers.length && !problem}
+            <p class="none muted">No servers match.</p>
           {/if}
           {#if servers.length}
             <div class="bottom"><Pager {page} {pages} onpage={run} /></div>
@@ -390,6 +406,8 @@
   .status.on .mark { background: var(--good); }
 
   .none { padding: 20px 0; }
+  .message { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 20px 0; }
+  .message .btn { margin-top: 8px; }
   .bottom { display: flex; justify-content: center; padding-top: 16px; }
   .credit { padding-top: 18px; font-size: var(--text-xs); text-align: center; }
 

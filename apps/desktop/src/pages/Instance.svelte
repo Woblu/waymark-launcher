@@ -8,6 +8,7 @@
   import { instanceMenu } from '../lib/instance-menu';
   import { app } from '../lib/state.svelte';
   import type { InstanceTab } from '../lib/state.svelte';
+  import { tabKeys } from '../lib/tabs';
   import InstanceSettings from './InstanceSettings.svelte';
   import LogsTab from './LogsTab.svelte';
   import ModsTab from './ModsTab.svelte';
@@ -93,7 +94,8 @@
         report.minecraftChanged ? 'Minecraft changed version, so check that your own mods still fit.' : '',
         'You can undo this from Waymarks.',
       ];
-      app.toast('good', `Updated to ${report.version}`, notes.filter(Boolean).join(' '));
+      // One sentence a line, so each is translated on its own.
+      app.changed(id, `Updated to ${report.version}`, notes.filter(Boolean).join('\n'));
       app.contentTick++;
       app.checkUpdate(id);
       await app.refresh();
@@ -159,36 +161,44 @@
       </div>
     {:else if search?.status === 'found'}
       <div class="notice">
-        <span><strong>Found: {search.culprits.join(' and ')}.</strong> {search.culprits.length === 1 ? 'It has' : 'They have'} been switched off and your other mods are back on.</span>
+        <span>
+          <strong>{`Found: ${search.culprits.join(', ')}.`}</strong>
+          {search.culprits.length === 1 ? 'It has been switched off and your other mods are back on.' : 'They have been switched off and your other mods are back on.'}
+        </span>
         <button class="btn" onclick={() => (search = null)}>Done</button>
       </div>
     {:else if search?.status === 'notAMod'}
       <div class="notice">
-        <span><strong>The game crashes with every mod off,</strong> so a mod isn't the cause. Your mods are back as they were.</span>
+        <span><strong>A mod isn't the cause.</strong> The game crashes with every mod off. Your mods are back as they were.</span>
         <button class="btn" onclick={() => (search = null)}>Done</button>
       </div>
     {/if}
 
     {#if manual.length}
       <div class="notice">
-        <span><strong>{manual.length} {manual.length === 1 ? 'file needs' : 'files need'} downloading by hand.</strong> {manual.length === 1 ? 'Its author only allows' : 'Their authors only allow'} downloads from CurseForge.</span>
-        <button class="btn" onclick={() => (showManual = true)}>Get {manual.length === 1 ? 'it' : 'them'}</button>
+        <span>
+          <strong>{manual.length === 1 ? '1 file needs downloading by hand.' : `${manual.length} files need downloading by hand.`}</strong>
+          {manual.length === 1 ? 'Its author only allows downloads from CurseForge.' : 'Their authors only allow downloads from CurseForge.'}
+        </span>
+        <button class="btn" onclick={() => (showManual = true)}>{manual.length === 1 ? 'Get it' : 'Get them'}</button>
       </div>
     {/if}
 
     {#if packUpdate}
       <div class="notice">
-        <span><strong>{packUpdate.name} {packUpdate.latest} is available.</strong> You're on {packUpdate.current}. Your own mods and edited files are kept.</span>
+        <span><strong>{`${packUpdate.name} ${packUpdate.latest} is available.`}</strong> {`You're on ${packUpdate.current}. Your own mods and edited files are kept.`}</span>
         <button class="btn" disabled={updatingPack} onclick={updatePack}>{updatingPack ? 'Updating' : 'Update pack'}</button>
       </div>
     {/if}
 
     <div class="sections">
-      <nav class="tabs" aria-label="Instance sections">
-        {#each tabs as item (item.id)}
-          <button class:active={app.tab === item.id} onclick={() => (app.tab = item.id)}>{item.label}</button>
+      <div class="tabs" role="tablist" aria-label="Instance sections" use:tabKeys>
+        <!-- Settings has no tab, so while it's open the first tab is the one Tab reaches. -->
+        {#each tabs as item, index (item.id)}
+          {@const reachable = app.tab === item.id || (index === 0 && !tabs.some((other) => other.id === app.tab))}
+          <button role="tab" aria-selected={app.tab === item.id} tabindex={reachable ? 0 : -1} class:active={app.tab === item.id} onclick={() => (app.tab = item.id)}>{item.label}</button>
         {/each}
-      </nav>
+      </div>
     </div>
 
     <section class="panel">

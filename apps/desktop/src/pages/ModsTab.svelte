@@ -76,6 +76,15 @@
     load();
   });
 
+  // A search handed over from elsewhere, like a duplicate mod named in a crash.
+  $effect(() => {
+    const wanted = app.prefill;
+    if (wanted?.where !== 'mods') return;
+    query = wanted.text;
+    filter = 'all';
+    app.prefill = null;
+  });
+
   function pickAll() {
     picked = picked.size === order.length ? new Set() : new Set(order);
   }
@@ -149,7 +158,7 @@
   async function remove(hashes: string[]) {
     try {
       const mark = await api.removeContent(id, 'mod', hashes);
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
+      if (mark) app.changed(id, mark);
       clearPicked();
       app.contentTick++;
       await app.refresh();
@@ -322,5 +331,5 @@
   .version { color: var(--text-2); }
   .size { color: var(--text-3); }
   .off .body { opacity: 0.5; }
-  .update { display: block; color: var(--accent); font-size: var(--text-xs); }
+  .update { display: block; color: var(--accent-text); font-size: var(--text-xs); }
 </style>

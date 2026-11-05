@@ -11,6 +11,7 @@
   import ContextMenu from './components/ContextMenu.svelte';
   import Dropdowns from './components/Dropdowns.svelte';
   import CrashSheet from './components/CrashSheet.svelte';
+  import UnverifiedFiles from './components/UnverifiedFiles.svelte';
   import InstanceDialogs from './components/InstanceDialogs.svelte';
   import Library from './pages/Library.svelte';
   import Discover from './pages/Discover.svelte';
@@ -55,10 +56,11 @@
   </main>
   <PlayBar />
   <Toasts />
-  {#if app.dialog === 'new'}<NewInstance />{/if}
+  {#if app.dialog === 'new' || app.dialog === 'import'}<NewInstance start={app.dialog} />{/if}
   {#if app.dialog === 'signin'}<SignIn />{/if}
   {#if app.instanceDialog}{#key app.instanceDialog}<InstanceDialogs dialog={app.instanceDialog} />{/key}{/if}
   {#if app.crash}<CrashSheet />{/if}
+  {#if app.unverified}<UnverifiedFiles />{/if}
   <ContextMenu />
   <Dropdowns />
   {#if app.dragging}

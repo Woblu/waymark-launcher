@@ -1,5 +1,7 @@
-import { api, iconUrl, inTauri, onCoreEvent, onFileDrop, onGameLog, onLaunchRequest, onUpdateReady } from './api';
-import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, FriendOverview, Join, LibraryEntry, LoaderKind, LockedMod, ProjectTarget, Starter } from './api';
+import { api, iconUrl, inTauri, onCoreEvent, onFileDrop, onGameLog, onLaunchRequest, onUpdateReady, openFolder } from './api';
+import type { Account, ApiError, ContentKind, ContentSource, CoreEvent, CrashReport, FriendOverview, Join, LibraryEntry, LoaderKind, LockedMod, PackResult, ProjectTarget, Starter, Waymark } from './api';
+import { asSentence, explain, report } from './errors';
+import type { Explained } from './errors';
 
 const FRIENDS_EVERY = 60000;
 
@@ -38,6 +40,15 @@ export interface Toast {
   title: string;
   detail?: string;
   action?: ToastAction;
+  /** The original error message, shown small for the ones a sentence can't fully explain. */
+  technical?: string;
+  /** Everything about a failure, for the Copy details button. */
+  details?: string;
+}
+
+export interface ToastExtra {
+  technical?: string;
+  details?: string;
 }
 
 export interface ToastAction {
@@ -62,9 +73,16 @@ export interface LogLine {
 }
 
 const MAX_LOG_LINES = 8000;
+/** Old lines are dropped in batches like this, so most new lines are a plain append. */
+const LOG_TRIM = 1000;
 const TOAST_MS = 6000;
 /** Long enough to read the message and change your mind. */
 const UNDO_TOAST_MS = 12000;
+/** Errors stay until they're dismissed, so a long run of them is cut to the newest. */
+const MAX_TOASTS = 5;
+
+/** Something on another screen to land on, set just before going there. */
+export type Prefill = { where: 'discover' | 'mods'; text: string };
 
 class AppState {
   view = $state<View>('library');
@@ -83,7 +101,26 @@ class AppState {
   tasks = $state<TaskState[]>([]);
   toasts = $state<Toast[]>([]);
   crash = $state<{ instance: string; report: CrashReport } | null>(null);
-  dialog = $state<'none' | 'new' | 'signin'>('none');
+  /** Program files a just-installed pack carried itself, waiting for the player to look. */
+  unverified = $state<{ instance: string; name: string; files: string[] } | null>(null);
+  /** `import` opens the New instance dialog on its Import tab. */
+  dialog = $state<'none' | 'new' | 'import' | 'signin'>('none');
+  /** Why the sign-in dialog opened, when something asked for it. */
+  signInReason = $state<string | null>(null);
+  /** Why the library couldn't be read, so the page can say so instead of looking empty. */
+  libraryError = $state<Explained | null>(null);
+  /** The computer says it has a connection. */
+  online = $state(typeof navigator === 'undefined' ? true : navigator.onLine);
+  /** A request failed for want of a connection, and nothing has got through since. */
+  unreachable = $state(false);
+  /** A search to start with, for Discover or an instance's Mods tab. */
+  prefill = $state<Prefill | null>(null);
+  /** A field in instance settings to put the cursor in when it opens. */
+  focusField = $state<string | null>(null);
+  /** A log to show when the Logs tab opens, and whether to offer sharing it. */
+  logPick = $state<{ instance: string; path: string; share?: boolean } | null>(null);
+  /** The waymark a change was saved as, so the Waymarks tab can select the one before it. */
+  trailPick = $state<{ instance: string; after: string } | null>(null);
   instanceDialog = $state<InstanceDialog | null>(null);
   menu = $state<{ x: number; y: number; up?: boolean; items: MenuItem[] } | null>(null);
   dragging = $state(false);
@@ -110,6 +147,22 @@ class AppState {
 
   get activeAccount(): Account | undefined {
     return this.accounts.find((a) => a.active);
+  }
+
+  /** No connection, as far as Waymark Launcher can tell. */
+  get offline(): boolean {
+    return !this.online || this.unreachable;
+  }
+
+  /** Something reached the internet, so the offline line can go. */
+  reached() {
+    this.unreachable = false;
+  }
+
+  /** Opens the sign-in dialog, saying what it's for. */
+  askToSignIn(reason?: string) {
+    this.signInReason = reason ?? null;
+    this.dialog = 'signin';
   }
 
   /** The instance on screen, if there is one. */
@@ -204,9 +257,7 @@ class AppState {
   async install(item: { source: ContentSource; id: string; kind: ContentKind; title: string }, instance: string, version?: string, world?: string) {
     try {
       if (item.kind === 'modpack') {
-        const result = await api.installPack(item.source, item.id);
-        await this.refresh();
-        this.open(result.instance.id);
+        await this.packInstalled(await api.installPack(item.source, item.id));
       } else {
         await api.installContent(instance, item.source, item.id, item.kind, version, world);
         await Promise.all([this.refresh(), this.loadInstalled(instance)]);
@@ -217,21 +268,35 @@ class AppState {
     }
   }
 
+  /** Opens a pack's new instance, and asks the player to look at anything it carried itself. */
+  async packInstalled(result: PackResult) {
+    await this.refresh();
+    this.open(result.instance.id);
+    if (result.unverified?.length) this.unverified = { instance: result.instance.id, name: result.instance.name, files: result.unverified };
+  }
+
   async start() {
     onCoreEvent((event) => this.handle(event));
     // Instances can change while Waymark is in the background, for example when
     // a tool's installer adds a pre-launch command, so coming back rereads them.
     window.addEventListener('focus', () => this.refresh().catch(() => {}));
+    window.addEventListener('online', () => {
+      this.online = true;
+      this.unreachable = false;
+    });
+    window.addEventListener('offline', () => (this.online = false));
     onGameLog((batch) => {
       const lines = this.logs.get(batch.instance) ?? [];
-      lines.push(...batch.lines);
-      if (lines.length > MAX_LOG_LINES) lines.splice(0, lines.length - MAX_LOG_LINES);
+      for (const line of batch.lines) lines.push(line);
+      if (lines.length > MAX_LOG_LINES + LOG_TRIM) lines.splice(0, lines.length - MAX_LOG_LINES);
       this.logs.set(batch.instance, lines);
       this.logTick++;
     });
-    await Promise.allSettled([this.refresh(), this.refreshAccounts()]);
+    const [library] = await Promise.allSettled([this.refresh(), this.refreshAccounts()]);
+    if (library.status === 'rejected') this.libraryError = explain(library.reason);
     this.loaded = true;
     await this.recover();
+    await this.noticeLauncherCrash();
     onLaunchRequest(() => this.launchRequested());
     onFileDrop((event) => {
       this.dragging = event.kind === 'over';
@@ -265,9 +330,7 @@ class AppState {
       if (instance && jars.length && !vanilla) await this.addFiles(instance, 'mod', jars);
       if (instance && zipKind && zips.length && this.view === 'library' && (!vanilla || zipKind === 'resourcepack')) await this.addFiles(instance, zipKind, zips);
       for (const pack of [...packs, ...(zipKind ? [] : zips)]) {
-        const result = await api.installPackFile(pack);
-        await this.refresh();
-        this.open(result.instance.id);
+        await this.packInstalled(await api.installPackFile(pack));
       }
     } catch (error) {
       this.fail(error, 'Could not install that file');
@@ -276,9 +339,37 @@ class AppState {
 
   private async addFiles(instance: string, kind: ContentKind, paths: string[]) {
     const mark = await api.addLocalFiles(instance, kind, paths);
-    if (mark) this.toast('good', mark.label, 'You can undo this from Waymarks.');
+    if (mark) this.changed(instance, mark);
     await this.refresh();
     this.contentTick++;
+  }
+
+  /**
+   * Says a change was saved as a waymark, with a button to the Waymarks tab, where
+   * the one before it is already selected so going back is one more press.
+   */
+  changed(instance: string, mark: Waymark | string, detail = 'You can undo this from Waymarks.', title?: string) {
+    const after = typeof mark === 'string' ? undefined : mark.id;
+    const label = title ?? (typeof mark === 'string' ? mark : mark.label);
+    this.toast('good', label, detail, { label: 'Open Waymarks', run: () => this.showWaymarks(instance, after) });
+  }
+
+  showWaymarks(instance: string, after?: string) {
+    this.trailPick = after ? { instance, after } : null;
+    this.open(instance, 'trail');
+  }
+
+  /** Says once if Waymark Launcher itself stopped unexpectedly last time. */
+  private async noticeLauncherCrash() {
+    if (!inTauri) return;
+    const diagnostics = await api.launcherDiagnostics().catch(() => null);
+    if (!diagnostics?.lastCrash) return;
+    this.toast(
+      'bad',
+      'Waymark Launcher closed unexpectedly last time',
+      'What happened is in its log folder. Copy diagnostics in Settings gathers it for a support email.',
+      { label: 'Open log folder', run: () => openFolder(diagnostics.folder) },
+    );
   }
 
   /** The window closes during play, so a new one picks up what it missed. */
@@ -309,7 +400,12 @@ class AppState {
   /** A failed refresh keeps what's on screen, because the server may just be away. */
   async loadFriends() {
     if (!this.friendAccount) return;
-    this.friends = await api.friendOverview().catch(() => this.friends);
+    try {
+      this.friends = await api.friendOverview();
+      this.reached();
+    } catch {
+      // The friends server can be away on its own, so this alone doesn't count as offline.
+    }
   }
 
   /** Rust does the checking, so this only hears about it. */
@@ -332,6 +428,16 @@ class AppState {
 
   async refresh() {
     this.library = await api.library();
+    this.libraryError = null;
+  }
+
+  /** Tries reading the library again after it failed at startup. */
+  async retryLibrary() {
+    try {
+      await this.refresh();
+    } catch (error) {
+      this.libraryError = explain(error);
+    }
   }
 
   async refreshAccounts() {
@@ -374,8 +480,10 @@ class AppState {
     try {
       const check = await api.checkStart(id);
       if (check.result === 'passed') this.toast('good', `${name} still starts`, 'Waymark Launcher tried the update and it loads.');
-      else if (check.result === 'unclear') this.toast('info', `${name} took too long to check`, 'The update stayed. You can undo it from Waymarks.');
-      else if (check.result === 'undone') {
+      else if (check.result === 'unclear') this.toast('info', `${name} took too long to check`, 'The update stayed. You can undo it from Waymarks.', { label: 'Open Waymarks', run: () => this.showWaymarks(id) });
+      else if (check.result === 'failed') {
+        this.toast('bad', `That update stopped ${name} from starting`, `You changed ${name} while it was being checked, so nothing was undone. ${check.reason}`, { label: 'Open Waymarks', run: () => this.showWaymarks(id) });
+      } else if (check.result === 'undone') {
         this.toast('bad', `That update stopped ${name} from starting`, `Waymark Launcher put it back the way it was. ${check.reason}`);
         this.contentTick++;
         await this.refresh();
@@ -385,19 +493,30 @@ class AppState {
     }
   }
 
-  toast(tone: Toast['tone'], title: string, detail?: string, action?: ToastAction) {
+  /** Errors stay until dismissed, so they can be read and copied. The rest go by themselves. */
+  toast(tone: Toast['tone'], title: string, detail?: string, action?: ToastAction, extra: ToastExtra = {}) {
+    if (tone === 'bad' && this.toasts.some((t) => t.tone === 'bad' && t.title === title && t.detail === detail)) return;
     const id = ++this.toastId;
-    this.toasts.push({ id, tone, title, detail, action });
-    setTimeout(() => this.dismiss(id), action ? UNDO_TOAST_MS : TOAST_MS);
+    this.toasts = [...this.toasts, { id, tone, title, detail, action, ...extra }].slice(-MAX_TOASTS);
+    if (tone !== 'bad') setTimeout(() => this.dismiss(id), action ? UNDO_TOAST_MS : TOAST_MS);
   }
 
   dismiss(id: number) {
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 
+  /**
+   * Shows a failure as what was being done, then what went wrong in plain words.
+   * The core's own message stays one press away under Copy details.
+   */
   fail(error: unknown, title = 'Something went wrong') {
-    const problem = error as Partial<ApiError>;
-    this.toast('bad', title, problem?.message ?? String(error));
+    const explained = explain(error);
+    if (explained.code === 'network') this.unreachable = true;
+    const action = explained.code === 'sign_in_required' ? { label: 'Sign in', run: () => this.askToSignIn() } : undefined;
+    // Without a sentence of its own, the core's message is the explanation, and it's written for people.
+    const technical = !explained.complete && explained.sentence ? explained.technical : undefined;
+    const detail = explained.sentence || asSentence(explained.technical);
+    this.toast('bad', title, detail || undefined, action, { technical, details: report(title, explained) });
   }
 
   /** Adds the player's starter mods to a new instance and says what was left out. */
@@ -426,11 +545,16 @@ class AppState {
    */
   async joinServer(server: { id: string; name: string }) {
     if (this.joiningServer) return;
+    // Asked first, so nobody waits through a whole modpack download to hear it.
+    if (!this.activeAccount) {
+      this.askToSignIn(`Sign in to join ${server.name}.`);
+      return;
+    }
     this.joiningServer = server.id;
     try {
       const ready = await api.serverInstance(server.id);
       await this.refresh();
-      if (ready.updated) this.toast('good', `Updated ${ready.instance.name} for ${server.name}`, 'The server moved to a new version of its pack. You can undo this from Waymarks.');
+      if (ready.updated) this.changed(ready.instance.id, `Updated ${ready.instance.name} for ${server.name}`, 'The server moved to a new version of its pack. You can undo this from Waymarks.');
       if (ready.manual.length) {
         this.open(ready.instance.id);
         this.toast('info', 'A few files need downloading by hand', `${server.name} needs them before you can join.`);
@@ -463,7 +587,7 @@ class AppState {
       await api.launch(id, join);
     } catch (error) {
       const code = (error as ApiError)?.code;
-      if (code === 'sign_in_required') this.dialog = 'signin';
+      if (code === 'sign_in_required') this.askToSignIn('Sign in to play. You need a Microsoft account that owns Minecraft: Java Edition.');
       else if (code === 'app_not_approved') {
         this.toast('info', 'Sign-in is not available yet', 'Waymark Launcher is waiting on Mojang to approve it for Minecraft sign-in.');
       } else this.fail(error, 'The game could not start');

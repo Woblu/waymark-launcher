@@ -18,6 +18,8 @@
 
   --accent: #efb36c;
   --accent-hover: #f7c78a;
+  /* The accent used for words, which the light theme darkens to stay readable. */
+  --accent-text: var(--accent);
   --accent-soft: rgb(239 179 108 / 13%);
   --on-accent: #1c1206;
   --selected: rgb(239 179 108 / 9%);
@@ -67,10 +69,12 @@
 
   --text: #1a1f27;
   --text-2: #4c5460;
-  --text-3: #6c7480;
+  /* At least 4.5:1 on bg, panel and control, so small faint text stays readable. */
+  --text-3: #59616d;
 
   --accent: #a85f10;
   --accent-hover: #8f4f0b;
+  --accent-text: #91510e;
   --accent-soft: rgb(168 95 16 / 12%);
   --on-accent: #ffffff;
   --selected: rgb(168 95 16 / 8%);

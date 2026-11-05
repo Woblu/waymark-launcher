@@ -10,10 +10,14 @@
   import { Check, Download, Search } from '@lucide/svelte';
   import Art from '../components/Art.svelte';
   import Pager from '../components/Pager.svelte';
+  import OfflineLine from '../components/OfflineLine.svelte';
   import { api } from '../lib/api';
   import type { ContentHit, LoaderKind, Sort } from '../lib/api';
-  import { count, loaderName, titleCase } from '../lib/format';
+  import { asSentence, explain } from '../lib/errors';
+  import type { Explained } from '../lib/errors';
+  import { count, loaderName, number, titleCase } from '../lib/format';
   import { app } from '../lib/state.svelte';
+  import { tabKeys } from '../lib/tabs';
 
   let { target }: { target?: string } = $props();
 
@@ -31,6 +35,8 @@
     { id: 'newest', label: 'Newest' },
     { id: 'updated', label: 'Recently updated' },
   ];
+  /** For saying what needs an instance: `Mods install into an instance`. */
+  const KIND_NAMES: Record<ContentKind, string> = { mod: 'Mods', modpack: 'Modpacks', shader: 'Shaders', resourcepack: 'Resource packs', datapack: 'Data packs' };
   const LOADERS: LoaderKind[] = ['fabric', 'neoforge', 'forge', 'quilt'];
   const GROUP_NAMES: Record<string, string> = { categories: 'Categories', features: 'Features', resolutions: 'Resolutions', 'performance impact': 'Performance impact' };
   const PAGE_SIZE = 24;
@@ -58,6 +64,7 @@
   let loading = $state(true);
   let hasCurseForge = $state(false);
   let installing = $state<string | null>(null);
+  let problem = $state<Explained | null>(null);
 
   const instance = $derived(app.entry(instanceId));
   /** Mods and packs are filtered to the instance they'd go into, unless the player says otherwise. */
@@ -85,12 +92,30 @@
       hits = found.hits;
       total = found.total;
       page = number;
+      problem = null;
+      app.reached();
       results?.scrollTo(0, 0);
     } catch (error) {
-      if (request === requestId) app.fail(error, 'Search is not available right now');
+      if (request !== requestId) return;
+      // Said on the page, next to a way to try again, rather than in a toast over an empty grid.
+      problem = explain(error);
+      if (problem.code === 'network') app.unreachable = true;
+      hits = [];
+      total = 0;
     }
     if (request === requestId) loading = false;
   }
+
+  // A search handed over from elsewhere, like a missing mod named in a crash.
+  $effect(() => {
+    const wanted = app.prefill;
+    if (wanted?.where !== 'discover') return;
+    untrack(() => {
+      kind = 'mod';
+      text = wanted.text;
+      app.prefill = null;
+    });
+  });
 
   onMount(async () => {
     hasCurseForge = await api.curseforgeAvailable();
@@ -176,11 +201,11 @@
 
 <div class="page">
   <div class="toolbar">
-    <nav class="tabs" aria-label="Content type">
+    <div class="tabs" role="tablist" aria-label="Content type" use:tabKeys>
       {#each KINDS as item (item.id)}
-        <button class:active={kind === item.id} onclick={() => (kind = item.id)}>{item.label}</button>
+        <button role="tab" aria-selected={kind === item.id} tabindex={kind === item.id ? 0 : -1} class:active={kind === item.id} onclick={() => (kind = item.id)}>{item.label}</button>
       {/each}
-    </nav>
+    </div>
     <div class="filters">
       <label class="search-box wide"><Search size={16} /><input class="field search" placeholder="Search" aria-label="Search" bind:value={text} /></label>
       {#if !packsOnly}
@@ -246,16 +271,31 @@
     </section>
 
     <div class="results" class:loading bind:this={results}>
+      {#if app.offline}
+        <OfflineLine what="Discover needs a connection to search the stores." onretry={() => run(page)} />
+      {/if}
+      {#if kind !== 'modpack' && kind !== 'datapack' && !targets.length && app.loaded}
+        <div class="notice needs">
+          <span>
+            {#if !app.library.length}
+              <strong>Make an instance first.</strong> {KIND_NAMES[kind]} install into an instance, and you don't have one yet.
+            {:else}
+              <strong>Make a modded instance first.</strong> {KIND_NAMES[kind]} need an instance with a mod loader, and yours are all Vanilla.
+            {/if}
+          </span>
+          <button class="btn" onclick={() => (app.dialog = 'new')}>New instance</button>
+        </div>
+      {/if}
       {#if hits.length}
         <div class="found">
-          <span class="faint tabular">{total.toLocaleString()} results</span>
+          <span class="faint tabular">{number(total)} results</span>
           <Pager {page} {pages} onpage={run} />
         </div>
       {/if}
       <ul>
         {#each hits as hit (`${hit.source}:${hit.id}`)}
           <li>
-            <button class="open" onclick={() => openPage(hit)}>
+            <button class="open focus-inset" onclick={() => openPage(hit)}>
               <span class="banner">{#if hit.banner}<img src={hit.banner} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Art seed={hit.title} width={150} height={68} />{/if}</span>
               <span class="icon">{#if hit.icon}<img src={hit.icon} alt="" loading="lazy" />{:else}{hit.title.charAt(0).toUpperCase()}{/if}</span>
               <span class="info">
@@ -271,7 +311,7 @@
               {:else if hit.kind === 'datapack'}
                 <button class="btn add" onclick={() => openPage(hit)}><Download size={15} /> Install</button>
               {:else}
-                <button class="btn add" disabled={installing !== null || (hit.kind !== 'modpack' && !instanceId)} onclick={() => install(hit)}>
+                <button class="btn add" disabled={installing !== null || (hit.kind !== 'modpack' && !instanceId)} title={hit.kind !== 'modpack' && !instanceId ? 'Make an instance first' : undefined} onclick={() => install(hit)}>
                   <Download size={15} /> {installing === hit.id ? 'Installing' : 'Install'}
                 </button>
               {/if}
@@ -280,7 +320,14 @@
         {/each}
       </ul>
 
-      {#if !loading && !hits.length}
+      {#if !loading && problem && !app.offline}
+        <div class="message">
+          <p>Search didn't work just now.</p>
+          <p class="muted">{problem.sentence || asSentence(problem.technical)}</p>
+          {#if !problem.complete && problem.sentence}<p class="faint small selectable mono">{problem.technical}</p>{/if}
+          <button class="btn" onclick={() => run(page)}>Try again</button>
+        </div>
+      {:else if !loading && !hits.length && !problem}
         <p class="none muted">Nothing found.</p>
       {/if}
       {#if hits.length}
@@ -365,5 +412,8 @@
   .downloads { font-size: var(--text-xs); }
   .installed { display: inline-flex; align-items: center; gap: 5px; height: 36px; color: var(--good); font-weight: 600; }
   .none { padding: 20px 0; }
+  .message { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 20px 0; }
+  .message .btn { margin-top: 8px; }
+  .needs { margin-bottom: 12px; }
   .bottom { display: flex; justify-content: center; padding-top: 16px; }
 </style>

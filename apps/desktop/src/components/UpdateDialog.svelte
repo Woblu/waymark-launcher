@@ -56,7 +56,7 @@
     try {
       const picks = [...chosen].map((hash) => ({ hash, version: picked[hash] }));
       const mark = await api.applyUpdates(entry.id, picks);
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
+      if (mark) app.changed(entry.id, mark);
       app.contentTick++;
       if (mark) app.checkUpdate(entry.id);
       onclose();
@@ -78,7 +78,7 @@
             {#if open === update.hash}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
             <span class="name truncate">{update.name}</span>
           </button>
-          <span class="versions truncate muted">{update.current ?? 'Unknown'} to {update.latest}</span>
+          <span class="versions truncate muted"><span>{update.current ?? 'Unknown version'}</span> → <span>{update.latest}</span></span>
           {#if update.held}<span class="faint small" title="Too new to install under your Hold back setting">Held back</span>{/if}
         </div>
         {#if open === update.hash}
@@ -103,6 +103,7 @@
     {/each}
   </ul>
   <div class="buttons">
+    <p class="faint small undo">The update is saved as a waymark, so you can go back to how things were from Waymarks.</p>
     <button class="btn" onclick={onclose}>Cancel</button>
     <button class="btn primary" disabled={updating || !chosen.size} onclick={run}>{updating ? 'Updating' : `Update ${chosen.size}`}</button>
   </div>
@@ -116,5 +117,6 @@
   .name { font-weight: 600; }
   .detail { display: flex; flex-direction: column; gap: 10px; padding: 0 0 12px 30px; }
   .log { max-height: 240px; overflow-y: auto; }
-  .buttons { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+  .buttons { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+  .undo { flex: 1; min-width: 0; }
 </style>

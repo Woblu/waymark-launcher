@@ -1,7 +1,7 @@
 // Words for the server list, shared by the list and a server's own page.
 
 import type { LibraryEntry, PublicServer, ServerContent } from './api';
-import { loaderName, titleCase } from './format';
+import { loaderName, number, titleCase } from './format';
 import { currentLanguage } from './i18n';
 
 const REGIONS: Record<string, string> = {
@@ -75,7 +75,7 @@ export function contentLine(content: ServerContent, server?: string): string {
 export function playersLine(server: PublicServer): string {
   if (!server.online) return 'Offline';
   if (server.players === null) return 'Online';
-  return server.capacity ? `${server.players.toLocaleString()} of ${server.capacity.toLocaleString()} online` : `${server.players.toLocaleString()} online`;
+  return server.capacity ? `${number(server.players)} of ${number(server.capacity)} online` : `${number(server.players)} online`;
 }
 
 /** The instance made for this server, if it still exists. */

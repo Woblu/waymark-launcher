@@ -3,6 +3,7 @@
   import Art from '../components/Art.svelte';
   import { api, instanceIcon, localImage } from '../lib/api';
   import type { LibraryEntry, RecentWorld } from '../lib/api';
+  import { asSentence } from '../lib/errors';
   import { loaderName, playtime, timeAgo } from '../lib/format';
   import { instanceMenu } from '../lib/instance-menu';
   import { app } from '../lib/state.svelte';
@@ -53,12 +54,30 @@
     event.preventDefault();
     app.menu = { x: event.clientX, y: event.clientY, items: instanceMenu(entry) };
   }
+
+  /** Instances other launchers have on this computer, counted for a first run. */
+  let found = $state(0);
+  let looked = false;
+
+  $effect(() => {
+    if (looked || !app.loaded || app.library.length || app.libraryError) return;
+    looked = true;
+    api.externalInstances().then((list) => (found = list.length), () => {});
+  });
+
+  let retrying = $state(false);
+
+  async function retry() {
+    retrying = true;
+    await app.retryLibrary();
+    retrying = false;
+  }
 </script>
 
 {#snippet card(entry: LibraryEntry)}
   {@const picture = instanceIcon(entry, app.iconTick)}
   <li class="card">
-    <button class="open" data-instance={entry.id} oncontextmenu={(event) => openMenu(event, entry)} onclick={() => app.open(entry.id, app.tab)}>
+    <button class="open focus-inset" data-instance={entry.id} oncontextmenu={(event) => openMenu(event, entry)} onclick={() => app.open(entry.id, app.tab)}>
       <Art seed={entry.name} width={200} height={125} />
       {#if picture}<img class="mark" src={picture} alt="" />{/if}
       <span class="label">
@@ -91,6 +110,9 @@
             {#if latest.playtimeSecs >= 60}<span>{playtime(latest.playtimeSecs)}</span>{/if}
             <span>{latest.lastPlayed ? `Last played ${timeAgo(latest.lastPlayed)}` : 'Not played yet'}</span>
           </p>
+        {:else if app.libraryError}
+          <h1>Your library didn't load</h1>
+          <p class="facts">{app.libraryError.sentence || asSentence(app.libraryError.technical)}</p>
         {:else if app.loaded}
           <h1>No instances yet</h1>
           <p class="facts">Create an instance, or import one from another launcher. Importing leaves the original alone.</p>
@@ -98,6 +120,43 @@
       </div>
     </div>
 
+    {#if !latest && app.libraryError}
+      <div class="content">
+        <div class="trouble">
+          {#if !app.libraryError.complete && app.libraryError.sentence}<p class="faint small selectable mono">{app.libraryError.technical}</p>{/if}
+          <p class="muted">Nothing has been deleted. Waymark Launcher couldn't read the list of instances just now.</p>
+          <button class="btn primary" disabled={retrying} onclick={retry}>{retrying ? 'Trying again' : 'Try again'}</button>
+        </div>
+      </div>
+    {:else if !latest && app.loaded}
+      <div class="content">
+        <ul class="start">
+          <li>
+            <h2>Account</h2>
+            {#if app.activeAccount}
+              <p class="muted">Signed in as <span class="name">{app.activeAccount.name}</span></p>
+            {:else}
+              <p class="muted">Playing needs a Microsoft account that owns Minecraft: Java Edition.</p>
+              <button class="btn primary" onclick={() => app.askToSignIn()}>Sign in</button>
+            {/if}
+          </li>
+          <li>
+            <h2>Bring your instances</h2>
+            <p class="muted">Import from Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher. The originals stay where they are.</p>
+            {#if found}<p class="faint small">{found === 1 ? 'Found 1 on this computer' : `Found ${found} on this computer`}</p>{/if}
+            <button class="btn" class:primary={!!app.activeAccount && found > 0} onclick={() => (app.dialog = 'import')}>Import</button>
+          </li>
+          <li>
+            <h2>Or start fresh</h2>
+            <p class="muted">Pick a Minecraft version and a mod loader, or install a modpack from Discover.</p>
+            <div class="buttons">
+              <button class="btn" class:primary={!!app.activeAccount && !found} onclick={() => (app.dialog = 'new')}><Plus size={16} /> New instance</button>
+              <button class="btn" onclick={() => app.go('discover')}>Browse modpacks</button>
+            </div>
+          </li>
+        </ul>
+      </div>
+    {:else}
     <div class="content">
       {#if recent.length}
         <section>
@@ -105,7 +164,7 @@
           <ul class="recent">
             {#each recent as world (world.instance + world.folder)}
               <li>
-                <button class="world" disabled={app.entry(world.instance)?.running} title="Play {world.name}" onclick={() => app.play(world.instance, { kind: 'world', folder: world.folder })}>
+                <button class="world focus-inset" disabled={app.entry(world.instance)?.running} title="Play {world.name}" onclick={() => app.play(world.instance, { kind: 'world', folder: world.folder })}>
                   <span class="thumb">{#if world.hasIcon}<img src={localImage(`world/${world.instance}/${world.folder}`)} alt="" />{:else}{world.name.charAt(0).toUpperCase()}{/if}</span>
                   <span class="text">
                     <span class="name truncate">{world.name}</span>
@@ -126,7 +185,7 @@
             <label class="search-box filter"><Search size={16} /><input class="field" placeholder="Search instances" aria-label="Search instances" bind:value={filter} /></label>
           {/if}
           <span class="spacer"></span>
-          {#if !app.library.length && app.loaded}<button class="btn" onclick={() => app.go('discover')}>Browse modpacks</button>{/if}
+          <button class="btn" onclick={() => (app.dialog = 'import')}>Import</button>
           <button class="btn primary" onclick={() => (app.dialog = 'new')}><Plus size={16} /> New instance</button>
         </div>
 
@@ -146,6 +205,7 @@
         {/each}
       </section>
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -164,7 +224,7 @@
 
   .recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
   .world { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 14px 8px 8px; background: var(--panel); clip-path: var(--stepped); color: var(--text-3); text-align: left; transition: background-color 100ms ease-out, color 100ms ease-out; }
-  .world:hover:not(:disabled) { background: var(--raised); color: var(--accent); }
+  .world:hover:not(:disabled) { background: var(--raised); color: var(--accent-text); }
   .world:disabled { opacity: 0.5; cursor: not-allowed; }
   .thumb { flex: none; display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; background: var(--control); color: var(--text-3); font-size: var(--text-l); font-weight: 600; image-rendering: pixelated; }
   .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -191,4 +251,15 @@
   .card:hover .name { text-decoration: underline; text-underline-offset: 2px; }
   .quick { position: absolute; right: 10px; bottom: 10px; z-index: 2; opacity: 0; transition: opacity 100ms ease-out, background-color 100ms ease-out; }
   .card:hover .quick, .quick:focus-visible { opacity: 1; }
+
+  /* A first run, read top to bottom like a settings page: what's needed, then
+     the two ways to get an instance. Plain rows, not a grid of cards. */
+  .start { display: flex; flex-direction: column; max-width: 860px; }
+  .start li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 24px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .start li:last-child { border-bottom: 1px solid var(--line); }
+  .start h2 { grid-column: 1; font-size: var(--text-m); }
+  .start p { grid-column: 1; max-width: 60ch; }
+  .start li > .btn, .start li > .buttons { grid-column: 2; grid-row: 1 / span 3; }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 620px; }
 </style>

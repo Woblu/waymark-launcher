@@ -9,9 +9,36 @@
   let { id, kind, shared }: { id: string; kind: ContentKind; shared: boolean } = $props();
 
   const ROW = 60;
-  const NAMES: Partial<Record<ContentKind, { one: string; many: string }>> = {
-    resourcepack: { one: 'resource pack', many: 'resource packs' },
-    shader: { one: 'shader', many: 'shaders' },
+
+  /** Whole sentences for each kind, so each one can be translated as it stands. */
+  interface Words {
+    search: (count: number) => string;
+    searchLabel: string;
+    update: (count: number) => string;
+    browse: string;
+    noMatch: string;
+    none: string;
+    failed: string;
+  }
+  const WORDS: Partial<Record<ContentKind, Words>> = {
+    resourcepack: {
+      search: (count) => (count === 1 ? 'Search 1 resource pack' : `Search ${count} resource packs`),
+      searchLabel: 'Search resource packs',
+      update: (count) => (count === 1 ? 'Update 1 resource pack' : `Update ${count} resource packs`),
+      browse: 'Browse resource packs',
+      noMatch: 'No resource packs match.',
+      none: 'This instance has no resource packs.',
+      failed: 'Could not update those resource packs',
+    },
+    shader: {
+      search: (count) => (count === 1 ? 'Search 1 shader' : `Search ${count} shaders`),
+      searchLabel: 'Search shaders',
+      update: (count) => (count === 1 ? 'Update 1 shader' : `Update ${count} shaders`),
+      browse: 'Browse shaders',
+      noMatch: 'No shaders match.',
+      none: 'This instance has no shaders.',
+      failed: 'Could not update those shaders',
+    },
   };
 
   let packs = $state<LockedMod[]>([]);
@@ -20,7 +47,7 @@
   let loaded = $state(false);
   let updating = $state(false);
 
-  const names = $derived(NAMES[kind] ?? { one: 'pack', many: 'packs' });
+  const words = $derived(WORDS[kind] ?? WORDS.resourcepack!);
   const ready = $derived(updates.filter((u) => !u.held));
   const updatable = $derived(new Set(ready.map((u) => u.hash)));
   const shown = $derived.by(() => {
@@ -57,7 +84,7 @@
   async function remove(pack: LockedMod) {
     try {
       const mark = await api.removeContent(id, kind, [pack.hash]);
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
+      if (mark) app.changed(id, mark);
       app.contentTick++;
     } catch (error) {
       app.fail(error);
@@ -68,11 +95,11 @@
     updating = true;
     try {
       const mark = await api.applyUpdates(id, ready.map((u) => ({ hash: u.hash })));
-      if (mark) app.toast('good', mark.label, 'You can undo this from Waymarks.');
+      if (mark) app.changed(id, mark);
       app.contentTick++;
       if (mark) app.checkUpdate(id);
     } catch (error) {
-      app.fail(error, `Could not update those ${names.many}`);
+      app.fail(error, words.failed);
     }
     updating = false;
   }
@@ -80,13 +107,13 @@
 
 <div class="tab">
   <div class="content-tools">
-    <label class="search-box"><Search size={16} /><input class="field" placeholder="Search {packs.length} {packs.length === 1 ? names.one : names.many}" aria-label="Search {names.many}" bind:value={query} /></label>
+    <label class="search-box"><Search size={16} /><input class="field" placeholder={words.search(packs.length)} aria-label={words.searchLabel} bind:value={query} /></label>
     {#if shared}<span class="faint small">Shared with other instances</span>{/if}
     <span class="spacer"></span>
     {#if ready.length}
-      <button class="btn primary" disabled={updating} onclick={updateAll}><Download size={16} /> Update {ready.length} {ready.length === 1 ? names.one : names.many}</button>
+      <button class="btn primary" disabled={updating} onclick={updateAll}><Download size={16} /> {words.update(ready.length)}</button>
     {/if}
-    <button class="btn" onclick={() => app.go('discover', id, kind)}><Compass size={16} /> Browse {names.many}</button>
+    <button class="btn" onclick={() => app.go('discover', id, kind)}><Compass size={16} /> {words.browse}</button>
   </div>
 
   {#if shown.length}
@@ -116,7 +143,7 @@
     </div>
   {:else if loaded}
     <div class="blank">
-      <p class="muted">{packs.length ? `No ${names.many} match.` : `This instance has no ${names.many}.`}</p>
+      <p class="muted">{packs.length ? words.noMatch : words.none}</p>
     </div>
   {/if}
 </div>
@@ -129,5 +156,5 @@
   .version { color: var(--text-2); }
   .size { color: var(--text-3); }
   .off .body { opacity: 0.5; }
-  .update { display: block; color: var(--accent); font-size: var(--text-xs); }
+  .update { display: block; color: var(--accent-text); font-size: var(--text-xs); }
 </style>

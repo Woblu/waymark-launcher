@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { api, openFolder, pickFolder } from '../lib/api';
   import type { LibraryEntry } from '../lib/api';
+  import { number } from '../lib/format';
   import { app } from '../lib/state.svelte';
 
   let { entry }: { entry: LibraryEntry } = $props();
@@ -66,14 +67,36 @@
     return JSON.stringify(mine) === JSON.stringify(opened) ? saved : mine;
   }
 
+  /** Everything the form holds, to tell whether there's anything left to save. */
+  function values(): string {
+    return JSON.stringify([name, useDefaultMemory ? null : memory, javaPath, jvmArgs, width, height, fullscreen, env, preLaunch, wrapper, postExit, keepOwn]);
+  }
+
+  let savedValues = $state(values());
+  const dirty = $derived(values() !== savedValues);
+  /** Set once the instance is deleted, so leaving doesn't try to save it. */
+  let gone = false;
+
   async function save(event: SubmitEvent) {
     event.preventDefault();
+    await persist();
+  }
+
+  // Leaving with changes saves them, as the other launchers do, rather than dropping them.
+  onDestroy(() => {
+    if (dirty && !gone) persist();
+  });
+
+  async function persist() {
+    const id = original.id;
+    const fallbackName = original.name;
+    const snapshot = values();
     try {
       await app.refresh();
-      const saved = app.library.find((other) => other.id === entry.id) ?? original;
+      const saved = app.library.find((other) => other.id === id) ?? original;
       const field = <T,>(mine: T, read: (from: LibraryEntry) => T) => unlessChanged(mine, read(base), read(saved));
-      await api.updateInstance(entry.id, {
-        name: field(name.trim() || entry.name, (from) => from.name),
+      await api.updateInstance(id, {
+        name: field(name.trim() || fallbackName, (from) => from.name),
         memoryMb: field(useDefaultMemory ? null : memory, (from) => from.memoryMb ?? null),
         javaPath: field(javaPath.trim() || null, (from) => from.javaPath ?? null),
         jvmArgs: field(jvmArgs.trim() ? jvmArgs.trim().split(/\s+/) : [], (from) => from.jvmArgs ?? []),
@@ -89,7 +112,8 @@
         },
       });
       await app.refresh();
-      base = app.library.find((other) => other.id === entry.id) ?? base;
+      base = app.library.find((other) => other.id === id) ?? base;
+      savedValues = snapshot;
       app.toast('good', 'Settings saved');
     } catch (error) {
       app.fail(error, 'Could not save');
@@ -108,10 +132,11 @@
   async function copySettings() {
     const source = app.entry(copyFrom);
     try {
-      await api.copySettings(copyFrom, entry.id);
+      const mark = await api.copySettings(copyFrom, entry.id);
       app.contentTick++;
       await app.refresh();
-      app.toast('good', `Copied settings from ${source?.name ?? 'that instance'}`, 'You can undo this from Waymarks.');
+      const title = `Copied settings from ${source?.name ?? 'that instance'}`;
+      app.changed(entry.id, mark ?? title, 'You can undo this from Waymarks.', title);
       copyFrom = '';
     } catch (error) {
       app.fail(error, 'Could not copy settings');
@@ -125,7 +150,11 @@
     try {
       const result = await api.exportServer(entry.id, folder);
       const left = result.skipped.length;
-      app.toast('good', 'Server folder created', `${result.mods} mods copied${left ? `, ${left} client-only left out` : ''}. See README.txt in the folder.`);
+      // A sentence a line, so each one is translated on its own.
+      const lines = [result.mods === 1 ? '1 mod copied.' : `${result.mods} mods copied.`];
+      if (left) lines.push(left === 1 ? '1 client-only mod left out.' : `${left} client-only mods left out.`);
+      lines.push('See README.txt in the folder.');
+      app.toast('good', 'Server folder created', lines.join('\n'));
       await openFolder(result.folder);
     } catch (error) {
       app.fail(error, 'Could not export the server');
@@ -134,15 +163,30 @@
   }
 
   async function remove() {
+    gone = true;
     try {
       const item = await api.deleteInstance(entry.id);
       await app.refresh();
       app.selected = null;
       app.toast('good', `Deleted ${entry.name}`, 'You can restore it from Settings for 30 days.', { label: 'Undo', run: () => app.restore(item.id) });
     } catch (error) {
+      gone = false;
       app.fail(error, 'Could not delete this instance');
     }
   }
+
+  // Arriving from the crash dialog puts the cursor on the setting it was about,
+  // whether settings open for it or were open already.
+  $effect(() => {
+    const wanted = app.focusField;
+    if (!wanted) return;
+    untrack(() => (app.focusField = null));
+    tick().then(() => {
+      const field = document.getElementById(wanted === 'memory' ? 'memory-default' : wanted);
+      field?.scrollIntoView({ block: 'center' });
+      field?.focus();
+    });
+  });
 </script>
 
 <div class="tab">
@@ -155,11 +199,11 @@
     <div class="form-row">
       <span class="form-label">Memory</span>
       <div>
-        <label class="check"><input type="checkbox" bind:checked={useDefaultMemory} /> Use the default from Settings</label>
+        <label class="check"><input id="memory-default" type="checkbox" bind:checked={useDefaultMemory} /> Use the default from Settings</label>
         {#if !useDefaultMemory}
           <div class="slider">
             <input type="range" min="1024" max="32768" step="512" aria-label="Memory" bind:value={memory} />
-            <span class="tabular">{(memory / 1024).toFixed(1)} GB</span>
+            <span class="tabular">{number(memory / 1024, 1)} GB</span>
           </div>
         {/if}
       </div>
@@ -232,7 +276,7 @@
     </div>
     <div class="form-row">
       <span></span>
-      <div><button class="btn primary">Save</button></div>
+      <div class="save"><button class="btn primary">Save</button>{#if dirty}<span class="faint small">Unsaved changes. Leaving this page saves them.</span>{/if}</div>
     </div>
   </form>
 
@@ -303,4 +347,5 @@
   .slider input { flex: 1; }
   .slider span { width: 56px; text-align: right; }
   .confirm { margin-bottom: 8px; color: var(--text-2); }
+  .save { display: flex; align-items: center; gap: 12px; }
 </style>

@@ -7,29 +7,41 @@
   let left = $state(0);
   let top = $state(0);
   const MARGIN = 6;
+  /** What had focus before the menu opened, to go back to when it closes. */
+  let opener: HTMLElement | null = null;
 
   // Opens at the pointer, moved in if it would run off the window.
   $effect(() => {
     if (!menu || !element) return;
+    if (!opener && document.activeElement instanceof HTMLElement && !element.contains(document.activeElement)) opener = document.activeElement;
     left = Math.min(menu.x, innerWidth - element.offsetWidth - MARGIN);
     top = menu.up ? menu.y - element.offsetHeight : Math.min(menu.y, innerHeight - element.offsetHeight - MARGIN);
     element.querySelector('button')?.focus();
   });
 
-  const close = () => (app.menu = null);
+  function close(restore = true) {
+    app.menu = null;
+    const back = opener;
+    opener = null;
+    if (restore && back?.isConnected) back.focus();
+  }
 
   function move(event: KeyboardEvent) {
     const buttons = [...(element?.querySelectorAll('button') ?? [])];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === 'ArrowDown') buttons[(at + 1) % buttons.length]?.focus();
     else if (event.key === 'ArrowUp') buttons[(at - 1 + buttons.length) % buttons.length]?.focus();
-    else if (event.key === 'Escape') close();
+    else if (event.key === 'Home') buttons[0]?.focus();
+    else if (event.key === 'End') buttons.at(-1)?.focus();
+    // Tab leaves the menu the way Escape does, back on whatever opened it.
+    else if (event.key === 'Escape' || event.key === 'Tab') close();
     else return;
     event.preventDefault();
+    event.stopPropagation();
   }
 
   onMount(() => {
-    const away = () => close();
+    const away = () => app.menu && close(false);
     addEventListener('blur', away);
     addEventListener('resize', away);
     return () => {
@@ -39,10 +51,9 @@
   });
 </script>
 
-<svelte:window onpointerdown={(event) => { if (menu && !element?.contains(event.target as Node)) close(); }} />
+<svelte:window onpointerdown={(event) => { if (menu && !element?.contains(event.target as Node)) close(false); }} />
 
 {#if menu}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="menu" role="menu" tabindex="-1" bind:this={element} style:left="{left}px" style:top="{top}px" onkeydown={move}>
     {#each menu.items as item (item.label)}
       <button role="menuitem" class:danger={item.danger} onclick={() => { close(); item.run(); }}>{item.label}</button>

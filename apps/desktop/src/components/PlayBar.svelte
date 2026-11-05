@@ -45,7 +45,8 @@
   <div class="middle">
     {#if task}
       <div class="task" aria-live="polite">
-        <span class="truncate">{task.title}: {task.detail}{percent === null ? '' : ` (${percent.toFixed(0)}%)`}{app.tasks.length > 1 ? ` and ${app.tasks.length - 1} more` : ''}</span>
+        <!-- Pieces apart, so the core's own words and the count are each translated if the catalog knows them. -->
+        <span class="truncate"><span>{task.title}</span>: <span>{task.detail}</span>{percent === null ? '' : ` (${percent.toFixed(0)}%)`} {#if app.tasks.length > 1}<span>{`and ${app.tasks.length - 1} more`}</span>{/if}</span>
         <span class="bar" class:unknown={percent === null}><span style:width="{percent ?? 100}%"></span></span>
       </div>
     {/if}

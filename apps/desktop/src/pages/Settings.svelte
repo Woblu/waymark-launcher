@@ -4,9 +4,11 @@
   import Modal from '../components/Modal.svelte';
   import StarterMods from '../components/StarterMods.svelte';
   import SharedSettings from '../components/SharedSettings.svelte';
-  import { api } from '../lib/api';
+  import { api, openFolder } from '../lib/api';
   import type { Account, CustomTheme, Settings, Trashed } from '../lib/api';
-  import { bytes, timeAgo } from '../lib/format';
+  import { asSentence, explain } from '../lib/errors';
+  import type { Explained } from '../lib/errors';
+  import { bytes, number, timeAgo } from '../lib/format';
   import { LANGUAGE_NAMES, chooseLanguage, savedLanguage } from '../lib/i18n';
   import { PRESETS, previewTheme, useTheme } from '../lib/theme';
   import { EVERY_VERSION, app } from '../lib/state.svelte';
@@ -22,8 +24,20 @@
   /** This build has a Discord application to show presence as. */
   let discordAvailable = $state(false);
 
+  /** Why settings couldn't be read, shown where they'd be with a way to try again. */
+  let loadProblem = $state<Explained | null>(null);
+
+  async function loadSettings() {
+    loadProblem = null;
+    try {
+      settings = await api.settings();
+    } catch (error) {
+      loadProblem = explain(error);
+    }
+  }
+
   onMount(async () => {
-    settings = await api.settings();
+    await loadSettings();
     discordAvailable = await api.discordAvailable().catch(() => false);
   });
 
@@ -37,12 +51,16 @@
     await loadDeleted();
   }
 
+  /** Deleting for good can't be undone, so it's asked about first. */
+  let erasing = $state<Trashed | null>(null);
+
   async function erase(item: Trashed) {
+    erasing = null;
     try {
       await api.eraseTrashed(item.id);
       await loadDeleted();
     } catch (error) {
-      app.fail(error);
+      app.fail(error, `Could not delete ${item.name}`);
     }
   }
 
@@ -115,11 +133,19 @@
   }
 
   async function activate(account: Account) {
-    app.accounts = await api.setActiveAccount(account.uuid);
+    try {
+      app.accounts = await api.setActiveAccount(account.uuid);
+    } catch (error) {
+      app.fail(error, `Could not switch to ${account.name}`);
+    }
   }
 
   async function signOut(account: Account) {
-    app.accounts = await api.removeAccount(account.uuid);
+    try {
+      app.accounts = await api.removeAccount(account.uuid);
+    } catch (error) {
+      app.fail(error, `Could not sign out ${account.name}`);
+    }
   }
 
   async function reclaim() {
@@ -162,6 +188,29 @@
   let checking = $state(false);
   let upToDate = $state(false);
 
+  let copiedDiagnostics = $state(false);
+
+  /** Everything a support email needs, with folder names and tokens taken out. */
+  async function copyDiagnostics() {
+    try {
+      const report = await api.diagnosticsReport();
+      await navigator.clipboard.writeText(report ?? `Waymark Launcher ${app.version}`);
+      copiedDiagnostics = true;
+      setTimeout(() => (copiedDiagnostics = false), 2500);
+    } catch (error) {
+      app.fail(error, 'Could not copy diagnostics');
+    }
+  }
+
+  async function openLogFolder() {
+    try {
+      const diagnostics = await api.launcherDiagnostics();
+      if (diagnostics) await openFolder(diagnostics.folder);
+    } catch (error) {
+      app.fail(error, 'Could not open the log folder');
+    }
+  }
+
   async function checkNow() {
     checking = true;
     upToDate = false;
@@ -179,6 +228,12 @@
 <div class="page">
   <div class="column">
   <h1>Settings</h1>
+  {#if loadProblem}
+    <div class="notice trouble" role="alert">
+      <span><strong>Your settings didn't load.</strong> {loadProblem.sentence || asSentence(loadProblem.technical)}</span>
+      <button class="btn" onclick={loadSettings}>Try again</button>
+    </div>
+  {/if}
   {#if settings}
     <section>
       <h2>Appearance</h2>
@@ -233,7 +288,7 @@
           <span class="form-label">Default memory</span>
           <div class="slider">
             <input type="range" min="1024" max="32768" step="512" aria-label="Default memory" bind:value={settings.memoryMb} onchange={save} />
-            <span class="tabular">{(settings.memoryMb / 1024).toFixed(1)} GB</span>
+            <span class="tabular">{number(settings.memoryMb / 1024, 1)} GB</span>
           </div>
         </div>
         <div class="form-row">
@@ -312,6 +367,8 @@
           <div>
             <label class="check top"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark Launcher up to date</label>
             <p class="form-hint">New versions download in the background and install when you close Waymark Launcher. It never restarts during a game.</p>
+            <label class="check top"><input type="checkbox" bind:checked={settings.betaUpdates} disabled={!settings.autoUpdate} onchange={save} /> Get beta versions early</label>
+            <p class="form-hint">Betas get new features a few days before everyone else, and sometimes new bugs. Turn this off and you move to the next full release when it comes out.</p>
             <div class="version">
               <span class="tabular">Version {app.version}</span>
               {#if app.update}
@@ -333,6 +390,17 @@
               <option value={168}>7 days</option>
             </select>
             <p class="form-hint">A mod update won't be offered until it has been out this long, which gives people time to catch malware from a stolen author account.</p>
+          </div>
+        </div>
+        <div class="form-row">
+          <span class="form-label">Help</span>
+          <div>
+            <div class="version">
+              <button class="btn" onclick={copyDiagnostics}>{copiedDiagnostics ? 'Copied' : 'Copy diagnostics'}</button>
+              <button class="btn" onclick={openLogFolder}>Open log folder</button>
+            </div>
+            <p class="form-hint">Diagnostics are the version, your system and the end of Waymark Launcher's own log, with folder names and sign-in tokens taken out. Nothing is sent anywhere by itself.</p>
+            <p class="form-hint">Paste them into a GitHub issue or an email to <span class="selectable">waymarklaunchersupport@proton.me</span></p>
           </div>
         </div>
       </div>
@@ -361,7 +429,7 @@
           <div class="account">
             <span>{item.name}<span class="faint active">{item.kind === 'world' ? `World from ${item.instance}` : item.kind === 'screenshot' ? `Screenshot from ${item.instance}` : 'Instance'}, deleted {timeAgo(item.at)}</span></span>
             <button class="btn" onclick={() => restore(item)}>Restore</button>
-            <button class="btn danger" onclick={() => erase(item)}>Delete now</button>
+            <button class="btn danger" onclick={() => (erasing = item)}>Delete now</button>
           </div>
         {/each}
       </div>
@@ -385,6 +453,25 @@
 
 {#if editingStarters && settings}
   <StarterMods bind:settings onsave={save} onclose={() => (editingStarters = false)} />
+{/if}
+
+{#if erasing}
+  {@const item = erasing}
+  <Modal title="Delete for good" width={420} onclose={() => (erasing = null)}>
+    <p class="erasing name">{item.name}</p>
+    <p class="muted">
+      {item.kind === 'instance'
+        ? "This instance and its worlds will be deleted for good. This can't be undone."
+        : item.kind === 'world'
+          ? "This world will be deleted for good. This can't be undone."
+          : "This screenshot will be deleted for good. This can't be undone."}
+    </p>
+    <div class="buttons">
+      <span class="spacer"></span>
+      <button class="btn" onclick={() => (erasing = null)}>Cancel</button>
+      <button class="btn danger" onclick={() => erase(item)}>Delete for good</button>
+    </div>
+  </Modal>
 {/if}
 
 {#if editing}
@@ -443,4 +530,7 @@
   .legal { margin-top: 4px; }
   .first { margin: 0 0 8px; }
   .lists { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+  .trouble { margin: 8px 0 4px; }
+  .erasing { margin-bottom: 6px; font-weight: 600; overflow-wrap: anywhere; }
+  .color input:focus-visible { outline-offset: -3px; }
 </style>

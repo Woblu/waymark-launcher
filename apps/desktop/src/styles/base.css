@@ -27,12 +27,15 @@ h1 { font-size: var(--text-xl); line-height: 1.15; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
-a { color: var(--accent); }
+a { color: var(--accent-text); }
 
 input, textarea, .selectable { user-select: text; }
 
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Stepped corners clip anything drawn outside the box, so a clipped control, or a
+   control filling a clipped one, draws its focus ring inside its edge instead. */
+.focus-inset:focus-visible { outline-offset: -3px; }
 
 ::selection { background: rgb(239 179 108 / 30%); }
 
@@ -123,6 +126,9 @@ input[type='checkbox']:not(.switch):checked::before, input[type='checkbox']:not(
 input[type='checkbox']:not(.switch):checked::before { mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' shape-rendering='crispEdges'%3E%3Cpath d='M1 5h2v2h2v-2h2v-2h2v-2h2v2h-2v2h-2v2h-2v2h-2v-2h-2v-2h-2z'/%3E%3C/svg%3E") center / 12px no-repeat; }
 input[type='checkbox']:not(.switch):indeterminate::before { mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' shape-rendering='crispEdges'%3E%3Cpath d='M2 5h8v2h-8z'/%3E%3C/svg%3E") center / 12px no-repeat; }
 input[type='checkbox']:disabled { cursor: default; opacity: 0.6; }
+/* The ring sits on the box's own edge, in a color that stands out from what's under it. */
+input[type='checkbox']:focus-visible { outline-offset: -2px; }
+input[type='checkbox']:checked:focus-visible, input[type='checkbox']:indeterminate:focus-visible { outline-color: var(--text); }
 
 /* For on and off rather than ticking things in a list. Square, like a lever in the game. */
 input[type='checkbox'].switch {

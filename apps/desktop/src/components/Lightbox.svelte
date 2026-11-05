@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { ChevronLeft, ChevronRight, ExternalLink, X } from '@lucide/svelte';
   import { openExternal } from '../lib/api';
   import type { Shot } from '../lib/api';
@@ -11,6 +11,12 @@
 
   const shot = $derived(shots[index]);
   const several = $derived(shots.length > 1);
+
+  // Read before anything here takes focus, so closing can put it back on the picture that opened it.
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  onMount(() => () => {
+    if (opener?.isConnected) opener.focus();
+  });
 
   $effect(() => close?.focus());
 

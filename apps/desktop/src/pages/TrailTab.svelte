@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import type { Pending, Waymark } from '../lib/api';
-  import { bytes, timeAgo } from '../lib/format';
+  import { bytes, dateTime, timeAgo } from '../lib/format';
   import { app } from '../lib/state.svelte';
 
   let { id }: { id: string } = $props();
@@ -11,6 +12,7 @@
   let selected = $state<string | null>(null);
   let label = $state('');
   let working = $state(false);
+  let loaded = $state(false);
 
   const entries = $derived([...trail].reverse());
   const chosen = $derived(entries.find((w) => w.id === selected) ?? entries[0]);
@@ -30,9 +32,25 @@
   async function load() {
     try {
       [trail, pending] = await Promise.all([api.trail(id), api.pending(id)]);
+      pickBefore();
     } catch (error) {
       app.fail(error, 'Could not read the waymarks');
     }
+    loaded = true;
+  }
+
+  // Also when the tab was already open as the button was pressed.
+  $effect(() => {
+    if (app.trailPick?.instance === id && trail.length) untrack(pickBefore);
+  });
+
+  /** Arriving from a change's Open Waymarks button selects the waymark before it, the way back. */
+  function pickBefore() {
+    const pick = app.trailPick;
+    if (pick?.instance !== id) return;
+    app.trailPick = null;
+    const at = trail.findIndex((mark) => mark.id === pick.after);
+    if (at > 0) selected = trail[at - 1].id;
   }
 
   $effect(() => {
@@ -77,11 +95,20 @@
 <div class="tab">
   <div class="stream">
     <form class="tools" onsubmit={setWaymark}>
-      <span class="muted truncate state">{changes ? `${changes} ${changes === 1 ? 'change' : 'changes'} since the last waymark` : 'No changes since the last waymark'}</span>
+      <span class="muted truncate state">
+        {changes === 0 ? 'No changes since the last waymark' : changes === 1 ? '1 change since the last waymark' : `${changes} changes since the last waymark`}
+      </span>
       <input class="field" placeholder="Name" aria-label="Waymark name" bind:value={label} />
       <button class="btn" disabled={working || !changes}>Set waymark</button>
     </form>
+    <p class="faint small about">Waymark Launcher sets a waymark whenever mods or config files change, and before each launch. Returning to one puts your mods and settings back as they were. Worlds aren't included.</p>
 
+    {#if loaded && !entries.length}
+      <div class="blank">
+        <h2>No waymarks yet</h2>
+        <p class="muted">The first one is set the next time mods or config files change, or when you press Play. You can also set one now.</p>
+      </div>
+    {:else}
     <div class="columns">
       <span>Waymark</span>
       <span>Files</span>
@@ -102,12 +129,13 @@
         </li>
       {/each}
     </ol>
+    {/if}
   </div>
 
   {#if chosen}
     <aside aria-label="Selected waymark">
       <h2>{chosen.label}</h2>
-      <p class="faint">{new Date(chosen.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+      <p class="faint">{dateTime(chosen.at)}</p>
 
       <dl>
         <dt>Mods</dt><dd>{chosen.mods}</dd>
@@ -143,6 +171,7 @@
   .tools { flex: none; display: flex; align-items: center; gap: 8px; min-height: 64px; padding: 14px 0; }
   .state { flex: 1; }
   .tools .field { width: 180px; }
+  .about { flex: none; max-width: 760px; margin: -6px 0 12px; }
   .columns, .row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 90px 100px;
@@ -179,6 +208,8 @@
   }
   li:first-child .row::before { background: var(--text-2); }
   .row:hover { background-color: var(--selected); }
+  /* The list scrolls, which would cut off a ring drawn outside the row. */
+  .row:focus-visible { outline-offset: -2px; }
   .row:hover::before { background: var(--text-2); }
   .row.chosen { background-color: var(--accent-soft); }
   li .row.chosen::before { background: var(--accent); }

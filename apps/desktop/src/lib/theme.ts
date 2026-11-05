@@ -68,6 +68,7 @@ export function themeTokens({ base, accent }: ThemeColors): Record<string, strin
     '--text-2': toHex(mix(text, background, 0.27)),
     '--text-3': toHex(mix(text, background, 0.45)),
     '--accent': accent,
+    '--accent-text': accent,
     '--accent-hover': toHex(mix(highlight, lift, 0.2)),
     '--accent-soft': clear(highlight, 13),
     '--on-accent': brightness(highlight) > 0.3 ? '#1c1206' : '#ffffff',

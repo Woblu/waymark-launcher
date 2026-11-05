@@ -71,10 +71,11 @@
   <ul>
     {#each shown as shot, index (shot.instance + shot.file)}
       <li>
-        <button class="picture" aria-label="View {shot.file}" onclick={() => (viewing = index)}>
-          <img src={source(shot)} alt="" loading="lazy" />
+        <!-- Full pictures, so they load only near the screen, decode off the main thread and keep a set size meanwhile. -->
+        <button class="picture focus-inset" aria-label="View {shot.file}" onclick={() => (viewing = index)}>
+          <img src={source(shot)} alt="" width="480" height="270" loading="lazy" decoding="async" />
         </button>
-        <button class="remove" aria-label="Delete {shot.file}" title="Delete" onclick={() => remove(shot)}><Trash2 size={14} /></button>
+        <button class="remove focus-inset" aria-label="Delete {shot.file}" title="Delete" onclick={() => remove(shot)}><Trash2 size={14} /></button>
         <p class="truncate small">{shot.instanceName}<span class="faint"> · {timeAgo(new Date(shot.modified * 1000).toISOString())}</span></p>
       </li>
     {/each}
