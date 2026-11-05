@@ -8,7 +8,12 @@
     <meta name="description" content="Waymark Launcher is a Minecraft: Java Edition launcher that keeps a history of every instance, so a bad update can be undone." />
     <meta property="og:title" content="Waymark Launcher" />
     <meta property="og:description" content="A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone." />
-    <meta property="og:image" content="/assets/app-library.webp" />
+    <meta property="og:url" content="https://waymark-launcher.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://waymark-launcher.vercel.app/assets/app-library.webp" />
+    <meta property="og:image:width" content="1980" />
+    <meta property="og:image:height" content="1260" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/assets/favicon.png" />
     <link rel="preload" href="/assets/fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/styles.css" />
@@ -20,8 +25,12 @@
       <header>
         <h1>Waymark Launcher</h1>
         <p class="lede">A launcher for Minecraft: Java Edition that keeps a history of every instance, so a bad update can be undone. It runs every version back to the first build from 2009, and it searches five mod sites from one page.</p>
-        <p class="note"><a href="/download">Download Waymark Launcher for Windows</a>, about 6 MB. It updates itself after that.</p>
-        <p class="note">Sign in with the Microsoft account that owns Minecraft: Java Edition and play. Windows installers are to be signed by the SignPath Foundation, which provides free code signing through SignPath.io. Until then Windows warns about an unknown publisher, so choose More info, then Run anyway. See the <a href="/code-signing">code signing policy</a>.</p>
+        <div class="get">
+          <a class="download" href="/download">Download for Windows</a>
+          <p>64-bit installer, about 6 MB. It updates itself after that.</p>
+        </div>
+        <p class="note">macOS (Apple silicon and Intel) and Linux (AppImage and .deb) builds are on the <a href="https://github.com/Woblu/waymark-launcher/releases/latest">latest release</a>, along with a <code>SHA256SUMS.txt</code> to check any download against. They haven't been tested on real machines yet.</p>
+        <p class="note">You need the Microsoft account that owns Minecraft: Java Edition. The installer isn't code-signed yet, so Windows shows &ldquo;Windows protected your PC&rdquo; the first time: choose More info, then Run anyway. Signing through the SignPath Foundation has been applied for; the <a href="/code-signing">code signing policy</a> explains it.</p>
       </header>
 
       <figure class="wide">
@@ -147,7 +156,7 @@
               <tr><th scope="row">Mods</th><td>Modrinth and CurseForge. If a CurseForge author has blocked third-party downloads, Waymark Launcher sends you to their page.</td></tr>
               <tr><th scope="row">Modpacks</th><td><code>.mrpack</code>, CurseForge <code>.zip</code>, Feed The Beast, ATLauncher and Technic</td></tr>
               <tr><th scope="row">Java</th><td>Mojang's own runtimes, installed automatically for each version</td></tr>
-              <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, the CurseForge app and the Modrinth App. Importing makes a copy and leaves the original alone.</td></tr>
+              <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, ATLauncher, GDLauncher, the CurseForge app and the Modrinth App. Importing makes a copy and leaves the original alone.</td></tr>
               <tr><th scope="row">Platform</th><td>Windows. Builds for macOS and Linux are published too, but they haven't been tested on real machines yet.</td></tr>
               <tr><th scope="row">Discord</th><td>Rich presence shows what you're playing, once you turn it on</td></tr>
               <tr><th scope="row">Languages</th><td>English, Spanish, Portuguese, French, German, Russian and Chinese</td></tr>

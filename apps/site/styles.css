@@ -71,6 +71,24 @@ h1 {
 
 .note { margin: 16px 0 0; color: var(--muted); font-size: 16px; }
 
+.get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 28px;
+}
+.get p { margin: 0; color: var(--muted); font-size: 16px; }
+.download {
+  display: inline-block;
+  padding: 12px 22px;
+  background: var(--link);
+  color: var(--page);
+  font-weight: 600;
+  text-decoration: none;
+}
+.download:hover { background: var(--text); color: var(--page); }
+
 figure { margin: 0; }
 figure img { border: 1px solid var(--rule); }
 figcaption { margin-top: 10px; color: var(--muted); font-size: 14px; }
