@@ -1,7 +1,7 @@
 {
   "name": "waymark-desktop",
   "private": true,
-  "version": "0.3.7",
+  "version": "0.4.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
