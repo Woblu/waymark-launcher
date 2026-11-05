@@ -1,4 +1,4 @@
-# Releasing Waymark
+# Releasing Waymark Launcher
 
 ## The update signing key
 
@@ -28,7 +28,7 @@ The app checks `https://waymark-launcher.vercel.app/updates/latest.json`, and `a
 
 ## How updates reach people
 
-The app checks 20 seconds after it starts and every 6 hours after that, unless the player has turned off **Keep Waymark up to date** in Settings. A newer version downloads in the background, and its signature is checked before it's kept and again before it installs. It then installs silently when the app closes, or straight away from **Restart to update**.
+The app checks 20 seconds after it starts and every 6 hours after that, unless the player has turned off **Keep Waymark Launcher up to date** in Settings. A newer version downloads in the background, and its signature is checked before it's kept and again before it installs. It then installs silently when the app closes, or straight away from **Restart to update**.
 
 An update never installs while a game or a hosted server is running, because the installer has to stop the app, and the app is what watches the game. All of this is in `apps/desktop/src-tauri/src/updates.rs`. The window can only ask for an install, and has no access to the updater itself.
 
@@ -40,7 +40,11 @@ An update never installs while a game or a hosted server is running, because the
 
 If BetaCraft has added builds or LegacyFix has a new release, run `node tools/old-versions.mjs <cache folder>` first, set the `LEGACYFIX` version at the top if it changed, and start the new builds before shipping. It rebuilds `crates/waymark-core/data/old-versions.json` and fetches one file at a time, so keep its cache folder between runs.
 
-The site's Download button needs no change for a new version. `/download` in `apps/site/vercel.json` points at `releases/latest/download/Waymark_x64-setup.exe`, and the release workflow adds a copy of the Windows installer under that name to every release, so the button follows whichever release was published last. Deploy the site only when its pages change. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
+The site's Download button needs no change for a new version. `/download` in `apps/site/vercel.json` points at `releases/latest/download/Waymark-Launcher_x64-setup.exe`, and the release workflow adds a copy of the Windows installer under that name to every release, so the button follows whichever release was published last. It also adds one as `Waymark_x64-setup.exe`, the name from before the rename, for links that are already out there. Deploy the site only when its pages change. To stop a bad release, publish a fixed one with a higher version. Deleting the release only stops new downloads.
+
+## The rename
+
+The app was called Waymark until 0.3.7. Tauri's Windows installer keys its folder, its Installed apps entry and its shortcuts to `productName`, so `apps/desktop/src-tauri/windows/installer-hooks.nsh` takes over an install made under the old name: the update goes into the same folder, and the entry and shortcuts move to the new name. Without it, an update would install a second copy, and the old Start menu shortcut would keep opening the old version. The Linux package says it replaces, conflicts with and provides `waymark` for the same reason. The data folder (`DATA_DIR_NAME`) and the keychain service stay as they were, so nobody loses instances or their sign-in. Keep all of this for as long as anyone might update from 0.3.6 or older.
 
 ## Signing the installers
 
@@ -68,14 +72,14 @@ This runs inside the build through `bundle.windows.signCommand`, so the app and 
 8. Set `signCommand` for CI and install `artifact-signing-cli` in the Windows release job:
 
 ```json
-"signCommand": "artifact-signing-cli -e <endpoint> -a <account> -c <profile> -d Waymark %1"
+"signCommand": "artifact-signing-cli -e <endpoint> -a <account> -c <profile> -d \"Waymark Launcher\" %1"
 ```
 
 Certificates last three days, and the signature's timestamp keeps it valid after that. Signing doesn't remove SmartScreen warnings straight away, because reputation builds as people download the installer.
 
 ### Windows, free: SignPath Foundation
 
-The only free route for a directly downloaded installer. Waymark's public source and GPL license already meet the license terms. Still needed:
+The only free route for a directly downloaded installer. Waymark Launcher's public source and GPL license already meet the license terms. Still needed:
 
 - A published release in the form you want signed, plus a verifiable reputation. Approval is at their discretion and no review time is published, so it can be refused.
 - A code signing policy page on the website, with the wording and team roles from [their terms](https://signpath.org/terms), and a privacy statement.

@@ -454,7 +454,7 @@ impl Core {
         let raw: Value = self.net.json(&format!("{API}/project/{id}")).await?;
         let server = read_server(&raw).ok_or_else(|| {
             Error::Other(
-                "this server can't be joined from Waymark, because it doesn't list a Java address"
+                "this server can't be joined from Waymark Launcher, because it doesn't list a Java address"
                     .into(),
             )
         })?;

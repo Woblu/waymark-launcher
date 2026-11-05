@@ -144,7 +144,7 @@
   </Modal>
 {:else if entry && dialog.kind === 'share'}
   <Modal title="Share {entry.name}" width={520} onclose={close}>
-    <p class="muted intro">Send this code to a friend. They paste it under Import when adding an instance, and Waymark downloads the same versions of everything from the stores.</p>
+    <p class="muted intro">Send this code to a friend. They paste it under Import when adding an instance, and Waymark Launcher downloads the same versions of everything from the stores.</p>
     {#if share}
       <textarea class="field mono code" readonly rows="5" aria-label="Share code" value={share.code}></textarea>
       {#if share.leftOut.length}

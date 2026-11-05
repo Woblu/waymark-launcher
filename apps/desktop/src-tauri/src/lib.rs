@@ -1285,10 +1285,10 @@ pub fn run() {
             updates::watch(app.handle().clone());
             watch_friends(app.handle().clone());
 
-            let show = MenuItem::with_id(app, "show", "Show Waymark", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit Waymark", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "Show Waymark Launcher", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Waymark Launcher", true, None::<&str>)?;
             let mut tray = TrayIconBuilder::new()
-                .tooltip("Waymark")
+                .tooltip("Waymark Launcher")
                 .menu(&Menu::with_items(app, &[&show, &quit])?)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -1447,7 +1447,7 @@ pub fn run() {
             reclaim_space,
         ])
         .build(tauri::generate_context!())
-        .expect("error while starting Waymark");
+        .expect("error while starting Waymark Launcher");
 
     app.run(|app, event| {
         match event {

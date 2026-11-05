@@ -4,7 +4,7 @@
   import Art from '../components/Art.svelte';
   import JoinServer from '../components/JoinServer.svelte';
   import Pager from '../components/Pager.svelte';
-  import { api } from '../lib/api';
+  import { api, inTauri } from '../lib/api';
   import type { KeptServer, KnownServer, PublicServer, SearchCategory, ServerKind, ServerSort, ServerStatus } from '../lib/api';
   import { titleCase } from '../lib/format';
   import { GROUP_NAMES, GROUP_ORDER, LANGUAGE_IDS, REGION_IDS, categoryName, contentLine, languageName, linkedInstance, playersLine, regionName, serverPicture } from '../lib/servers';
@@ -67,6 +67,8 @@
       });
       servers = found.servers;
       total = found.total;
+      // The browser preview opens the first server's page for screenshots.
+      if (!inTauri && !opened && location.hash === '#server') opened = servers[0] ?? null;
       problem = '';
       results?.scrollTo({ top: 0 });
     } catch (error) {

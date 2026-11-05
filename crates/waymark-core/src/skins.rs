@@ -356,7 +356,7 @@ impl Core {
         }
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::Auth(
-                "Minecraft asked Waymark to slow down. Try again in a minute.".into(),
+                "Minecraft asked Waymark Launcher to slow down. Try again in a minute.".into(),
             ));
         }
         let profile = secured(response.error_for_status()?.json().await?);

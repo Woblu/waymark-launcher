@@ -66,7 +66,7 @@
 </script>
 
 <header data-tauri-drag-region>
-  <span class="brand" data-tauri-drag-region><Logo size={24} /><span class="word" data-tauri-drag-region>Waymark</span></span>
+  <span class="brand" data-tauri-drag-region><Logo size={24} /><span class="word" data-tauri-drag-region>Waymark Launcher</span></span>
   <button class="back" class:shown={app.canGoBack} aria-label="Back" title="Back" tabindex={app.canGoBack ? 0 : -1} onclick={() => app.back()}><ArrowLeft size={18} /></button>
   <nav class="main-nav" aria-label="Main">
     {#each VIEWS as view (view.id)}
@@ -76,7 +76,7 @@
     {/each}
   </nav>
   <div class="right" data-tauri-drag-region>
-    <button class="you" onclick={() => (account ? app.go('settings') : (app.dialog = 'signin'))}>
+    <button class="you" title={account ? account.name : 'Sign in'} aria-label={account ? account.name : 'Sign in'} onclick={() => (account ? app.go('settings') : (app.dialog = 'signin'))}>
       {#if head}<img class="face" src={head} alt="" />{:else}<UserRound size={17} />{/if}
       <span class="truncate name">{account ? account.name : 'Sign in'}</span>
     </button>
@@ -115,6 +115,8 @@
   .you { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 200px; height: 34px; padding: 0 10px; color: var(--text-2); font-weight: 600; }
   .you:hover { color: var(--text); }
   .you img { display: block; width: 22px; height: 22px; image-rendering: pixelated; }
+  /* A narrow window keeps the face and drops the name, instead of cutting it down to a letter. */
+  @media (max-width: 1180px) { .you .name { display: none; } }
   .settings { display: grid; place-items: center; width: 34px; height: 34px; color: var(--text-2); }
   .settings:hover { color: var(--text); }
   .settings.active { color: var(--accent); }

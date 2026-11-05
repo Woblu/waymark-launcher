@@ -89,7 +89,7 @@
 </script>
 
 <Modal title="Starter mods" width={600} {onclose}>
-  <p class="muted intro">Added to each new instance on a Minecraft version. Waymark picks the build for the instance's mod loader and leaves out anything that doesn't have one.</p>
+  <p class="muted intro">Added to each new instance on a Minecraft version. Waymark Launcher picks the build for the instance's mod loader and leaves out anything that doesn't have one.</p>
   <div class="form-row">
     <label for="starter-version">Minecraft version</label>
     <select id="starter-version" class="field" bind:value={version}>

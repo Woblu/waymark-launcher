@@ -117,7 +117,7 @@ fn plain(text: &str) -> bool {
 }
 
 fn decode(code: &str) -> Result<SharedInstance> {
-    let wrong = || Error::Other("that isn't a Waymark share code".into());
+    let wrong = || Error::Other("that isn't a Waymark Launcher share code".into());
     let body = code.trim().strip_prefix(PREFIX).ok_or_else(wrong)?;
     let packed = URL_SAFE_NO_PAD.decode(body).map_err(|_| wrong())?;
     let mut text = Vec::new();

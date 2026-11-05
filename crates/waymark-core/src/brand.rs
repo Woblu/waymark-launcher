@@ -1,12 +1,17 @@
 //! Every name the product answers to, in one place.
 
-pub const PRODUCT_NAME: &str = "Waymark";
+pub const PRODUCT_NAME: &str = "Waymark Launcher";
+/// Still "Waymark" from before the app was renamed, so players keep their instances.
+/// The keychain service stays the same for the same reason: changing either one
+/// would leave every existing install with no data and no sign-in.
 pub const DATA_DIR_NAME: &str = "Waymark";
 pub const KEYCHAIN_SERVICE: &str = "app.waymark.launcher";
 pub const USER_AGENT: &str = concat!("waymark-launcher/", env!("CARGO_PKG_VERSION"));
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The Discord application rich presence shows as, named "Waymark" on Discord.
+/// The Discord application rich presence shows as. Discord takes the name it
+/// shows ("Playing ...") and the small icon in voice channels from the
+/// application's own settings in the Developer Portal, not from this app.
 /// An application ID is public by design. An empty one turns rich presence off.
 pub const DISCORD_CLIENT_ID: &str = "1567673605003944039";
 

@@ -212,15 +212,13 @@
     font-weight: 600;
   }
   .back:hover { background: rgb(8 10 14 / 85%); }
+  /* The header sits wholly below the banner, so a busy picture never runs behind the name or the buttons. */
   .head {
-    position: relative;
-    z-index: 1;
     display: grid;
     grid-template-columns: 84px minmax(0, 1fr) var(--side);
     gap: 16px;
-    align-items: end;
-    margin-top: -44px;
-    padding: 0 var(--gutter) 14px;
+    align-items: start;
+    padding: 18px var(--gutter);
   }
   .icon {
     display: grid;

@@ -167,7 +167,8 @@ impl ConfigMod {
 pub fn game_of(config: &Config) -> Result<(String, Loader)> {
     let Some(loader) = &config.loader else {
         return Err(Error::Other(
-            "this version patches the game's own files, which Waymark doesn't support yet".into(),
+            "this version patches the game's own files, which Waymark Launcher doesn't support yet"
+                .into(),
         ));
     };
     let kind = match loader.kind.as_str() {
@@ -177,7 +178,7 @@ pub fn game_of(config: &Config) -> Result<(String, Loader)> {
         "quilt" => LoaderKind::Quilt,
         other => {
             return Err(Error::Other(format!(
-                "this pack uses {other}, which Waymark doesn't support"
+                "this pack uses {other}, which Waymark Launcher doesn't support"
             )));
         }
     };

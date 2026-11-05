@@ -24,7 +24,7 @@
 
 <Modal title="Files to download" width={520} {onclose}>
   <p class="muted intro">
-    The authors of these mods only allow downloads from CurseForge. Open each page and download the file. Waymark watches your Downloads folder and installs them as they arrive.
+    The authors of these mods only allow downloads from CurseForge. Open each page and download the file. Waymark Launcher watches your Downloads folder and installs them as they arrive.
   </p>
   <ul>
     {#each files as file (file.file)}

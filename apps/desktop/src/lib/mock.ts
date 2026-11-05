@@ -197,6 +197,7 @@ export function applyPreview(app: typeof App) {
   const hash = location.hash.slice(1);
   if (['mods', 'bisect', 'trail', 'worlds', 'instance-settings', 'logs'].includes(hash)) app.selected = 'emberfall';
   if (hash === 'discover' || hash === 'servers' || hash === 'settings' || hash === 'skins' || hash === 'screenshots') app.go(hash);
+  if (hash === 'server') app.go('servers');
   if (hash === 'mods' || hash === 'bisect') app.tab = 'mods';
   if (hash === 'trail') app.tab = 'trail';
   if (hash === 'worlds') app.tab = 'worlds';
@@ -353,7 +354,7 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
       ];
     case 'public_server': {
       const server = SAMPLE_SERVERS.find((item) => item.id === args?.id) ?? SAMPLE_SERVERS[0];
-      return { ...server, description: `## Welcome to ${server.name}\n\nJoin from Waymark and you land straight in the spawn town. Be kind, build big, and read the rules at spawn.`, gallery: [], links: [{ label: 'Discord', url: 'https://discord.gg/example' }], followers: 1260, page: `https://modrinth.com/server/${server.slug}`, instance: null };
+      return { ...server, description: `## Welcome to ${server.name}\n\nJoin from Waymark Launcher and you land straight in the spawn town. Be kind, build big, and read the rules at spawn.`, gallery: [], links: [{ label: 'Discord', url: 'https://discord.gg/example' }], followers: 1260, page: `https://modrinth.com/server/${server.slug}`, instance: null };
     }
     case 'kept_servers':
       return mockKept;

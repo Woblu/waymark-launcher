@@ -1,4 +1,4 @@
-# Waymark
+# Waymark Launcher
 
 A desktop launcher for Minecraft: Java Edition with an undo button. Every change to an instance leaves a waymark you can return to, so a bad mod update can never cost you your setup.
 
@@ -70,7 +70,7 @@ See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing
 - **Pack files and share codes are untrusted.** Paths are checked with `safe_relative`, download hosts against an allow list, and share codes only carry store ids. Launch commands come from the player's own settings and can never arrive in a pack or a code.
 - **Nothing is deleted straight away.** Instances and worlds go to the trash for 30 days, and anything that collects garbage has to keep what's in there.
 - **Store descriptions are untrusted.** Anyone can publish a project, so bodies go through the allow list in `apps/desktop/src/lib/rich.ts`, and the end-to-end test attacks it. Don't widen that list or the security policy without adding an attack to the test.
-- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first. Friends are opt-in: nothing goes to the friends server unless the player has signed in to a Waymark account. Discord rich presence is off until the player turns it on, and only ever names a server that came from the server list.
+- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first. Friends are opt-in: nothing goes to the friends server unless the player has signed in to a Waymark Launcher account. Discord rich presence is off until the player turns it on, and only ever names a server that came from the server list.
 - **Friends can't touch the database.** Tables in `supabase/migrations` have no policies, so the app can only call functions that act as the signed-in player. Don't add a policy or a public function without a reason, and keep the Minecraft sign-in out of it.
 - **Tests stay out of sight.** Anything that opens a game or the app runs on a hidden desktop at low priority, because this is someone's gaming PC.
 - **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
@@ -86,8 +86,8 @@ Forks need their own identity:
 
 ## Thanks
 
-Every version before 1.6 exists here because of other people's work. [Omniarchive](https://omniarchive.net/) recovered most of these builds, [BetaCraft](https://betacraft.uk/) lists them, and BetaCraft's [LegacyFix](https://github.com/betacraftuk/legacyfix) (GPL 3.0) brings back what they lost. [Bouncy Castle](https://www.bouncycastle.org/) lets LegacyFix make secure connections on old Java. All of it is downloaded when needed, not shipped in Waymark.
+Every version before 1.6 exists here because of other people's work. [Omniarchive](https://omniarchive.net/) recovered most of these builds, [BetaCraft](https://betacraft.uk/) lists them, and BetaCraft's [LegacyFix](https://github.com/betacraftuk/legacyfix) (GPL 3.0) brings back what they lost. [Bouncy Castle](https://www.bouncycastle.org/) lets LegacyFix make secure connections on old Java. All of it is downloaded when needed, not shipped in Waymark Launcher.
 
 ## License
 
-Waymark is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt), and so is the Monocraft font used for skin name tags ([license](apps/desktop/public/licenses/monocraft-OFL.txt)).
+Waymark Launcher is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt), and so is the Monocraft font used for skin name tags ([license](apps/desktop/public/licenses/monocraft-OFL.txt)).

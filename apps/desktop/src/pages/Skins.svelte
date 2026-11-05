@@ -194,7 +194,7 @@
       <h1>Skins</h1>
       <SkinModel skin={showing.url} variant={showing.variant} cape={wornCape?.url} {name} />
       {#if unreachable && signedIn && !selected}
-        <p class="faint small unreachable">Could not reach Minecraft, so this is the last skin Waymark saw. <span class="selectable">{unreachable}</span></p>
+        <p class="faint small unreachable">Could not reach Minecraft, so this is the last skin Waymark Launcher saw. <span class="selectable">{unreachable}</span></p>
       {/if}
       <div class="actions">
         {#if pending}

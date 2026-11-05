@@ -244,7 +244,7 @@
           <span class="form-label">While playing</span>
           <div>
             <label class="check"><input type="checkbox" bind:checked={settings.closeWhilePlaying} onchange={save} /> Close the window to free memory for the game</label>
-            <p class="form-hint">The window comes back when the game exits. While it's closed, you can reopen it from the Waymark icon in the system tray.</p>
+            <p class="form-hint">The window comes back when the game exits. While it's closed, you can reopen it from the Waymark Launcher icon in the system tray.</p>
           </div>
         </div>
         {#if discordAvailable}
@@ -252,7 +252,7 @@
             <span class="form-label">Discord</span>
             <div>
               <label class="check"><input type="checkbox" bind:checked={settings.discordPresence} onchange={save} /> Show what you're playing on your Discord profile</label>
-              <p class="form-hint">Your Discord friends see the instance's name, its Minecraft version, and the server's name when it's from the server list. Waymark tells the Discord app on this computer, and never shares a private server's address.</p>
+              <p class="form-hint">Your Discord friends see the instance's name, its Minecraft version, and the server's name when it's from the server list. Waymark Launcher tells the Discord app on this computer, and never shares a private server's address.</p>
             </div>
           </div>
         {/if}
@@ -304,14 +304,14 @@
           <span class="form-label">Updates</span>
           <div>
             <label class="check top"><input type="checkbox" bind:checked={settings.checkUpdates} onchange={save} /> Check that the game still starts after an update</label>
-            <p class="form-hint">Waymark starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
+            <p class="form-hint">Waymark Launcher starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
           </div>
         </div>
         <div class="form-row">
-          <span class="form-label">Waymark</span>
+          <span class="form-label">Waymark Launcher</span>
           <div>
-            <label class="check top"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark up to date</label>
-            <p class="form-hint">New versions download in the background and install when you close Waymark. It never restarts during a game.</p>
+            <label class="check top"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark Launcher up to date</label>
+            <p class="form-hint">New versions download in the background and install when you close Waymark Launcher. It never restarts during a game.</p>
             <div class="version">
               <span class="tabular">Version {app.version}</span>
               {#if app.update}
@@ -371,7 +371,7 @@
   <section>
     <h2>About</h2>
     <div class="body">
-      <p>Waymark {app.version}, made by Woblu. Support: waymarklaunchersupport@proton.me</p>
+      <p>Waymark Launcher {app.version}, made by Woblu. Support: waymarklaunchersupport@proton.me</p>
       <p class="faint legal">Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</p>
       <p class="faint legal">Skin name tags use Monocraft by Idrees Hassan, under the SIL Open Font License.</p>
     </div>

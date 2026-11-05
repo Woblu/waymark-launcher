@@ -93,7 +93,7 @@
       {#if !status.ready}
         <div class="intro">
           <strong>Host a server from this computer</strong>
-          <p class="muted">Friends can join your world while the server is running. Waymark builds it from this instance and leaves out mods that only work on the client.</p>
+          <p class="muted">Friends can join your world while the server is running. Waymark Launcher builds it from this instance and leaves out mods that only work on the client.</p>
         </div>
         <button class="btn primary" disabled={busy} onclick={prepare}>{busy ? 'Setting up' : 'Set up a server'}</button>
       {:else}

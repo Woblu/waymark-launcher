@@ -35,7 +35,7 @@
 
 <Modal title="Sign in with Microsoft" onclose={close}>
   {#if failure?.code === 'app_not_approved'}
-    <p>Sign-in isn't available yet. Waymark is waiting on Mojang to approve it, and there's nothing wrong with your account.</p>
+    <p>Sign-in isn't available yet. Waymark Launcher is waiting on Mojang to approve it, and there's nothing wrong with your account.</p>
   {:else if failure?.code === 'not_owned'}
     <p>This Microsoft account doesn't own Minecraft: Java Edition.</p>
     <div class="actions"><button class="btn" onclick={() => openExternal('https://www.minecraft.net/store/minecraft-java-bedrock-edition-pc')}>Open the Minecraft store</button></div>

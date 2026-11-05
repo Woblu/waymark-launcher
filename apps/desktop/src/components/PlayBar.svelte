@@ -56,7 +56,7 @@
       </div>
     {/each}
     {#if app.update}
-      <button class="btn" disabled={playing} title={playing ? 'After your game closes' : `Installs Waymark ${app.update}`} onclick={() => app.installUpdate()}>Restart to update</button>
+      <button class="btn" disabled={playing} title={playing ? 'After your game closes' : `Installs Waymark Launcher ${app.update}`} onclick={() => app.installUpdate()}>Restart to update</button>
     {/if}
   </div>
 

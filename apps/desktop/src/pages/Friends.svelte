@@ -185,7 +185,7 @@
   {#if !app.friendsAvailable}
     <div class="blank">
       <h2>Friends aren't available yet</h2>
-      <p class="muted">This copy of Waymark isn't connected to the friends server.</p>
+      <p class="muted">This copy of Waymark Launcher isn't connected to the friends server.</p>
     </div>
   {:else if !app.friendAccount}
     <div class="entry">
@@ -237,7 +237,7 @@
         {#if !overview.friends.length && !overview.incoming.length && !overview.outgoing.length}
           <div class="blank">
             <h2>No friends yet</h2>
-            <p class="muted">Add someone by their Waymark username to see when they're playing and send them instances.</p>
+            <p class="muted">Add someone by their Waymark Launcher username to see when they're playing and send them instances.</p>
           </div>
         {/if}
       </div>

@@ -57,14 +57,15 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: Waymark ${{ github.ref_name }}
+          releaseName: Waymark Launcher ${{ github.ref_name }}
           releaseDraft: true
           includeUpdaterJson: true
           args: --bundles ${{ matrix.bundles }}${{ matrix.target && format(' --target {0}', matrix.target) || '' }}
 
-      # The site's Download button points at releases/latest/download/Waymark_x64-setup.exe,
+      # The site's Download button points at releases/latest/download/Waymark-Launcher_x64-setup.exe,
       # so every release carries a copy of the installer under that name and the site never
-      # needs changing for a new version. Once installers are code signed, copy the signed one.
+      # needs changing for a new version. Waymark_x64-setup.exe is the name from before the
+      # rename, kept for links already out there. Once installers are code signed, copy the signed one.
       - name: Add the installer under a name that stays the same
         if: runner.os == 'Windows'
         shell: pwsh
@@ -73,5 +74,6 @@ jobs:
         run: |
           $installer = @(Get-ChildItem target/release/bundle/nsis -Filter '*_x64-setup.exe')
           if ($installer.Count -ne 1) { throw "Expected one installer, found $($installer.Count)" }
+          Copy-Item $installer[0].FullName Waymark-Launcher_x64-setup.exe
           Copy-Item $installer[0].FullName Waymark_x64-setup.exe
-          gh release upload '${{ github.ref_name }}' Waymark_x64-setup.exe --clobber
+          gh release upload '${{ github.ref_name }}' Waymark-Launcher_x64-setup.exe Waymark_x64-setup.exe --clobber

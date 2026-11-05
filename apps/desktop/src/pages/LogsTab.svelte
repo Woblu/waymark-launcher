@@ -98,7 +98,7 @@
 
 {#if sharing}
   <Modal title="Share this log" width={440} onclose={() => (sharing = false)}>
-    <p class="muted">This uploads the log to mclo.gs, and anyone with the link can read it. Waymark removes your folder names and account tokens first, but other details from your game can still be in there.</p>
+    <p class="muted">This uploads the log to mclo.gs, and anyone with the link can read it. Waymark Launcher removes your folder names and account tokens first, but other details from your game can still be in there.</p>
     <div class="buttons">
       <button class="btn" onclick={() => (sharing = false)}>Cancel</button>
       <button class="btn primary" disabled={uploading} onclick={upload}>{uploading ? 'Uploading' : 'Upload'}</button>

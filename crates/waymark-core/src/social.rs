@@ -201,7 +201,9 @@ impl Core {
 
     async fn call_value(&self, function: &str, arguments: Value) -> Result<Value> {
         let Some(login) = self.login().await? else {
-            return Err(Error::Auth("Sign in to your Waymark account first".into()));
+            return Err(Error::Auth(
+                "Sign in to your Waymark Launcher account first".into(),
+            ));
         };
         let response = self
             .net

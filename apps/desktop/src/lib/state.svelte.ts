@@ -373,10 +373,10 @@ class AppState {
     const name = this.entry(id)?.name ?? 'That instance';
     try {
       const check = await api.checkStart(id);
-      if (check.result === 'passed') this.toast('good', `${name} still starts`, 'Waymark tried the update and it loads.');
+      if (check.result === 'passed') this.toast('good', `${name} still starts`, 'Waymark Launcher tried the update and it loads.');
       else if (check.result === 'unclear') this.toast('info', `${name} took too long to check`, 'The update stayed. You can undo it from Waymarks.');
       else if (check.result === 'undone') {
-        this.toast('bad', `That update stopped ${name} from starting`, `Waymark put it back the way it was. ${check.reason}`);
+        this.toast('bad', `That update stopped ${name} from starting`, `Waymark Launcher put it back the way it was. ${check.reason}`);
         this.contentTick++;
         await this.refresh();
       }
@@ -465,7 +465,7 @@ class AppState {
       const code = (error as ApiError)?.code;
       if (code === 'sign_in_required') this.dialog = 'signin';
       else if (code === 'app_not_approved') {
-        this.toast('info', 'Sign-in is not available yet', 'Waymark is waiting on Mojang to approve it for Minecraft sign-in.');
+        this.toast('info', 'Sign-in is not available yet', 'Waymark Launcher is waiting on Mojang to approve it for Minecraft sign-in.');
       } else this.fail(error, 'The game could not start');
     }
   }

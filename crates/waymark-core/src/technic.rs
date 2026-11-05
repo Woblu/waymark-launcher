@@ -503,7 +503,7 @@ fn profile_minecraft(file: &VersionFile) -> Option<String> {
 /// What a pack gets told when its game jar is more than a loader.
 pub fn patches_the_game(title: &str) -> Error {
     Error::Other(format!(
-        "{title} patches the game's own files in a way Waymark doesn't support yet"
+        "{title} patches the game's own files in a way Waymark Launcher doesn't support yet"
     ))
 }
 
@@ -534,7 +534,7 @@ pub fn game_of(title: &str, stated: Option<&str>, bin: &Bin) -> Result<(String, 
             .is_none_or(|main| main.starts_with("net.minecraft.client."));
         if !vanilla {
             return Err(Error::Other(format!(
-                "{title} uses a loader Waymark doesn't recognise"
+                "{title} uses a loader Waymark Launcher doesn't recognise"
             )));
         }
     }
