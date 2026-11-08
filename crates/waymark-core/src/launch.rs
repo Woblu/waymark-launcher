@@ -41,6 +41,9 @@ const GC_ARGS: [&str; 6] = [
     "-XX:G1HeapRegionSize=32M",
 ];
 
+/// How Toolscreen is told the Minecraft version when `--version` names a loader.
+const TOOLSCREEN_VERSION: &str = "-Dtoolscreen.minecraftVersion=";
+
 fn classpath(paths: &Paths, prepared: &Prepared) -> String {
     let libraries = prepared
         .meta
@@ -303,6 +306,16 @@ pub fn build_arguments(
         format!("-Xmx{memory_mb}M"),
     ];
     args.extend(GC_ARGS.iter().map(ToString::to_string));
+    // Toolscreen reads the game version from `--version`, which for a loader is its
+    // profile id, like fabric-loader-0.16.14-1.16.1, and turns off resizing when it
+    // can't read one. It also reads this property, and finds it first.
+    if !instance
+        .jvm_args
+        .iter()
+        .any(|arg| arg.starts_with(TOOLSCREEN_VERSION))
+    {
+        args.push(format!("{TOOLSCREEN_VERSION}{}", instance.minecraft));
+    }
     args.extend(instance.jvm_args.iter().cloned());
 
     let declared = args.len();
@@ -867,6 +880,38 @@ mod tests {
         assert!(args.iter().any(|a| a == "-Dfabric.gameVersion=1.8.9"));
         assert!(args.iter().any(|a| a == "-cp"));
         assert!(args.ends_with(&["--username".to_string(), "Steve".to_string()]));
+    }
+
+    /// Toolscreen can't read a version out of a loader's id, and without one it
+    /// turns off resizing, so it's told the Minecraft version before `--version`.
+    #[test]
+    fn toolscreen_is_told_the_minecraft_version_of_a_loader_instance() {
+        let meta = VersionMeta {
+            main_class: Some("net.fabricmc.loader.impl.launch.knot.KnotClient".into()),
+            minecraft_arguments: Some("--version ${version_name}".into()),
+            ..VersionMeta::default()
+        };
+        let (paths, mut instance, prepared) = fixture(meta);
+        instance.minecraft = "1.16.1".into();
+        instance.version_id = "fabric-loader-0.16.14-1.16.1".into();
+
+        let args = build_arguments(&paths, &instance, &prepared, &session(), 2048).unwrap();
+        let told = args
+            .iter()
+            .position(|a| a == "-Dtoolscreen.minecraftVersion=1.16.1")
+            .expect("the property is passed");
+        let version = args.iter().position(|a| a == "--version").unwrap();
+        assert!(told < version);
+        assert_eq!(args[version + 1], "fabric-loader-0.16.14-1.16.1");
+
+        // A version the player set themselves is the only one passed.
+        instance.jvm_args = vec!["-Dtoolscreen.minecraftVersion=1.16.5".into()];
+        let args = build_arguments(&paths, &instance, &prepared, &session(), 2048).unwrap();
+        let passed: Vec<_> = args
+            .iter()
+            .filter(|a| a.starts_with("-Dtoolscreen.minecraftVersion="))
+            .collect();
+        assert_eq!(passed, ["-Dtoolscreen.minecraftVersion=1.16.5"]);
     }
 
     #[test]
