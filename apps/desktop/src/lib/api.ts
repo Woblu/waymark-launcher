@@ -35,6 +35,8 @@ export interface LibraryEntry {
   group?: string;
   /** Keeps its own game settings while the others share theirs. */
   keepsOwnSettings?: boolean;
+  /** Whether LegacyFix is on. Only Mojang's releases from 1.0 to 1.5.2 without a loader have this. */
+  legacyFixes?: boolean;
   /** The listed server this instance was made to join. */
   server?: { project: string; name: string; address: string } | null;
   width?: number;
@@ -441,6 +443,7 @@ export const api = {
   updatePack: (id: string) => call<PackUpdateReport>('update_pack', { id }),
   checkStart: (id: string) => call<StartCheck>('check_start', { id }),
   setFolderShared: (id: string, folder: string, shared: boolean) => call<LibraryEntry>('set_folder_shared', { id, folder, shared }),
+  setLegacyFixes: (id: string, on: boolean) => call<LibraryEntry>('set_legacy_fixes', { id, on }),
   copySettings: (from: string, to: string) => call<Waymark | null>('copy_settings', { from, to }),
   exportServer: (id: string, folder: string) => call<ServerExport>('export_server', { id, folder }),
   recentLogs: (id: string) => call<{ text: string; error: boolean }[]>('recent_logs', { id }),

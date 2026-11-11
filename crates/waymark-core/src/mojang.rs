@@ -217,6 +217,11 @@ pub fn os_name() -> &'static str {
     }
 }
 
+/// Legacy Fabric's profiles swap Mojang's LWJGL 2 for Legacy Fabric's own build, which
+/// speedrun.com doesn't allow (rule A.8.3.a), so Mojang's is kept wherever it runs. Mojang
+/// never built LWJGL 2 for Apple silicon, so there the game needs Legacy Fabric's.
+const LEGACY_FABRIC_LWJGL_NEEDED: bool = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+
 fn os_arch() -> &'static str {
     match std::env::consts::ARCH {
         "aarch64" => "arm64",
@@ -373,10 +378,20 @@ impl Library {
 
 impl VersionMeta {
     /// Lays this version over the one it inherits from. The child wins, and
-    /// its libraries come first so they take priority on the classpath.
+    /// its libraries come first so they take priority on the classpath, except
+    /// for Legacy Fabric's LWJGL (see `LEGACY_FABRIC_LWJGL_NEEDED`).
     pub fn merged_over(self, parent: VersionMeta) -> VersionMeta {
+        let mut own = self.libraries;
+        if !LEGACY_FABRIC_LWJGL_NEEDED {
+            let from_mojang: HashSet<String> =
+                parent.libraries.iter().map(Library::identity).collect();
+            own.retain(|library| {
+                !(library.name.contains("+legacyfabric")
+                    && from_mojang.contains(&library.identity()))
+            });
+        }
         // A version can list a library twice, once per system, so only the child replaces one.
-        let replaced: HashSet<String> = self.libraries.iter().map(Library::identity).collect();
+        let replaced: HashSet<String> = own.iter().map(Library::identity).collect();
         // Old versions ship one big ASM jar, which clashes with a loader's newer split ones.
         let split_asm = replaced.contains("org.ow2.asm:asm");
         let inherited = parent.libraries.into_iter().filter(|library| {
@@ -384,7 +399,7 @@ impl VersionMeta {
             let clashes = split_asm && identity == "org.ow2.asm:asm-all";
             !replaced.contains(&identity) && !clashes
         });
-        let libraries = self.libraries.into_iter().chain(inherited).collect();
+        let libraries = own.into_iter().chain(inherited).collect();
 
         let arguments = match (parent.arguments, self.arguments) {
             (Some(mut base), Some(extra)) => {
@@ -603,6 +618,49 @@ mod tests {
         );
         let names: Vec<&str> = merged.libraries.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["org.ow2.asm:asm:9.7", "com.mojang:brigadier:1.3"]);
+    }
+
+    /// Speedrun.com bans Legacy Fabric's LWJGL, so Mojang's stays wherever it runs.
+    #[test]
+    fn legacy_fabric_keeps_mojang_s_lwjgl() {
+        let library = |name: &str| Library {
+            name: name.into(),
+            ..Library::default()
+        };
+        let parent = VersionMeta {
+            id: "1.8.9".into(),
+            libraries: vec![
+                library("org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209"),
+                library("org.lwjgl.lwjgl:lwjgl-platform:2.9.4-nightly-20150209"),
+            ],
+            ..VersionMeta::default()
+        };
+        let child = VersionMeta {
+            id: "fabric-loader-0.20.1-1.8.9".into(),
+            libraries: vec![
+                library("net.fabricmc:fabric-loader:0.20.1"),
+                library("org.lwjgl.lwjgl:lwjgl:2.9.4+legacyfabric.17"),
+                library("org.lwjgl.lwjgl:lwjgl-platform:2.9.4+legacyfabric.17"),
+            ],
+            ..VersionMeta::default()
+        };
+
+        let merged = child.merged_over(parent);
+
+        let names: Vec<&str> = merged.libraries.iter().map(|l| l.name.as_str()).collect();
+        if LEGACY_FABRIC_LWJGL_NEEDED {
+            assert_eq!(names.len(), 3);
+            assert!(names.iter().all(|name| !name.contains("nightly")));
+        } else {
+            assert_eq!(
+                names,
+                [
+                    "net.fabricmc:fabric-loader:0.20.1",
+                    "org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209",
+                    "org.lwjgl.lwjgl:lwjgl-platform:2.9.4-nightly-20150209",
+                ]
+            );
+        }
     }
 
     #[test]

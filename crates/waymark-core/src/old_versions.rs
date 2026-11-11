@@ -6,6 +6,10 @@
 //! The builds run through LegacyFix, BetaCraft's own patches, which bring back skins,
 //! sound, sign-in and window resizing. It only speaks to Mojang about the player's session,
 //! and the table sets it to keep Classic's saves local and to ask no outside server for skins.
+//!
+//! Mojang's own releases, 1.0 to 1.5.2, launch the way Mojang ships them unless the player
+//! turns LegacyFix on for that instance. Speedrun leaderboards accept runs on them and
+//! don't allow a Java agent or a changed game, which is how LegacyFix works.
 
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -74,6 +78,18 @@ pub fn all() -> &'static [OldVersion] {
 
 pub fn find(id: &str) -> Option<&'static OldVersion> {
     OLD.versions.iter().find(|version| version.id == id)
+}
+
+impl OldVersion {
+    /// One of Mojang's own releases, which launch without LegacyFix unless the player asks.
+    pub fn is_mojang_release(&self) -> bool {
+        self.kind == "release"
+    }
+}
+
+/// A release that can run with or without LegacyFix, like 1.5.2.
+pub fn mojang_release(id: &str) -> Option<&'static OldVersion> {
+    find(id).filter(|version| version.is_mojang_release())
 }
 
 /// The profile to launch a build with. It stands alone, so its jar is its own.
@@ -172,6 +188,27 @@ mod tests {
             assert!(flags.contains("-Dlf.proxy.levelServer=local"), "{flags}");
             assert!(flags.contains("-Dlf.proxy.overrides.mode=local"), "{flags}");
         }
+    }
+
+    /// Exactly the releases Mojang lists, which speedrun leaderboards accept runs on.
+    #[test]
+    fn mojang_s_releases_from_1_0_to_1_5_2_can_run_without_legacy_fix() {
+        let releases: Vec<&str> = all()
+            .iter()
+            .filter(|version| version.is_mojang_release())
+            .map(|version| version.id.as_str())
+            .collect();
+        assert_eq!(
+            releases,
+            [
+                "1.5.2", "1.5.1", "1.4.7", "1.4.6", "1.4.5", "1.4.4", "1.4.2", "1.3.2", "1.3.1",
+                "1.2.5", "1.2.4", "1.2.3", "1.2.2", "1.2.1", "1.1", "1.0"
+            ]
+        );
+        assert!(mojang_release("1.5.2").is_some());
+        assert!(mojang_release("b1.7.3").is_none());
+        assert!(mojang_release("1.5.2-pre-250903").is_none());
+        assert!(mojang_release("1.6.4").is_none());
     }
 
     #[test]

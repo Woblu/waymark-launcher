@@ -129,6 +129,15 @@
     }
   }
 
+  async function setLegacyFixes(on: boolean) {
+    try {
+      await api.setLegacyFixes(entry.id, on);
+      await app.refresh();
+    } catch (error) {
+      app.fail(error, 'Could not change LegacyFix');
+    }
+  }
+
   async function copySettings() {
     const source = app.entry(copyFrom);
     try {
@@ -279,6 +288,19 @@
       <div class="save"><button class="btn primary">Save</button>{#if dirty}<span class="faint small">Unsaved changes. Leaving this page saves them.</span>{/if}</div>
     </div>
   </form>
+
+  {#if entry.legacyFixes !== undefined}
+    <div class="form-row">
+      <span class="form-label">Old version fixes</span>
+      <div>
+        <label class="check">
+          <input type="checkbox" checked={entry.legacyFixes} onchange={(event) => setLegacyFixes(event.currentTarget.checked)} />
+          Run with LegacyFix
+        </label>
+        <p class="form-hint">LegacyFix brings back skins and fixes problems this version has on today's computers. It changes the game, so speedrun.com won't accept runs made with it.</p>
+      </div>
+    </div>
+  {/if}
 
   <div class="form-row">
     <span class="form-label">Shared folders</span>

@@ -404,6 +404,11 @@ async fn set_folder_shared(
 }
 
 #[tauri::command]
+async fn set_legacy_fixes(launcher: State<'_, Launcher>, id: String, on: bool) -> Reply<Instance> {
+    launcher.core.set_legacy_fixes(&id, on).await
+}
+
+#[tauri::command]
 async fn copy_settings(
     launcher: State<'_, Launcher>,
     from: String,
@@ -1403,6 +1408,7 @@ pub fn run() {
             update_pack,
             check_start,
             set_folder_shared,
+            set_legacy_fixes,
             copy_settings,
             export_server,
             recent_logs,

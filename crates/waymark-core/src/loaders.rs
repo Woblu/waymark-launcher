@@ -400,12 +400,10 @@ impl Core {
     ) -> Result<String> {
         match kind {
             LoaderKind::Vanilla => match crate::old_versions::find(minecraft) {
-                Some(old) => {
-                    let profile = crate::old_versions::profile(old);
-                    self.write_profile(&profile).await?;
-                    Ok(profile.id)
-                }
-                None => Ok(minecraft.to_string()),
+                // Mojang's own releases run as Mojang ships them, until the player
+                // turns LegacyFix on with `set_legacy_fixes`.
+                Some(old) if !old.is_mojang_release() => self.install_legacy_fix(old).await,
+                _ => Ok(minecraft.to_string()),
             },
             LoaderKind::Fabric
             | LoaderKind::Quilt
@@ -758,6 +756,34 @@ impl Core {
             })
             .await?;
         Ok((name, zip))
+    }
+
+    async fn install_legacy_fix(&self, old: &crate::old_versions::OldVersion) -> Result<String> {
+        let profile = crate::old_versions::profile(old);
+        self.write_profile(&profile).await?;
+        Ok(profile.id)
+    }
+
+    /// Turns LegacyFix on or off for a vanilla instance of one of Mojang's releases
+    /// from 1.0 to 1.5.2. It brings back skins and fixes old bugs, but it changes the
+    /// game, so speedrun leaderboards don't accept runs made with it.
+    pub async fn set_legacy_fixes(&self, id: &str, on: bool) -> Result<Instance> {
+        let mut instance = self.instance(id)?;
+        let release = crate::old_versions::mojang_release(&instance.minecraft)
+            .filter(|_| instance.loader.kind == LoaderKind::Vanilla)
+            .ok_or_else(|| {
+                Error::Other(
+                    "LegacyFix can only be switched for Minecraft 1.0 to 1.5.2 without a mod loader."
+                        .into(),
+                )
+            })?;
+        instance.version_id = if on {
+            self.install_legacy_fix(release).await?
+        } else {
+            instance.minecraft.clone()
+        };
+        self.save_instance(&instance)?;
+        Ok(instance)
     }
 
     async fn write_profile(&self, profile: &VersionMeta) -> Result<()> {
@@ -1159,6 +1185,43 @@ mod tests {
         );
         let new = write("new.jar", r#"{"spec":1,"profile":"forge","version":"x"}"#);
         assert!(legacy_profile(&new).unwrap().is_none());
+    }
+
+    /// Mojang's 1.0 to 1.5.2 run as shipped, which speedrun leaderboards need, and
+    /// LegacyFix is the player's to turn on. Builds Mojang doesn't list always use it.
+    #[tokio::test]
+    async fn old_mojang_releases_run_as_shipped_until_legacy_fix_is_turned_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        let task = Task::start(&core.events, "test");
+        for (minecraft, launched) in [("1.5.2", "1.5.2"), ("b1.7.3", "b1.7.3-old")] {
+            let id = core
+                .install_loader(LoaderKind::Vanilla, minecraft, "", &task)
+                .await
+                .unwrap();
+            assert_eq!(id, launched);
+        }
+
+        let release = core
+            .register_instance("Run", "1.5.2", Default::default(), "1.5.2".into(), None)
+            .unwrap();
+        let on = core.set_legacy_fixes(&release.id, true).await.unwrap();
+        assert_eq!(on.version_id, "1.5.2-old");
+        assert!(core.paths.version_json("1.5.2-old").is_file());
+        let off = core.set_legacy_fixes(&release.id, false).await.unwrap();
+        assert_eq!(off.version_id, "1.5.2");
+        assert_eq!(core.instance(&release.id).unwrap().version_id, "1.5.2");
+
+        let beta = core
+            .register_instance(
+                "Beta",
+                "b1.7.3",
+                Default::default(),
+                "b1.7.3-old".into(),
+                None,
+            )
+            .unwrap();
+        assert!(core.set_legacy_fixes(&beta.id, false).await.is_err());
     }
 
     #[test]

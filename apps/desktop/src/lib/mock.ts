@@ -30,6 +30,7 @@ const LIBRARY: LibraryEntry[] = [
   instance('quiet-skies', 'Quiet Skies', '1.21.4', 'fabric', 42, 12, 120),
   instance('starfall', 'Starfall', '26.3', 'vanilla', 0, 3, 200),
   instance('frontier', 'Frontier', '1.21.1', 'quilt', 96, 22, 340),
+  { ...instance('first-light', 'First Light', '1.5.2', 'vanilla', 0, 5, 420), legacyFixes: false },
 ];
 
 const NAMES = ['Sodium', 'Iris Shaders', 'Lithium', 'Fabric API', 'Mod Menu', 'Distant Horizons', 'Terralith', 'Xaero’s Minimap', 'Jade', 'JourneyMap', 'Create', 'Farmer’s Delight', 'Supplementaries', 'Waystones', 'Cloth Config', 'YetAnotherConfigLib'];
@@ -202,6 +203,10 @@ export function applyPreview(app: typeof App) {
   if (hash === 'trail') app.tab = 'trail';
   if (hash === 'worlds') app.tab = 'worlds';
   if (hash === 'instance-settings') app.tab = 'settings';
+  if (hash === 'old-release-settings') {
+    app.selected = 'first-light';
+    app.tab = 'settings';
+  }
   if (hash === 'new') app.dialog = 'new';
   if (hash === 'project') app.openProject({ source: 'modrinth', id: 'sample' });
   if (hash === 'logs') {
@@ -379,6 +384,11 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
           : [],
         serversFrom: mockSettings.shareSettings ? 'Emberfall' : null,
       };
+    case 'set_legacy_fixes': {
+      const entry = LIBRARY.find((item) => item.id === args?.id);
+      if (entry) entry.legacyFixes = Boolean(args?.on);
+      return entry;
+    }
     case 'add_starters':
       return { added: ['Sodium', 'Mod Menu'], skipped: [{ title: 'Embeddium', reason: null }] };
     default:

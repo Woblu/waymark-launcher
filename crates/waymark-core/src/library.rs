@@ -11,7 +11,7 @@ use crate::Core;
 use crate::bisect::{Bisect, Step, Verdict};
 use crate::error::{Error, Result};
 use crate::instance::{Instance, LaunchOptions};
-use crate::lock::Lockfile;
+use crate::lock::{LoaderKind, Lockfile};
 use crate::waymarks::WaymarkKind;
 
 const BISECT_FILE: &str = ".waymarks/bisect.json";
@@ -29,6 +29,9 @@ pub struct LibraryEntry {
     pub bisecting: bool,
     /// The store project this instance's modpack came from, as `source:id`.
     pub pack_project: Option<String>,
+    /// Whether LegacyFix is on, only for the releases that run with or without it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy_fixes: Option<bool>,
 }
 
 /// A field that's there, even as `null`, is a change. Plain serde reads `null` as
@@ -103,6 +106,9 @@ impl Core {
                     .join(BISECT_FILE)
                     .is_file(),
                 pack_project: self.pack_project(&instance.id),
+                legacy_fixes: (instance.loader.kind == LoaderKind::Vanilla
+                    && crate::old_versions::mojang_release(&instance.minecraft).is_some())
+                .then(|| instance.version_id != instance.minecraft),
                 instance,
             });
         }
