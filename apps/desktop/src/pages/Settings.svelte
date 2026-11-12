@@ -287,6 +287,7 @@
             <option value="system">Same as this computer</option>
             {#each Object.entries(LANGUAGE_NAMES) as [code, name] (code)}<option value={code}>{name}</option>{/each}
           </select>
+          <p class="form-hint">Languages other than English were translated by machine. Corrections are welcome on GitHub.</p>
         </div>
       </div>
     {:else if app.settingsSection === 'accounts'}
