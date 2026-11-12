@@ -213,6 +213,7 @@ export function applyPreview(app: typeof App) {
     app.tab = 'settings';
   }
   if (hash === 'new') app.dialog = 'new';
+  if (hash === 'presets') app.dialog = 'presets';
   if (hash === 'project') app.openProject({ source: 'modrinth', id: 'sample' });
   if (hash === 'logs') {
     app.tab = 'logs';
@@ -394,6 +395,10 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
           : [],
         serversFrom: mockSettings.shareSettings ? 'Emberfall' : null,
       };
+    case 'preset_versions':
+      return ['26.3', '26.2', '26.1.2', '1.21.11', '1.21.4'];
+    case 'install_preset':
+      return { instance: LIBRARY[0], added: ['Sodium'], skipped: [] };
     case 'set_legacy_fixes': {
       const entry = LIBRARY.find((item) => item.id === args?.id);
       if (entry) entry.legacyFixes = Boolean(args?.on);

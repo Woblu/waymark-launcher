@@ -8,9 +8,10 @@
   import { app, starterFits, startersFor } from '../lib/state.svelte';
   import { tabKeys } from '../lib/tabs';
   import Modal from './Modal.svelte';
+  import PresetWizard from './PresetWizard.svelte';
 
   /** `importEverything` starts importing all of them as soon as they're found. */
-  let { start = 'new', importEverything = false }: { start?: 'new' | 'import'; importEverything?: boolean } = $props();
+  let { start = 'new', importEverything = false }: { start?: 'new' | 'presets' | 'import'; importEverything?: boolean } = $props();
 
   const LOADERS: LoaderKind[] = ['vanilla', 'fabric', 'neoforge', 'forge', 'quilt'];
   const OLD_LOADERS: LoaderKind[] = ['vanilla', 'forge', 'legacyfabric', 'ornithe', 'liteloader', 'rift', 'cleanroom'];
@@ -30,7 +31,7 @@
 
   type ImportState = { status: 'importing' } | { status: 'done'; id: string } | { status: 'failed'; reason: string };
 
-  let mode = $state<'new' | 'import'>(untrack(() => start));
+  let mode = $state<'new' | 'presets' | 'import'>(untrack(() => start));
   /** What the player typed. Until they type, the name follows the version and loader. */
   let name = $state('');
   let named = $state(false);
@@ -204,15 +205,16 @@
   }
 </script>
 
-<Modal title="Add an instance" width={540} onclose={close}>
+<Modal title="Add an instance" width={mode === 'presets' ? 660 : 540} onclose={close}>
   <div class="tabs picker" role="tablist" aria-label="Add an instance" use:tabKeys>
     <button id="add-new" role="tab" aria-selected={mode === 'new'} aria-controls="add-panel" tabindex={mode === 'new' ? 0 : -1} class:active={mode === 'new'} onclick={() => (mode = 'new')}>New</button>
+    <button id="add-presets" role="tab" aria-selected={mode === 'presets'} aria-controls="add-panel" tabindex={mode === 'presets' ? 0 : -1} class:active={mode === 'presets'} onclick={() => (mode = 'presets')}>Presets</button>
     <button id="add-import" role="tab" aria-selected={mode === 'import'} aria-controls="add-panel" tabindex={mode === 'import' ? 0 : -1} class:active={mode === 'import'} onclick={() => (mode = 'import')}>
       {external.length ? `Import (${external.length})` : 'Import'}
     </button>
   </div>
 
-  <div id="add-panel" role="tabpanel" aria-labelledby={mode === 'new' ? 'add-new' : 'add-import'}>
+  <div id="add-panel" role="tabpanel" aria-labelledby={`add-${mode}`}>
     {#if mode === 'new'}
       <form onsubmit={create}>
         <div class="form-row">
@@ -261,6 +263,8 @@
           <button class="btn primary" disabled={!finalName || !minecraft}>Create</button>
         </div>
       </form>
+    {:else if mode === 'presets'}
+      <PresetWizard onclose={close} />
     {:else}
       {#if external.length}
         <div class="found">

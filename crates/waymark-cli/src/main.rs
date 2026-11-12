@@ -11,7 +11,9 @@ use waymark_core::event::Event;
 use waymark_core::instance::NewInstance;
 use waymark_core::lock::LoaderKind;
 use waymark_core::paths::Paths;
+use waymark_core::presets::{PresetRequest, Speedrun};
 use waymark_core::projects::VersionFilter;
+use waymark_core::starters::Starter;
 use waymark_core::waymarks::WaymarkKind;
 use waymark_core::{Core, Error, Result};
 
@@ -21,6 +23,7 @@ const USAGE: &str = "waymark <command>
   loaders <kind> <minecraft>                list loader versions
   list                                      list instances
   create <name> <minecraft> [loader]        create an instance
+  speedrun <rsg|ssg|ranked> <name>          make a 1.16.1 speedrun instance with the allowed mods
   search <text>                             search Modrinth for mods
   cf-search <text>                          search CurseForge for mods
   add <instance> <project>                  add a Modrinth mod and its dependencies
@@ -175,6 +178,43 @@ async fn run(
                 })
                 .await?;
             println!("created {} (launches {})", instance.id, instance.version_id);
+        }
+        "speedrun" => {
+            let run = match argument(&args, 1, "rsg, ssg or ranked")? {
+                "rsg" => Speedrun::Rsg,
+                "ssg" => Speedrun::Ssg,
+                "ranked" => Speedrun::Ranked,
+                other => return Err(Error::Other(format!("{other} isn't rsg, ssg or ranked"))),
+            };
+            // Ranked needs its own mod from Modrinth as well.
+            let items = if run == Speedrun::Ranked {
+                vec![Starter {
+                    source: ContentSource::Modrinth,
+                    project: "I9W1u5Ac".into(),
+                    kind: ContentKind::Mod,
+                    title: "MCSR Ranked".into(),
+                    icon: None,
+                }]
+            } else {
+                Vec::new()
+            };
+            let result = core
+                .install_preset(PresetRequest {
+                    name: argument(&args, 2, "name")?.to_string(),
+                    minecraft: "1.16.1".into(),
+                    loader: LoaderKind::Fabric,
+                    items,
+                    speedrun: Some(run),
+                })
+                .await?;
+            println!(
+                "created {} with {}",
+                result.instance.id,
+                result.added.join(", ")
+            );
+            for skipped in result.skipped {
+                println!("  left out {}", skipped.title);
+            }
         }
         "search" => {
             let query = SearchQuery {

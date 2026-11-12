@@ -316,6 +316,10 @@ export interface Starter { source: ContentSource; project: string; kind: Content
 export interface SkippedStarter { title: string; reason: string | null }
 export interface StarterResult { added: string[]; skipped: SkippedStarter[] }
 
+/** A preset to set up: its projects, and for speedrunning which kind of run. */
+export interface PresetRequest { name: string; minecraft: string; loader: LoaderKind; items: Starter[]; speedrun: 'rsg' | 'ssg' | 'ranked' | null }
+export interface PresetResult { instance: LibraryEntry; added: string[]; skipped: SkippedStarter[] }
+
 export type ServerSort = 'popular' | 'followed' | 'newest' | 'updated';
 export type ServerKind = 'vanilla' | 'modded';
 export interface ServerQuery { text: string; sort: ServerSort; kind?: ServerKind; categories?: string[]; region?: string; language?: string; offset: number; limit: number }
@@ -449,6 +453,8 @@ export const api = {
   checkStart: (id: string) => call<StartCheck>('check_start', { id }),
   setFolderShared: (id: string, folder: string, shared: boolean) => call<LibraryEntry>('set_folder_shared', { id, folder, shared }),
   setLegacyFixes: (id: string, on: boolean) => call<LibraryEntry>('set_legacy_fixes', { id, on }),
+  presetVersions: (loader: LoaderKind, projects: string[]) => call<string[]>('preset_versions', { loader, projects }),
+  installPreset: (request: PresetRequest) => call<PresetResult>('install_preset', { request }),
   copySettings: (from: string, to: string) => call<Waymark | null>('copy_settings', { from, to }),
   exportServer: (id: string, folder: string) => call<ServerExport>('export_server', { id, folder }),
   recentLogs: (id: string) => call<{ text: string; error: boolean }[]>('recent_logs', { id }),

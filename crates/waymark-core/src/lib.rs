@@ -39,6 +39,7 @@ pub mod pack_export;
 pub mod packs;
 pub mod paths;
 pub mod port_map;
+pub mod presets;
 pub mod projects;
 pub mod screenshots;
 pub mod server_list;

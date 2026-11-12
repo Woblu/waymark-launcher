@@ -220,7 +220,10 @@ mod tests {
             newest_manifest(releases).as_deref(),
             Some("https://example.com/v1.0.0/latest.json")
         );
-        let ahead = vec![release("v1.0.0", false, true), release("v1.1.0-beta.1", false, true)];
+        let ahead = vec![
+            release("v1.0.0", false, true),
+            release("v1.1.0-beta.1", false, true),
+        ];
         assert_eq!(
             newest_manifest(ahead).as_deref(),
             Some("https://example.com/v1.1.0-beta.1/latest.json")

@@ -89,7 +89,7 @@ impl Core {
             &self.events,
             format!("Adding starter mods to {}", instance.name),
         );
-        match self.install_starters(&instance, &wanted, &task).await {
+        match self.install_starters(&instance, &wanted, None, &task).await {
             Ok(result) => {
                 task.finish();
                 Ok(result)
@@ -101,10 +101,13 @@ impl Core {
         }
     }
 
-    async fn install_starters(
+    /// Plans each project for the instance and adds them all as one waymark, named
+    /// `label` or, when there's none, after the starter mods it added.
+    pub(crate) async fn install_starters(
         &self,
         instance: &Instance,
         wanted: &[Starter],
+        label: Option<&str>,
         task: &Task,
     ) -> Result<StarterResult> {
         let lock = self.lockfile(&instance.id)?;
@@ -149,9 +152,10 @@ impl Core {
         }
         self.add_planned(instance, lock, &planned, None, task)
             .await?;
-        let label = match result.added.as_slice() {
-            [one] => format!("Added the starter mod {one}"),
-            many => format!("Added {} starter mods", many.len()),
+        let label = match (label, result.added.as_slice()) {
+            (Some(label), _) => label.to_string(),
+            (None, [one]) => format!("Added the starter mod {one}"),
+            (None, many) => format!("Added {} starter mods", many.len()),
         };
         self.trail(&instance.id)
             .mark(&label, WaymarkKind::Install)?;

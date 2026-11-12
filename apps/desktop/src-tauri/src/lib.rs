@@ -33,6 +33,7 @@ use waymark_core::logs::LogFile;
 use waymark_core::pack_export::{ListFormat, PackExport, PackFormat};
 use waymark_core::packs::{ManualFile, PackResult, PackUpdate, PackUpdateReport};
 use waymark_core::paths::Paths;
+use waymark_core::presets::{PresetRequest, PresetResult};
 use waymark_core::projects::{Fit, InstalledPage, ProjectPage, VersionFilter, VersionList};
 use waymark_core::screenshots::Screenshot;
 use waymark_core::server_list::{
@@ -406,6 +407,23 @@ async fn set_folder_shared(
 #[tauri::command]
 async fn set_legacy_fixes(launcher: State<'_, Launcher>, id: String, on: bool) -> Reply<Instance> {
     launcher.core.set_legacy_fixes(&id, on).await
+}
+
+#[tauri::command]
+async fn preset_versions(
+    launcher: State<'_, Launcher>,
+    loader: LoaderKind,
+    projects: Vec<String>,
+) -> Reply<Vec<String>> {
+    launcher.core.preset_versions(loader, &projects).await
+}
+
+#[tauri::command]
+async fn install_preset(
+    launcher: State<'_, Launcher>,
+    request: PresetRequest,
+) -> Reply<PresetResult> {
+    launcher.core.install_preset(request).await
 }
 
 #[tauri::command]
@@ -1409,6 +1427,8 @@ pub fn run() {
             check_start,
             set_folder_shared,
             set_legacy_fixes,
+            preset_versions,
+            install_preset,
             copy_settings,
             export_server,
             recent_logs,

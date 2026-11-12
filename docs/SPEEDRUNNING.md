@@ -17,6 +17,7 @@ Every launch needs a Microsoft account that owns Minecraft. Waymark Launcher sig
 | Fabric, Quilt, Legacy Fabric and Ornithe | The profile each project publishes on its own meta server, and the libraries that profile names |
 | Forge and NeoForge | Their own installers |
 | Mods, resource packs and shaders | Only what the player adds: from Modrinth, from CurseForge, or a file they drop on the window |
+| A speedrunning preset's mods | The exact jars on speedrun.com's legal-mods list, read from [mcsr-meta](https://github.com/tildejustin/mcsr-meta) like the community's own tools, fetched only from the hosts that list uses and checked against its SHA-512 hashes |
 
 Mods are kept once in a read-only store and placed into each instance from there, so a jar stays byte for byte the file that was downloaded or dropped in.
 

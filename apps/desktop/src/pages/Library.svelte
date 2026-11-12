@@ -177,9 +177,10 @@
           </li>
           <li>
             <h2>Or start fresh</h2>
-            <p class="muted">Pick a Minecraft version and a mod loader, or install a modpack from Discover.</p>
+            <p class="muted">Pick a preset for what you want to play, or choose a Minecraft version and mod loader yourself.</p>
             <div class="buttons">
-              <button class="btn" class:primary={!!app.activeAccount && !found} onclick={() => (app.dialog = 'new')}><Plus size={16} /> New instance</button>
+              <button class="btn" class:primary={!!app.activeAccount && !found} onclick={() => (app.dialog = 'presets')}>Choose a preset</button>
+              <button class="btn" onclick={() => (app.dialog = 'new')}><Plus size={16} /> New instance</button>
               <button class="btn" onclick={() => app.go('discover')}>Browse modpacks</button>
             </div>
           </li>

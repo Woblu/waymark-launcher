@@ -489,6 +489,19 @@ pub async fn projects(net: &Net, ids: &[String]) -> Result<Vec<Project>> {
         .await?)
 }
 
+/// Many projects' full details in one request.
+pub async fn projects_in_full(net: &Net, ids: &[String]) -> Result<Vec<ProjectDetails>> {
+    Ok(net
+        .client()
+        .get(format!("{API}/projects"))
+        .query(&[("ids", json!(ids).to_string())])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
+}
+
 /// Many versions in one request.
 pub async fn versions_by_id(net: &Net, ids: &[String]) -> Result<Vec<Version>> {
     Ok(net
