@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
+  import Modal from '../components/Modal.svelte';
   import SettingsLayout from '../components/SettingsLayout.svelte';
   import { api, openFolder, pickFolder } from '../lib/api';
-  import type { LibraryEntry } from '../lib/api';
+  import type { LaunchCommand, LibraryEntry } from '../lib/api';
   import { number } from '../lib/format';
   import { app } from '../lib/state.svelte';
 
@@ -137,6 +138,35 @@
     } catch (error) {
       app.fail(error, 'Could not change LegacyFix');
     }
+  }
+
+  let command = $state<LaunchCommand | null>(null);
+  let writingCommand = $state(false);
+
+  async function showCommand() {
+    writingCommand = true;
+    try {
+      command = await api.launchCommand(entry.id);
+    } catch (error) {
+      app.fail(error, 'Could not write out the launch command');
+    }
+    writingCommand = false;
+  }
+
+  /** Quotes a part a shell would split, so the text reads the way it runs. */
+  const quoted = (part: string) => (part === '' || /[\s"]/.test(part) ? `"${part.replaceAll('"', '\\"')}"` : part);
+
+  /** Variables first, then the program and one argument a line. */
+  const commandText = $derived.by(() => {
+    if (!command) return '';
+    const variables = command.env.map(([key, value]) => `${key}=${quoted(value)}`);
+    const [program, ...rest] = [...command.wrapper, command.java, ...command.args].map(quoted);
+    return [`cd ${quoted(command.folder)}`, ...variables, '', program, ...rest.map((part) => `  ${part}`)].join('\n');
+  });
+
+  async function copyCommand() {
+    await navigator.clipboard.writeText(commandText);
+    app.toast('good', 'Launch command copied');
   }
 
   async function copySettings() {
@@ -296,6 +326,13 @@
       </div>
       {@render saveRow()}
     </form>
+    <h2 class="group-title">Launch command</h2>
+    <div class="group">
+      <div class="lone">
+        <p class="form-hint first">Everything Play runs for this instance, written out without starting the game. Missing game files are downloaded first.</p>
+        <button type="button" class="btn after" disabled={writingCommand} onclick={showCommand}>{writingCommand ? 'Writing it out' : 'Show the launch command'}</button>
+      </div>
+    </div>
     {#if entry.legacyFixes !== undefined}
       <h2 class="group-title">Old version fixes</h2>
       <div class="group">
@@ -381,8 +418,24 @@
   {/if}
 </SettingsLayout>
 
+{#if command}
+  <Modal title="How {entry.name} starts" width={720} onclose={() => (command = null)}>
+    <p class="form-hint first">Your user folder is shown as ~, and the access token is left out.</p>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <pre class="mono command selectable" tabindex="0" aria-label="Launch command">{commandText}</pre>
+    <div class="buttons">
+      <button class="btn" onclick={() => (command = null)}>Close</button>
+      <button class="btn primary" onclick={copyCommand}>Copy</button>
+    </div>
+  </Modal>
+{/if}
+
 <style>
   .lone { padding: 16px 0; }
+  .first { margin-top: 0; }
+  .command { max-height: 50vh; margin: 10px 0 0; padding: 8px 12px; overflow: auto; background: var(--control); clip-path: var(--stepped); font-size: var(--text-s); line-height: 1.5; }
+  .command:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
   .lone > .check:first-child { padding-top: 0; }
   .linked .name { font-weight: 600; }

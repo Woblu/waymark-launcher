@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::time::{Instant, SystemTime};
 
+use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::io::BufReader;
 use tokio::process::{Child, Command};
@@ -17,8 +18,8 @@ use crate::auth::Session;
 use crate::brand::{PRODUCT_NAME, VERSION};
 use crate::crash;
 use crate::error::{Error, Result};
-use crate::gamelog::next_line_lossy;
 use crate::event::{Event, Task};
+use crate::gamelog::next_line_lossy;
 use crate::install::Prepared;
 use crate::instance::{Instance, LaunchOptions};
 use crate::mojang::{Argument, Features, OneOrMany, allowed};
@@ -40,6 +41,23 @@ const GC_ARGS: [&str; 6] = [
     "-XX:MaxGCPauseMillis=50",
     "-XX:G1HeapRegionSize=32M",
 ];
+
+/// Stands in for the access token and Xbox id in a command written out to be read.
+const HIDDEN: &str = "<hidden>";
+
+/// What Play runs, written out for the player to read or share.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchCommand {
+    /// A program like mangohud that runs Java for us. Empty without one.
+    pub wrapper: Vec<String>,
+    pub java: String,
+    pub args: Vec<String>,
+    /// Variables the game gets on top of the ones it inherits.
+    pub env: Vec<(String, String)>,
+    /// The folder the game runs in.
+    pub folder: String,
+}
 
 /// How Toolscreen is told the Minecraft version when `--version` names a loader.
 const TOOLSCREEN_VERSION: &str = "-Dtoolscreen.minecraftVersion=";
@@ -83,6 +101,16 @@ fn collect(arguments: &[Argument], values: &HashMap<&str, String>, out: &mut Vec
             Argument::Ruled { .. } => {}
         }
     }
+}
+
+/// Puts `~` in place of the player's user folder, which is often their name.
+fn without_home(text: &str, home: Option<&std::path::Path>) -> String {
+    let Some(home) = home else {
+        return text.to_string();
+    };
+    let home = home.to_string_lossy();
+    text.replace(home.as_ref(), "~")
+        .replace(&home.replace('\\', "/"), "~")
 }
 
 /// Splits a command the way a shell would, keeping quoted parts together.
@@ -417,6 +445,65 @@ impl Core {
         }
     }
 
+    /// The command Play would run, without running it. Missing files are fetched
+    /// first, as they would be for a launch. The access token, the Xbox id and the
+    /// player's user folder are left out, so the result can be shared.
+    pub async fn launch_command(&self, id: &str) -> Result<LaunchCommand> {
+        let instance = self.instance(id)?;
+        let account = self.active_account()?;
+        let session = Session {
+            name: account.name,
+            uuid: account.uuid,
+            access_token: HIDDEN.into(),
+            xuid: HIDDEN.into(),
+        };
+        let task = Task::start(
+            &self.events,
+            format!("Writing out how {} starts", instance.name),
+        );
+        let launch = match self.prepare_launch(&instance, &session, None, &task).await {
+            Ok(launch) => {
+                task.finish();
+                launch
+            }
+            Err(error) => {
+                task.fail(error.to_string());
+                return Err(error);
+            }
+        };
+        let home = directories::BaseDirs::new().map(|base| base.home_dir().to_path_buf());
+        let tidy = |text: &str| without_home(text, home.as_deref());
+        // In the order `start_game` applies them, so a later one wins here too.
+        let mut env = Vec::new();
+        if let Some(folder) = &launch.appdata {
+            env.push(("APPDATA".to_string(), tidy(&folder.to_string_lossy())));
+        }
+        env.extend(
+            instance
+                .options
+                .env
+                .iter()
+                .map(|(key, value)| (key.clone(), tidy(value))),
+        );
+        env.extend(
+            hook_environment(&self.paths, &instance, &launch.java)
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), tidy(&value))),
+        );
+        Ok(LaunchCommand {
+            wrapper: instance
+                .options
+                .wrapper
+                .as_deref()
+                .map(split_command)
+                .unwrap_or_default(),
+            java: tidy(&launch.java.to_string_lossy()),
+            args: launch.args.iter().map(|arg| tidy(arg)).collect(),
+            env,
+            folder: tidy(&self.paths.game(&instance.id).to_string_lossy()),
+        })
+    }
+
     /// Gets everything a launch needs onto disk and works out its command.
     pub(crate) async fn prepare_launch(
         &self,
@@ -681,6 +768,20 @@ mod tests {
             access_token: "secret".into(),
             xuid: "1".into(),
         }
+    }
+
+    #[test]
+    fn a_written_out_command_hides_the_user_folder() {
+        let home = std::path::Path::new(r"C:\Users\Steve");
+        assert_eq!(
+            without_home(r"-Djava.library.path=C:\Users\Steve\AppData\x", Some(home)),
+            r"-Djava.library.path=~\AppData\x"
+        );
+        assert_eq!(
+            without_home("C:/Users/Steve/AppData/x", Some(home)),
+            "~/AppData/x"
+        );
+        assert_eq!(without_home("--demo", None), "--demo");
     }
 
     #[test]

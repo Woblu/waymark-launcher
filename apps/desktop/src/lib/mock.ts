@@ -406,6 +406,25 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     }
     case 'add_starters':
       return { added: ['Sodium', 'Mod Menu'], skipped: [{ title: 'Embeddium', reason: null }] };
+    case 'launch_command': {
+      const id = String(args?.id);
+      const root = '~\\AppData\\Roaming\\Waymark';
+      return {
+        wrapper: [],
+        java: `${root}\\java\\java-runtime-delta\\bin\\javaw.exe`,
+        args: [
+          '-Xms1024M', '-Xmx4096M', '-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G1NewSizePercent=20',
+          '-XX:G1ReservePercent=20', '-XX:MaxGCPauseMillis=50', '-XX:G1HeapRegionSize=32M', '-Dtoolscreen.minecraftVersion=1.21.4',
+          `-Djava.library.path=${root}\\natives\\1.21.4`, '-Dminecraft.launcher.brand=Waymark Launcher', '-Dminecraft.launcher.version=0.5.0',
+          '-cp', `${root}\\libraries\\com\\mojang\\brigadier\\1.3.10\\brigadier-1.3.10.jar;${root}\\versions\\1.21.4\\1.21.4.jar`,
+          'net.minecraft.client.main.Main', '--username', 'Steve', '--version', '1.21.4', '--gameDir', `${root}\\instances\\${id}\\game`,
+          '--assetsDir', `${root}\\assets`, '--assetIndex', '19', '--uuid', '069a79f444e94726a5befca90e38aaf5', '--accessToken', '<hidden>',
+          '--userType', 'msa', '--versionType', 'release',
+        ],
+        env: [['INST_ID', id], ['INST_MC_DIR', `${root}\\instances\\${id}\\game`], ['INST_MC_VER', '1.21.4']],
+        folder: `${root}\\instances\\${id}\\game`,
+      };
+    }
     default:
       return null;
   }

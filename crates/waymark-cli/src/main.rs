@@ -41,6 +41,7 @@ const USAGE: &str = "waymark <command>
   import [name]                             list or copy instances from other launchers
   sign-in                                   sign in with Microsoft
   play <instance>                           launch with the active account
+  command <instance>                        print what play would run, without running it
   play-dev <instance>                       debug builds only: launch without an account
   check-start <instance>                    debug builds only: check the last update out of sight
   pack-update <instance>                    update an instance's modpack, keeping your changes
@@ -448,6 +449,19 @@ async fn run(
         "play" => {
             core.launch(argument(&args, 1, "instance")?).await?;
             wait_for_exit(&mut exits).await;
+        }
+        "command" => {
+            let command = core.launch_command(argument(&args, 1, "instance")?).await?;
+            println!("cd {}", command.folder);
+            for (key, value) in &command.env {
+                println!("{key}={value}");
+            }
+            for part in command.wrapper.iter().chain([&command.java]) {
+                println!("{part}");
+            }
+            for arg in &command.args {
+                println!("  {arg}");
+            }
         }
         #[cfg(debug_assertions)]
         "play-dev" => {

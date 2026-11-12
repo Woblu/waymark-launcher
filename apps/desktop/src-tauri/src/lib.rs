@@ -26,6 +26,7 @@ use waymark_core::export::ServerExport;
 use waymark_core::external::ExternalInstance;
 use waymark_core::hosting::HostStatus;
 use waymark_core::instance::{Instance, NewInstance};
+use waymark_core::launch::LaunchCommand;
 use waymark_core::library::{BisectView, InstancePatch, LibraryEntry};
 use waymark_core::loaders::LoaderVersion;
 use waymark_core::lock::{LoaderKind, LockedMod};
@@ -389,6 +390,11 @@ async fn update_pack(launcher: State<'_, Launcher>, id: String) -> Reply<PackUpd
 #[tauri::command]
 async fn check_start(launcher: State<'_, Launcher>, id: String) -> Reply<StartCheck> {
     launcher.core.check_start(&id).await
+}
+
+#[tauri::command]
+async fn launch_command(launcher: State<'_, Launcher>, id: String) -> Reply<LaunchCommand> {
+    launcher.core.launch_command(&id).await
 }
 
 #[tauri::command]
@@ -1425,6 +1431,7 @@ pub fn run() {
             check_pack_update,
             update_pack,
             check_start,
+            launch_command,
             set_folder_shared,
             set_legacy_fixes,
             preset_versions,

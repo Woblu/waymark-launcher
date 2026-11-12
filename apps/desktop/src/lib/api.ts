@@ -10,6 +10,8 @@ export type ContentSource = 'modrinth' | 'curseforge' | 'ftb' | 'atlauncher' | '
 export type ContentKind = 'mod' | 'modpack' | 'resourcepack' | 'shader' | 'datapack';
 export type Verdict = 'crashes' | 'works';
 export type StartCheck = { result: 'passed' | 'unclear' | 'skipped' } | { result: 'undone' | 'failed'; reason: string };
+/** What Play runs, with the access token and the user folder left out. */
+export type LaunchCommand = { wrapper: string[]; java: string; args: string[]; env: [string, string][]; folder: string };
 /** A new instance from a pack, with any program files it carried itself instead of naming on a mod site. */
 export interface PackResult { instance: LibraryEntry; manual: ManualFile[]; unverified: string[] }
 export interface LauncherDiagnostics { folder: string; lastCrash: string | null }
@@ -451,6 +453,7 @@ export const api = {
   checkPackUpdate: (id: string) => call<PackUpdate | null>('check_pack_update', { id }),
   updatePack: (id: string) => call<PackUpdateReport>('update_pack', { id }),
   checkStart: (id: string) => call<StartCheck>('check_start', { id }),
+  launchCommand: (id: string) => call<LaunchCommand>('launch_command', { id }),
   setFolderShared: (id: string, folder: string, shared: boolean) => call<LibraryEntry>('set_folder_shared', { id, folder, shared }),
   setLegacyFixes: (id: string, on: boolean) => call<LibraryEntry>('set_legacy_fixes', { id, on }),
   presetVersions: (loader: LoaderKind, projects: string[]) => call<string[]>('preset_versions', { loader, projects }),
