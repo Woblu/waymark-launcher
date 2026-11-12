@@ -1,0 +1,49 @@
+name: Something doesn't work
+description: A bug, a crash, or anything that behaves differently from what you expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Make a Fabric 1.21.4 instance
+        2. Add Sodium from Discover
+        3. Press Play
+  - type: input
+    id: version
+    attributes:
+      label: Waymark Launcher version
+      description: In Settings, under About.
+      placeholder: 0.5.0
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+  - type: input
+    id: instance
+    attributes:
+      label: Minecraft version and mod loader
+      description: If it's about one instance.
+      placeholder: 1.21.4, Fabric
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: In Settings, under Help, press Copy diagnostics and paste the result here. Folder names and sign-in tokens are taken out. For a game crash, Share log in the crash dialog gives a link.
+      render: text

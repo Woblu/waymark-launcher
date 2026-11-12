@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A security problem
+    url: https://github.com/Woblu/waymark-launcher/security/advisories/new
+    about: Report it privately, so it can be fixed before anyone else knows about it.
+  - name: Help with your own setup
+    url: mailto:waymarklaunchersupport@proton.me
+    about: Questions that aren't bugs can go to the support email.

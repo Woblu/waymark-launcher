@@ -1,17 +1,39 @@
 # Waymark Launcher
 
-A desktop launcher for Minecraft: Java Edition with an undo button. Every change to an instance leaves a waymark you can return to, so a bad mod update can never cost you your setup.
+A launcher for Minecraft: Java Edition that keeps a history of every instance. Each change to an instance's mods and config files leaves a waymark you can go back to, so a bad mod update can be undone. Worlds aren't part of waymarks.
+
+Download it from [waymark-launcher.vercel.app](https://waymark-launcher.vercel.app) or the [latest release](https://github.com/Woblu/waymark-launcher/releases/latest). [CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
 
 Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.
+
+## Status
+
+Waymark Launcher was started in October 2026 and has one maintainer, Woblu. It's tested on Windows and Linux. The macOS builds haven't been tested on a real Mac. The six translations are machine-made. Expect rough edges, and please [open an issue](https://github.com/Woblu/waymark-launcher/issues) when you hit one.
+
+## How it's built
+
+Waymark Launcher is written with a lot of help from Claude, an AI model made by Anthropic. Woblu decides what goes in and tests each release on Windows and Linux before publishing it. What backs that up:
+
+- The core has over 360 unit tests (`cargo test -p waymark-core`), and an end-to-end test drives the real app like a player would. Both are described below.
+- Releases are built by GitHub Actions from this repository, and each one lists every file's hash in `SHA256SUMS.txt`.
+- [docs/SPEEDRUNNING.md](docs/SPEEDRUNNING.md) lists everything a launch adds to the game's command line, with links to the code.
+
+## What it promises players
+
+- **You need to own the game.** Playing needs a Microsoft account whose ownership of Minecraft was confirmed with Mojang. Without a connection, an account confirmed in the last 30 days can still play (`may_play_offline` in [`auth.rs`](crates/waymark-core/src/auth.rs)). There's no username-only mode.
+- **Game files come from Mojang.** Waymark Launcher doesn't host or redistribute them. Builds Mojang doesn't list come from Omniarchive and BetaCraft, pinned by hash in [`old-versions.json`](crates/waymark-core/data/old-versions.json).
+- **Deleting isn't instant.** Deleted instances and worlds go to a trash folder for 30 days.
+- **You can see what it runs.** An instance's settings, under Launching, show the full command Play runs. From a terminal, `waymark command <instance>` prints the same. The [privacy policy](https://waymark-launcher.vercel.app/privacy) lists every service it connects to.
 
 ## What's here
 
 | Path | What it is |
 |---|---|
 | `crates/waymark-core` | The launcher itself, with no UI. Everything worth testing lives here. |
-| `crates/waymark-cli` | A command line over the core, for scripting and for proving each part works. |
+| `crates/waymark-cli` | A command line over the core, for scripting and for trying each part. |
 | `apps/desktop` | The desktop app: Tauri 2, Svelte 5 and a thin bridge to the core. |
-| `apps/site` | The public website, plain HTML and CSS, deployed to Vercel. |
+| `apps/site` | The website, plain HTML and CSS, deployed to Vercel. |
+| `supabase` | The optional friends server: database migrations and one function. |
 
 ## How it works
 
@@ -51,32 +73,19 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
 node e2e/run.mjs               # in another terminal
 ```
 
-Run this before calling a feature done. Unit tests have missed real bugs here, like a crash search that found the mod and then hid the answer.
-
 `apps/desktop/e2e/playing.mjs` covers the window closing during play and coming back afterwards, including after a crash.
 
 ## Translations
 
-The strings live in `apps/desktop/src/lib/catalog.ts`, one row each, and `i18n.ts` swaps them in as text is drawn. New UI text needs a row, or it stays in English. Text the player or a store wrote is left alone, so mark it `selectable` or keep it inside `.rich`. Messages from the Rust core are English only.
+The strings live in `apps/desktop/src/lib/catalog.ts`, one row each, and `i18n.ts` swaps them in as text is drawn. The translations were made by machine, so corrections from native speakers are very welcome. Messages from the Rust core are English only.
+
+## Contributing and security
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checks to run and the rules the code follows. Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## Building a release
 
 See [docs/RELEASING.md](docs/RELEASING.md). CurseForge access and update signing both come from environment variables, so no key ever enters the repository. The Azure client ID in `crates/waymark-core/src/brand.rs` is public by design.
-
-## Rules this project keeps
-
-- **No gameplay without verified ownership.** A launch needs a `Session`. Release builds only get one through a signed-in account whose ownership was confirmed. `Session::development` exists in debug builds only. Mojang won't approve an app that bypasses this.
-- **Game files are never redistributed.** Sync and sharing move the lockfile, and the game comes from Mojang's servers. Builds Mojang doesn't list come from Omniarchive and BetaCraft, pinned by hash in `crates/waymark-core/data/old-versions.json`, and need the same signed-in account as any other launch. Default skins load from Mojang's texture server, so none are bundled. Server exports stay on the player's machine.
-- **Speedruns stay legal.** Versions that speedrun.com accepts runs on launch as their version file says, with no Java agent and no swapped libraries. LegacyFix is opt-in for 1.0 to 1.5.2. [docs/SPEEDRUNNING.md](docs/SPEEDRUNNING.md) lists everything a launch adds, and reviewers check it, so change it whenever `launch.rs` or a loader's libraries change.
-- **The EULA is the player's to accept.** A hosted server won't start until they tick the box themselves. Nothing in the app or its tests may tick it for them.
-- **Respect CurseForge authors.** When a file has no download URL, the author has opted out of third-party apps, so the player is sent to CurseForge.
-- **Pack files and share codes are untrusted.** Paths are checked with `safe_relative`, download hosts against an allow list, and share codes only carry store ids. Launch commands come from the player's own settings and can never arrive in a pack or a code.
-- **Nothing is deleted straight away.** Instances and worlds go to the trash for 30 days, and anything that collects garbage has to keep what's in there.
-- **Store descriptions are untrusted.** Anyone can publish a project, so bodies go through the allow list in `apps/desktop/src/lib/rich.ts`, and the end-to-end test attacks it. Don't widen that list or the security policy without adding an attack to the test.
-- **Nothing leaves the machine unasked.** Log uploads need the player's click, and folder names and tokens are removed first. Friends are opt-in: nothing goes to the friends server unless the player has signed in to a Waymark Launcher account. Discord rich presence is off until the player turns it on, and only ever names a server that came from the server list.
-- **Friends can't touch the database.** Tables in `supabase/migrations` have no policies, so the app can only call functions that act as the signed-in player. Don't add a policy or a public function without a reason, and keep the Minecraft sign-in out of it.
-- **Tests stay out of sight.** Anything that opens a game or the app runs on a hidden desktop at low priority, because this is someone's gaming PC.
-- **One name.** Every product name lives in `crates/waymark-core/src/brand.rs`.
 
 ## Forking
 
@@ -89,7 +98,13 @@ Forks need their own identity:
 
 ## Thanks
 
-Every version before 1.6 exists here because of other people's work. [Omniarchive](https://omniarchive.net/) recovered most of these builds, [BetaCraft](https://betacraft.uk/) lists them, and BetaCraft's [LegacyFix](https://github.com/betacraftuk/legacyfix) (GPL 3.0) brings back what they lost. [Bouncy Castle](https://www.bouncycastle.org/) lets LegacyFix make secure connections on old Java. All of it is downloaded when needed, not shipped in Waymark Launcher.
+Waymark Launcher stands on other people's work, and none of it is shipped inside the app. It's downloaded when needed.
+
+- [Omniarchive](https://omniarchive.net/) recovered most of the builds from before 1.0, [BetaCraft](https://betacraft.uk/) lists them, and BetaCraft's [LegacyFix](https://github.com/betacraftuk/legacyfix) (GPL 3.0) brings back what they lost. [Bouncy Castle](https://www.bouncycastle.org/) lets LegacyFix make secure connections on old Java.
+- [Prism Launcher](https://prismlauncher.org/) hosts the libraries old Forge downloads at startup, after their original host went away. Its `INST_*` variables are what tools like Toolscreen expect, so Waymark Launcher uses the same ones.
+- [mcsr-meta](https://github.com/tildejustin/mcsr-meta) by tildejustin, and the [legal-mods](https://github.com/Minecraft-Java-Edition-Speedrunning/legal-mods) list it follows, decide what the speedrunning presets install.
+- The mod loaders: [Fabric](https://fabricmc.net/), [Quilt](https://quiltmc.org/), [Legacy Fabric](https://legacyfabric.net/), [Babric](https://github.com/babric), [Ornithe](https://ornithemc.net/), [Forge](https://minecraftforge.net/), [NeoForge](https://neoforged.net/), [LiteLoader](https://www.liteloader.com/), [Rift](https://github.com/DimensionalDevelopment/Rift) and [Cleanroom](https://github.com/CleanroomMC/Cleanroom).
+- [Modrinth](https://modrinth.com/), [CurseForge](https://www.curseforge.com/), [Feed The Beast](https://www.feed-the-beast.com/), [ATLauncher](https://atlauncher.com/) and [Technic](https://www.technicpack.net/) for their public APIs, and [mclo.gs](https://mclo.gs/) for log sharing.
 
 ## License
 
