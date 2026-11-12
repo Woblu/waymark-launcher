@@ -319,7 +319,7 @@ export interface SkippedStarter { title: string; reason: string | null }
 export interface StarterResult { added: string[]; skipped: SkippedStarter[] }
 
 /** A preset to set up: its projects, and for speedrunning which kind of run. */
-export interface PresetRequest { name: string; minecraft: string; loader: LoaderKind; items: Starter[]; speedrun: 'rsg' | 'ssg' | 'ranked' | null }
+export interface PresetRequest { name: string; minecraft: string; loader: LoaderKind; items: Starter[]; speedrun: 'rsg' | 'ssg' | null }
 export interface PresetResult { instance: LibraryEntry; added: string[]; skipped: SkippedStarter[] }
 
 export type ServerSort = 'popular' | 'followed' | 'newest' | 'updated';

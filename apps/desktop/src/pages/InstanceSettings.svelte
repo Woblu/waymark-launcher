@@ -338,7 +338,7 @@
       <div class="group">
         <div class="lone">
           <label class="check"><input type="checkbox" checked={entry.legacyFixes} onchange={(event) => setLegacyFixes(event.currentTarget.checked)} /> Run with LegacyFix</label>
-          <p class="form-hint">LegacyFix brings back skins and fixes problems this version has on today's computers. It changes the game, so speedrun.com won't accept runs made with it.</p>
+          <p class="form-hint">LegacyFix brings back skins and fixes problems this version has on today's computers. It changes the game, which speedrun.com's rules don't allow.</p>
         </div>
       </div>
     {/if}

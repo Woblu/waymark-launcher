@@ -24,7 +24,7 @@ export interface Preset {
   /** Added wherever there's a build for the chosen version. */
   extra?: Item[];
   /** Exact jars from speedrun.com's list instead of store builds. */
-  speedrun?: 'rsg' | 'ssg' | 'ranked';
+  speedrun?: 'rsg' | 'ssg';
   /** Worth knowing before picking it. */
   note?: string;
 }
@@ -85,7 +85,7 @@ export const CATEGORIES: Category[] = [
   {
     id: 'speedrunning',
     title: 'Speedrunning',
-    summary: 'Minecraft 1.16.1 with the mods speedrun.com allows, in the exact builds it lists.',
+    summary: 'Practice for Minecraft 1.16.1 runs, with the mods speedrun.com allows in the exact builds it lists.',
     presets: [
       {
         id: 'rsg',
@@ -94,6 +94,7 @@ export const CATEGORIES: Category[] = [
         loader: 'fabric',
         minecraft: '1.16.1',
         speedrun: 'rsg',
+        note: "For practice. speedrun.com doesn't accept runs made in Waymark Launcher.",
       },
       {
         id: 'ssg',
@@ -102,16 +103,7 @@ export const CATEGORIES: Category[] = [
         loader: 'fabric',
         minecraft: '1.16.1',
         speedrun: 'ssg',
-      },
-      {
-        id: 'ranked',
-        title: 'MCSR Ranked',
-        summary: 'Race other players on the same seed, with the Ranked mod and the mods it accepts.',
-        loader: 'fabric',
-        minecraft: '1.16.1',
-        speedrun: 'ranked',
-        core: [{ project: 'I9W1u5Ac', title: 'MCSR Ranked' }],
-        note: "MCSR Ranked only starts from the launchers it allows, and Waymark Launcher isn't one of them yet.",
+        note: "For practice. speedrun.com doesn't accept runs made in Waymark Launcher.",
       },
     ],
   },

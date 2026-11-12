@@ -31,19 +31,6 @@ const LEGAL_HOSTS: [&str; 3] = [
     "https://cdn.modrinth.com/data/",
 ];
 
-/// The mods a working MCSR Ranked instance runs with. Ranked refuses to start
-/// with any mod it doesn't accept, so it gets these and nothing more.
-const RANKED_MODS: [&str; 8] = [
-    "speedrunigt",
-    "speedrunapi",
-    "atum",
-    "sodium",
-    "lithium",
-    "starlight",
-    "lazydfu",
-    "krypton",
-];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Speedrun {
@@ -51,8 +38,6 @@ pub enum Speedrun {
     Rsg,
     /// Set seed: the same world every run.
     Ssg,
-    /// MCSR Ranked's races, which need its own mod as well.
-    Ranked,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -161,12 +146,7 @@ fn legal_mods(list: &LegalList, minecraft: &str, run: Speedrun, mac: bool) -> Ve
             _ => false,
         })
     };
-    let wanted = |item: &LegalMod| match run {
-        Speedrun::Ranked => {
-            RANKED_MODS.contains(&item.modid.as_str()) || mac && item.modid == "sodiummac"
-        }
-        _ => item.recommended != Some(false) && item.obsolete != Some(true),
-    };
+    let wanted = |item: &LegalMod| item.recommended != Some(false) && item.obsolete != Some(true);
     let mut chosen: Vec<&LegalMod> = list
         .mods
         .iter()
@@ -477,15 +457,6 @@ mod tests {
         let found = ids(&jars);
         assert!(found.contains(&"setspawnmod"));
         assert!(!found.contains(&"worldpreview"));
-    }
-
-    #[test]
-    fn ranked_gets_only_what_it_accepts() {
-        let jars = legal_mods(&list(), "1.16.1", Speedrun::Ranked, false);
-        assert_eq!(
-            ids(&jars),
-            ["atum", "lithium", "sodium", "speedrunapi", "speedrunigt"]
-        );
     }
 
     #[test]
