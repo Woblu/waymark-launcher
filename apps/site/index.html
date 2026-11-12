@@ -29,8 +29,8 @@
           <a class="download" href="/download">Download for Windows</a>
           <p>64-bit installer, about 6 MB. It updates itself after that.</p>
         </div>
-        <p class="note">macOS (Apple silicon and Intel) and Linux (AppImage and .deb) builds are on the <a href="https://github.com/Woblu/waymark-launcher/releases/latest">latest release</a>, along with a <code>SHA256SUMS.txt</code> to check any download against. They haven't been tested on real machines yet.</p>
-        <p class="note">You need the Microsoft account that owns Minecraft: Java Edition. The installer isn't code-signed yet, so Windows shows &ldquo;Windows protected your PC&rdquo; the first time: choose More info, then Run anyway. Signing through the SignPath Foundation has been applied for; the <a href="/code-signing">code signing policy</a> explains it.</p>
+        <p class="note">Linux (AppImage and .deb) and macOS (Apple silicon and Intel) builds are on the <a href="https://github.com/Woblu/waymark-launcher/releases/latest">latest release</a>, along with a <code>SHA256SUMS.txt</code> to check any download against. The macOS builds haven't been tested on a real Mac.</p>
+        <p class="note">You need the Microsoft account that owns Minecraft: Java Edition. The installer isn't code-signed, so Windows shows &ldquo;Windows protected your PC&rdquo; the first time: choose More info, then Run anyway. The <a href="/code-signing">code signing policy</a> explains where signing stands.</p>
       </header>
 
       <figure class="wide">
@@ -51,6 +51,14 @@
       </section>
 
       <section>
+        <h2>Moving in</h2>
+        <div>
+          <p>Waymark Launcher finds the instances in Prism Launcher, MultiMC, ATLauncher, GDLauncher, the CurseForge app, the Modrinth App and the Minecraft Launcher, and offers to copy them over with their worlds, mods, settings and time played. Importing makes a copy and leaves the original alone. From the Minecraft Launcher it copies game files only, never its sign-in.</p>
+          <p>Starting fresh, a preset sets up an instance for what you want to play: performance, PvP, shaders, building, speedrunning practice or a big adventure modpack. Each preset uses the newest build of every mod that fits the Minecraft version you pick, and tells you which ones don't have one.</p>
+        </div>
+      </section>
+
+      <section>
         <h2>Every version</h2>
         <div>
           <p>Mojang's launcher lists 61 versions from before 1.0. Waymark Launcher adds 215 builds it leaves out, and reaches back to RubyDung from May 2009. That covers Pre-Classic, Classic, Indev, Infdev, Alpha, Beta, the snapshots in between, Minecraft 4k and the 2.0 April Fools builds. Pick an era when you make a new instance.</p>
@@ -59,17 +67,10 @@
       </section>
 
       <section>
-        <h2>Finding a bad mod</h2>
-        <div>
-          <p>When a pack crashes and the log doesn't say why, Waymark Launcher can search for the cause. It switches half the mods off, keeping their dependencies on, and asks you to launch the game and report what happened. Then it repeats with whichever half is left.</p>
-          <p>A 300 mod pack takes about a dozen launches. If a crash only happens when two mods are loaded together, the search finds both.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Crash reports</h2>
+        <h2>Crashes</h2>
         <div>
           <p>After a crash, Waymark Launcher reads the crash report and <code>latest.log</code> on your computer and looks for known causes: a mod built for a newer Java, a missing dependency, two copies of one mod, a Mixin failure, running out of memory, or a graphics driver fault. If it recognizes one, it tells you which mod is involved and what to change.</p>
+          <p>When the log doesn't say why, Waymark Launcher can search for the cause. It switches half the mods off, keeping their dependencies on, and asks you to launch the game and report what happened. Then it repeats with whichever half is left. A 300 mod pack takes about a dozen launches, and a crash that needs two mods loaded together turns up both.</p>
         </div>
       </section>
 
@@ -78,7 +79,7 @@
         <div>
           <p>Waymark Launcher checks every Modrinth mod in an instance with a single request and applies the updates as one change, so one rollback undoes all of them. CurseForge mods are checked the same way. You can read each changelog and pick a version first.</p>
           <p>New releases are held back for 48 hours by default. In 2023 the Fractureiser malware spread through stolen CurseForge and Bukkit accounts, and a short delay gives people time to catch something like that before it reaches your game. You can change the delay or turn it off.</p>
-          <p>On Windows, Waymark Launcher then starts the game on a hidden desktop to see whether it still loads, so a check can't pull you out of whatever you're doing. If the update stopped the game from starting, Waymark Launcher undoes it and tells you why. Pressing Play ends the check.</p>
+          <p>On Windows, Waymark Launcher then starts the game on a hidden desktop to see whether it still loads, so a check can't pull you out of whatever you're doing. If the update stopped the game from starting, Waymark Launcher undoes it and tells you why. Pressing Play ends the check, and you can turn checks off in Settings.</p>
           <figure>
             <img src="/assets/app-mods.webp" alt="The Mods tab, showing two updates ready to install, one held back because it is too new, and a searchable list of mods" width="1980" height="1260" loading="lazy" />
           </figure>
@@ -89,7 +90,7 @@
         <h2>Finding things to install</h2>
         <div>
           <p>Discover searches Modrinth, CurseForge, Feed The Beast, ATLauncher and Technic from one page, with filters for Minecraft version, loader and category. It covers mods, modpacks, shaders, resource packs and data packs, and marks what you already have.</p>
-          <p>You can also keep a list of starter mods for each Minecraft version. Every new instance on that version gets them, using the build made for its mod loader, and anything without one is left out.</p>
+          <p>The Servers page lists the Java servers their owners publish on Modrinth, with filters and live player counts. Join sets up the right instance the first time, down to the exact modpack version a modded server uses, and after that Play goes straight into the server.</p>
           <figure>
             <img src="/assets/app-discover.webp" alt="Discover, showing a grid of modpacks with a picture for each and filters down the left" width="1980" height="1260" loading="lazy" />
           </figure>
@@ -97,51 +98,10 @@
       </section>
 
       <section>
-        <h2>The server list</h2>
-        <div>
-          <p>The Servers page lists the Java servers their owners publish on Modrinth. Filter by vanilla or modded, region, language and the kind of game, and see how many people are on. Join sets up the right instance the first time: the version a vanilla server recommends, or the exact modpack version a modded one uses. After that, Play goes straight into the server, and the instance follows the server when its pack changes.</p>
-          <p>Your servers keeps the ones you save, along with every server already in your instances, each with its live status.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Shared settings</h2>
-        <div>
-          <p>Keybinds, video, sound and the server list can follow you between instances. A change you make in one reaches the others the next time they start. Minecraft 1.13 and newer share one set and older releases another, because 1.13 changed how controls are saved, and any instance can keep its own.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Worlds and servers</h2>
-        <div>
-          <p>Each instance lists its worlds and servers. On Minecraft 1.20 and newer, Play on a world or server goes straight there without the menus. Deleted worlds stay in a trash folder for 30 days.</p>
-          <p>Waymark Launcher can also build a server from an instance and run it on your computer. Mods that only work on the client are left out. It stops at the Minecraft EULA until you accept it yourself.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Skins</h2>
-        <div>
-          <p>Try on any skin on a 3D model before you wear it. Waymark Launcher keeps a library of your own PNG files alongside the skins Minecraft comes with.</p>
-          <figure>
-            <img src="/assets/app-skins.webp" alt="The Skins page, with a 3D character standing in a night landscape on the left and a grid of default skins on the right" width="1980" height="1260" loading="lazy" />
-          </figure>
-        </div>
-      </section>
-
-      <section>
         <h2>Friends</h2>
         <div>
-          <p>Friends are optional. They use a separate Waymark Launcher account, which is a username and a password with no email address. You can see who's online and what they're playing, and send them an instance. Only store ids travel, never the files.</p>
-          <p>If you host a server from Waymark Launcher, you can let friends join it. They get a Join button that installs your setup and takes them straight in. Turning this on asks your router to open a port and shows friends your internet address, so it stays off until you choose it.</p>
-          <p>The server keeps your username, a hash of your password, your friends list, anything sent to you, when you were last online, the name of the instance you're playing and, while you have a server open to friends, its address. You can hide your status, block people, or delete the account and all of that from the app. A forgotten password can't be recovered, because there's no email to send a reset to.</p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Updating Waymark Launcher</h2>
-        <div>
-          <p>New versions download in the background and install when you close the app, or sooner if you choose Restart to update. Each one is signed, and Waymark Launcher refuses anything that doesn't match. It never updates during a game or while it's hosting a server. You can turn this off in Settings.</p>
+          <p>Friends are optional and use a separate Waymark Launcher account: a username and a password, with no email address. You can see who's online and what they're playing, send them an instance, and let them join a server you host from Waymark Launcher. Letting friends join asks your router to open a port and shows them your internet address, so it stays off until you turn it on.</p>
+          <p>A forgotten password can't be recovered, because there's no email to send a reset to. The <a href="/privacy">privacy policy</a> lists what the friends server keeps.</p>
         </div>
       </section>
 
@@ -156,10 +116,11 @@
               <tr><th scope="row">Mods</th><td>Modrinth and CurseForge. If a CurseForge author has blocked third-party downloads, Waymark Launcher sends you to their page.</td></tr>
               <tr><th scope="row">Modpacks</th><td><code>.mrpack</code>, CurseForge <code>.zip</code>, Feed The Beast, ATLauncher and Technic</td></tr>
               <tr><th scope="row">Java</th><td>Mojang's own runtimes, installed automatically for each version</td></tr>
-              <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, ATLauncher, GDLauncher, the CurseForge app and the Modrinth App. Importing makes a copy and leaves the original alone.</td></tr>
-              <tr><th scope="row">Platform</th><td>Windows. Builds for macOS and Linux are published too, but they haven't been tested on real machines yet.</td></tr>
+              <tr><th scope="row">Imports from</th><td>Prism Launcher, MultiMC, ATLauncher, GDLauncher, the CurseForge app, the Modrinth App and the Minecraft Launcher</td></tr>
+              <tr><th scope="row">Platforms</th><td>Windows and Linux. macOS builds are published too, but haven't been tested on a real Mac.</td></tr>
+              <tr><th scope="row">Its own updates</th><td>Signed, downloaded in the background and installed when you close the app, never during a game. You can turn them off.</td></tr>
               <tr><th scope="row">Discord</th><td>Rich presence shows what you're playing, once you turn it on</td></tr>
-              <tr><th scope="row">Languages</th><td>English, Spanish, Portuguese, French, German, Russian and Chinese</td></tr>
+              <tr><th scope="row">Languages</th><td>English, with machine translations into Spanish, Portuguese, French, German, Russian and Chinese</td></tr>
               <tr><th scope="row">License</th><td><a href="https://github.com/Woblu/waymark-launcher">GPL 3.0, source on GitHub</a></td></tr>
               <tr><th scope="row">Installer</th><td>About 6 MB</td></tr>
             </tbody>
@@ -175,10 +136,18 @@
         </div>
       </section>
 
+      <section id="about">
+        <h2>About this project</h2>
+        <div>
+          <p>Waymark Launcher is made by one person, Woblu, who started it in October 2026 and is responsible for it. It's young, so expect rough edges, and please report them on <a href="https://github.com/Woblu/waymark-launcher/issues">GitHub</a>.</p>
+          <p>It's written with a lot of help from Claude, an AI model made by Anthropic. Woblu decides what goes in and tests each release on Windows and Linux before publishing it. The core has over 360 automated tests, and an end-to-end test drives the real app the way a player would.</p>
+        </div>
+      </section>
+
       <section id="contact">
         <h2>Contact</h2>
         <div>
-          <p>Waymark Launcher is made by Woblu, who is responsible for it. For support or anything else, email <a href="mailto:waymarklaunchersupport@proton.me">waymarklaunchersupport@proton.me</a>.</p>
+          <p>For support or anything else, email <a href="mailto:waymarklaunchersupport@proton.me">waymarklaunchersupport@proton.me</a>.</p>
         </div>
       </section>
     </main>
