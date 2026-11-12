@@ -891,7 +891,7 @@ impl Core {
         let usable = atlauncher::usable(&pack);
         let version = usable.first().ok_or_else(|| {
             Error::Other(format!(
-                "{} is too old for Waymark Launcher to install yet",
+                "{} is too old for Waymark Launcher to install",
                 pack.name
             ))
         })?;

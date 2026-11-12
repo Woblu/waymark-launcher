@@ -503,7 +503,7 @@ fn profile_minecraft(file: &VersionFile) -> Option<String> {
 /// What a pack gets told when its game jar is more than a loader.
 pub fn patches_the_game(title: &str) -> Error {
     Error::Other(format!(
-        "{title} patches the game's own files in a way Waymark Launcher doesn't support yet"
+        "{title} patches the game's own files in a way Waymark Launcher doesn't support"
     ))
 }
 

@@ -847,7 +847,7 @@ impl Core {
         let installer = self.download_installer(&url, task).await?;
         if needs_running(&installer)? {
             return Err(Error::Other(format!(
-                "Cleanroom {version} needs installer steps Waymark Launcher doesn't support yet"
+                "Cleanroom {version} needs installer steps Waymark Launcher doesn't support"
             )));
         }
         let id = installed_version_id(&installer)?;

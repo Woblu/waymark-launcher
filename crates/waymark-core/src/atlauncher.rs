@@ -167,7 +167,7 @@ impl ConfigMod {
 pub fn game_of(config: &Config) -> Result<(String, Loader)> {
     let Some(loader) = &config.loader else {
         return Err(Error::Other(
-            "this version patches the game's own files, which Waymark Launcher doesn't support yet"
+            "this version patches the game's own files, which Waymark Launcher doesn't support"
                 .into(),
         ));
     };
