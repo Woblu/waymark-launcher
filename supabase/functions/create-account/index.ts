@@ -9,9 +9,15 @@ const RESERVED = ['admin', 'administrator', 'mojang', 'microsoft', 'minecraft', 
 const reply = (status: number, error?: string) =>
   new Response(JSON.stringify(error ? { error } : { ok: true }), { status, headers: { 'content-type': 'application/json' } });
 
-async function hashed(address: string): Promise<string> {
-  const salted = new TextEncoder().encode(`waymark-signup:${address}`);
-  const digest = await crypto.subtle.digest('SHA-256', salted);
+// Sign-ups are limited per internet address, and the address is only kept as an
+// HMAC under a key in the function's secrets. A plain hash of an IPv4 address can
+// be reversed by hashing all four billion of them.
+const ADDRESS_KEY = Deno.env.get('SIGNUP_ADDRESS_KEY');
+
+async function hashed(address: string, secret: string): Promise<string> {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const key = await crypto.subtle.importKey('raw', encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, encode(address));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -24,9 +30,10 @@ Deno.serve(async (request) => {
   if (RESERVED.some((name) => username.toLowerCase().includes(name))) return reply(409, 'username_taken');
   if (password.length < 8 || password.length > 72) return reply(400, 'bad_password');
 
+  if (!ADDRESS_KEY) return reply(500, 'unavailable');
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const address = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-  const { data: allowed, error: limited } = await admin.rpc('may_sign_up', { address_hash: await hashed(address) });
+  const { data: allowed, error: limited } = await admin.rpc('may_sign_up', { address_hash: await hashed(address, ADDRESS_KEY) });
   if (limited) return reply(500, 'unavailable');
   if (!allowed) return reply(429, 'too_many_signups');
 
