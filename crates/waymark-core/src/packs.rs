@@ -1897,8 +1897,21 @@ fn unverified_code(tree: &PackTree, origin: Option<&PackOrigin>) -> Vec<String> 
 
 fn is_code(path: &str) -> bool {
     const CODE: [&str; 15] = [
-        ".jar", ".jar.disabled", ".class", ".exe", ".dll", ".so", ".dylib", ".jnilib",
-        ".bat", ".cmd", ".ps1", ".vbs", ".sh", ".scr", ".msi",
+        ".jar",
+        ".jar.disabled",
+        ".class",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".jnilib",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".vbs",
+        ".sh",
+        ".scr",
+        ".msi",
     ];
     let lower = path.to_ascii_lowercase();
     CODE.iter().any(|ending| lower.ends_with(ending))
@@ -1981,7 +1994,10 @@ mod tests {
             ],
             manual: Vec::new(),
         };
-        assert_eq!(unverified_code(&tree, None), ["mods/Hidden.JAR", "config/run.ps1"]);
+        assert_eq!(
+            unverified_code(&tree, None),
+            ["mods/Hidden.JAR", "config/run.ps1"]
+        );
         let technic = PackOrigin {
             source: ContentSource::Technic,
             project: "p".into(),
@@ -2001,8 +2017,17 @@ mod tests {
         let good = "AB".repeat(64);
         let parsed: MrpackFile = serde_json::from_str(&file(&good)).unwrap();
         assert_eq!(parsed.hashes.sha512, good.to_ascii_lowercase());
-        for bad in ["abc", "", &"é".repeat(64), &"zz".repeat(64), &"ab".repeat(65)] {
-            assert!(serde_json::from_str::<MrpackFile>(&file(bad)).is_err(), "{bad}");
+        for bad in [
+            "abc",
+            "",
+            &"é".repeat(64),
+            &"zz".repeat(64),
+            &"ab".repeat(65),
+        ] {
+            assert!(
+                serde_json::from_str::<MrpackFile>(&file(bad)).is_err(),
+                "{bad}"
+            );
         }
     }
 

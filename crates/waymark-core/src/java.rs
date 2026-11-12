@@ -235,7 +235,11 @@ mod tests {
         assert_eq!(plan.folders, [home.join("bin")]);
         assert_eq!(plan.fetches.len(), 2);
         assert!(plan.fetches.iter().all(|f| f.dest.starts_with(&home)));
-        assert!(plan.fetches.iter().all(|f| matches!(f.hash, Expected::Sha1(_))));
+        assert!(
+            plan.fetches
+                .iter()
+                .all(|f| matches!(f.hash, Expected::Sha1(_)))
+        );
         assert_eq!(plan.executables, [home.join("bin/java")]);
         assert_eq!(plan.links.len(), 1);
     }
@@ -271,7 +275,10 @@ mod tests {
         std::fs::write(&binary, b"").unwrap();
         std::fs::write(home.join(INSTALLED_MARKER), b"").unwrap();
         let task = Task::start(&core.events, "test");
-        assert_eq!(core.ensure_java("java-runtime-delta", &task).await.unwrap(), binary);
+        assert_eq!(
+            core.ensure_java("java-runtime-delta", &task).await.unwrap(),
+            binary
+        );
     }
 
     #[cfg(unix)]
@@ -283,8 +290,20 @@ mod tests {
         std::fs::write(&java, b"").unwrap();
         std::fs::write(dir.path().join("target"), b"").unwrap();
         let link = dir.path().join("link");
-        finish_runtime(std::slice::from_ref(&java), &[(link.clone(), "target".into())]).unwrap();
-        assert_eq!(std::fs::metadata(&java).unwrap().permissions().mode() & 0o777, 0o755);
-        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        finish_runtime(
+            std::slice::from_ref(&java),
+            &[(link.clone(), "target".into())],
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::metadata(&java).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 }

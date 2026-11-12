@@ -29,4 +29,5 @@ pub const CURSEFORGE_API_KEY: Option<&str> = option_env!("WAYMARK_CURSEFORGE_API
 /// Every published release, newest first. Pre-releases are only ever looked
 /// for here, by players who turned on beta updates; everyone else follows the
 /// site's `/updates/latest.json`, which GitHub points at the newest full release.
-pub const RELEASES_API: &str = "https://api.github.com/repos/Woblu/waymark-launcher/releases?per_page=20";
+pub const RELEASES_API: &str =
+    "https://api.github.com/repos/Woblu/waymark-launcher/releases?per_page=20";

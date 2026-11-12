@@ -17,8 +17,8 @@ use tokio::sync::{Notify, mpsc};
 
 use crate::Core;
 use crate::error::{Error, Result};
-use crate::gamelog::next_line_lossy;
 use crate::event::{Event, Task};
+use crate::gamelog::next_line_lossy;
 use crate::port_map;
 
 const EULA_FILE: &str = "eula.txt";
@@ -427,10 +427,21 @@ mod tests {
         clear_for_rebuild(&folder).unwrap();
 
         assert!(!folder.exists());
-        let kept: Vec<_> = fs::read_dir(dir.path()).unwrap().filter_map(|e| e.ok()).collect();
+        let kept: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
         assert_eq!(kept.len(), 1);
-        assert!(kept[0].file_name().to_string_lossy().starts_with("abc-server-kept-"));
-        assert_eq!(fs::read(kept[0].path().join("world/level.dat")).unwrap(), b"precious");
+        assert!(
+            kept[0]
+                .file_name()
+                .to_string_lossy()
+                .starts_with("abc-server-kept-")
+        );
+        assert_eq!(
+            fs::read(kept[0].path().join("world/level.dat")).unwrap(),
+            b"precious"
+        );
     }
 
     #[test]

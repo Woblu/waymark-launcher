@@ -359,13 +359,18 @@ mod tests {
         let key = Some("secret");
         let sent = |url: &str| curseforge_key_for(url, key).is_some();
         assert!(sent("https://edge.forgecdn.net/files/4712/866/jei.jar"));
-        assert!(sent("https://mediafilez.forgecdn.net/files/4712/866/jei.jar"));
+        assert!(sent(
+            "https://mediafilez.forgecdn.net/files/4712/866/jei.jar"
+        ));
         assert!(sent("https://EDGE.ForgeCDN.net/files/1/2/a.jar"));
         assert!(!sent("http://edge.forgecdn.net/files/1/2/a.jar"));
         assert!(!sent("https://cdn.modrinth.com/data/abc/a.jar"));
         assert!(!sent("https://forgecdn.net.example.com/a.jar"));
         assert!(!sent("https://evilforgecdn.net/a.jar"));
-        assert_eq!(curseforge_key_for("https://edge.forgecdn.net/a", None), None);
+        assert_eq!(
+            curseforge_key_for("https://edge.forgecdn.net/a", None),
+            None
+        );
     }
 
     #[test]

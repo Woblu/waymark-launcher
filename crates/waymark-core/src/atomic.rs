@@ -35,10 +35,7 @@ pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 pub fn temp_beside(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     path.with_file_name(format!("{name}.{}.part", uuid::Uuid::new_v4().simple()))
 }
 

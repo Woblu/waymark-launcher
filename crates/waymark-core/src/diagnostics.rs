@@ -194,8 +194,8 @@ mod tests {
     #[test]
     fn the_log_starts_over_instead_of_growing_forever() {
         let dir = tempfile::tempdir().unwrap();
-        let mut log = Rotating::open(dir.path().join(LOG_FILE), dir.path().join(OLD_LOG_FILE))
-            .unwrap();
+        let mut log =
+            Rotating::open(dir.path().join(LOG_FILE), dir.path().join(OLD_LOG_FILE)).unwrap();
         let line = vec![b'x'; 1024 * 1024];
         for _ in 0..12 {
             log.write_all(&line).unwrap();

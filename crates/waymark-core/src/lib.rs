@@ -219,7 +219,10 @@ impl Core {
     }
 
     pub fn save_settings(&self, settings: &Settings) -> Result<()> {
-        crate::atomic::write(&self.paths.settings(), toml::to_string_pretty(settings)?.as_bytes())?;
+        crate::atomic::write(
+            &self.paths.settings(),
+            toml::to_string_pretty(settings)?.as_bytes(),
+        )?;
         // Turning presence on or off takes effect at once, even mid-game.
         self.update_presence();
         Ok(())

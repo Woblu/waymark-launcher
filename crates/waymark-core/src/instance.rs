@@ -184,8 +184,16 @@ impl Core {
     }
 
     /// Returns an instance to a waymark, unless something is using its files.
-    pub fn return_to_waymark(&self, id: &str, waymark: &str) -> Result<crate::waymarks::WaymarkSummary> {
-        let checking = self.checks.lock().expect("check list poisoned").contains_key(id);
+    pub fn return_to_waymark(
+        &self,
+        id: &str,
+        waymark: &str,
+    ) -> Result<crate::waymarks::WaymarkSummary> {
+        let checking = self
+            .checks
+            .lock()
+            .expect("check list poisoned")
+            .contains_key(id);
         if self.game_running(id) || checking {
             return Err(Error::Other(
                 "Close the game first. Its files can't change while it's running.".into(),
@@ -205,13 +213,16 @@ impl Core {
             .ok_or_else(|| Error::NotFound("that change".into()))?;
         if at + 1 != marks.len() {
             return Err(Error::Other(
-                "Something else changed after this. Open Waymarks to choose how far back to go.".into(),
+                "Something else changed after this. Open Waymarks to choose how far back to go."
+                    .into(),
             ));
         }
         let before = at
             .checked_sub(1)
             .map(|before| marks[before].id.clone())
-            .ok_or_else(|| Error::Other("There's nothing before this change to go back to.".into()))?;
+            .ok_or_else(|| {
+                Error::Other("There's nothing before this change to go back to.".into())
+            })?;
         self.return_to_waymark(id, &before)
     }
 
@@ -466,7 +477,10 @@ mod tests {
         trail.mark("Before", WaymarkKind::Manual).unwrap().unwrap();
         fs::create_dir_all(game.join("mods")).unwrap();
         fs::write(game.join("mods/added.jar"), b"jar").unwrap();
-        let added = trail.mark("Added a mod", WaymarkKind::Install).unwrap().unwrap();
+        let added = trail
+            .mark("Added a mod", WaymarkKind::Install)
+            .unwrap()
+            .unwrap();
 
         core.undo_change(&id, &added.id).unwrap();
         assert!(!game.join("mods/added.jar").exists());

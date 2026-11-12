@@ -239,7 +239,10 @@ mod tests {
         let source = dir.path().join("downloaded.jar");
         fs::write(&source, b"jar").unwrap();
         let stored = store.add(&source, Placement::Link).unwrap();
-        let (a, b) = (dir.path().join("a/mods/m.jar"), dir.path().join("b/mods/m.jar"));
+        let (a, b) = (
+            dir.path().join("a/mods/m.jar"),
+            dir.path().join("b/mods/m.jar"),
+        );
         store.place(&stored.hash, &a, Placement::Link).unwrap();
         store.place(&stored.hash, &b, Placement::Link).unwrap();
 
@@ -321,7 +324,13 @@ mod tests {
     #[test]
     fn a_hash_that_is_not_a_hash_never_leaves_the_store() {
         let (dir, store) = setup();
-        for bad in ["", "a", "../../../../etc/passwd", &"g".repeat(64), &"a".repeat(65)] {
+        for bad in [
+            "",
+            "a",
+            "../../../../etc/passwd",
+            &"g".repeat(64),
+            &"a".repeat(65),
+        ] {
             let path = store.path_of(bad);
             assert!(path.starts_with(dir.path().join("store")), "{bad}");
             assert!(!store.contains(bad));
