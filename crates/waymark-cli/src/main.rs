@@ -381,8 +381,12 @@ async fn run(
                 }
                 None => {
                     for instance in found {
+                        let already = instance
+                            .imported_as
+                            .map(|id| format!(", already imported as {id}"))
+                            .unwrap_or_default();
                         println!(
-                            "{:?}: {} ({} {:?})",
+                            "{:?}: {} ({} {:?}{already})",
                             instance.launcher,
                             instance.name,
                             instance.minecraft,

@@ -4,11 +4,13 @@
   import type { ExternalInstance, GameVersion, LoaderKind, Starter } from '../lib/api';
   import { explain } from '../lib/errors';
   import { day, loaderName } from '../lib/format';
+  import { externalVersion, inLibrary as alreadyIn, LAUNCHERS } from '../lib/imports';
   import { app, starterFits, startersFor } from '../lib/state.svelte';
   import { tabKeys } from '../lib/tabs';
   import Modal from './Modal.svelte';
 
-  let { start = 'new' }: { start?: 'new' | 'import' } = $props();
+  /** `importEverything` starts importing all of them as soon as they're found. */
+  let { start = 'new', importEverything = false }: { start?: 'new' | 'import'; importEverything?: boolean } = $props();
 
   const LOADERS: LoaderKind[] = ['vanilla', 'fabric', 'neoforge', 'forge', 'quilt'];
   const OLD_LOADERS: LoaderKind[] = ['vanilla', 'forge', 'legacyfabric', 'ornithe', 'liteloader', 'rift', 'cleanroom'];
@@ -23,7 +25,6 @@
     { id: 'preclassic', label: 'Pre-Classic' },
     { id: 'aprilfools', label: 'April Fools' },
   ];
-  const LAUNCHERS = { prism: 'Prism Launcher', multimc: 'MultiMC', curseforge: 'CurseForge', modrinth: 'Modrinth App', atlauncher: 'ATLauncher', gdlauncher: 'GDLauncher' };
   /** Fabric only reaches back to 1.14, and these projects carry it further. */
   const OLD_MINOR = 14;
 
@@ -71,9 +72,7 @@
   });
   const finalName = $derived((named ? name.trim() : '') || suggested);
 
-  /** Probably imported before: the same name, version and loader are already in the library. */
-  const inLibrary = (instance: ExternalInstance) =>
-    app.library.some((entry) => entry.name === instance.name && entry.minecraft === instance.minecraft && entry.loader.kind === instance.loader.kind);
+  const inLibrary = (instance: ExternalInstance) => alreadyIn(instance, app.library);
   const waiting = $derived(external.filter((instance) => !imports[instance.gameDir] || imports[instance.gameDir].status === 'failed').filter((instance) => !inLibrary(instance) || imports[instance.gameDir]));
 
   $effect(() => {
@@ -124,6 +123,7 @@
     } else app.fail(manifest.reason, 'Could not load Minecraft versions');
     if (found.status === 'fulfilled') external = found.value;
     searched = true;
+    if (untrack(() => importEverything)) importAll();
   });
 
   async function create(event: SubmitEvent) {
@@ -277,7 +277,7 @@
             <li>
               <div class="about">
                 <span class="truncate">{instance.name}</span>
-                <span class="faint small truncate">{LAUNCHERS[instance.launcher]}, {instance.minecraft}, {loaderName(instance.loader.kind)}</span>
+                <span class="faint small truncate">{LAUNCHERS[instance.launcher]}, {externalVersion(instance)}, {loaderName(instance.loader.kind)}</span>
                 {#if progress?.status === 'failed'}<span class="small failed">{progress.reason}</span>{/if}
               </div>
               {#if progress?.status === 'importing'}
@@ -297,7 +297,7 @@
           {/each}
         </ul>
       {:else if searched}
-        <p class="muted intro">No instances found from Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher.</p>
+        <p class="muted intro">No instances found from the Minecraft Launcher, Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher.</p>
       {:else}
         <p class="muted intro">Looking for other launchers</p>
       {/if}

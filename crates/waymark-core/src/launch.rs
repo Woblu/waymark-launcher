@@ -659,6 +659,7 @@ mod tests {
             group: None,
             keeps_own_settings: false,
             server: None,
+            imported_from: None,
             options: LaunchOptions::default(),
         };
         let prepared = Prepared {

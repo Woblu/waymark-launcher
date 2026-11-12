@@ -1,35 +1,43 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, Play, Plus, Search } from '@lucide/svelte';
+  import { ChevronDown, ChevronRight, Play, Plus, Search, X } from '@lucide/svelte';
   import Art from '../components/Art.svelte';
   import { api, instanceIcon, localImage } from '../lib/api';
-  import type { LibraryEntry, RecentWorld } from '../lib/api';
+  import type { ExternalInstance, LibraryEntry, RecentWorld } from '../lib/api';
   import { asSentence } from '../lib/errors';
   import { loaderName, playtime, timeAgo } from '../lib/format';
+  import { byLauncher, inLibrary } from '../lib/imports';
   import { instanceMenu } from '../lib/instance-menu';
   import { app } from '../lib/state.svelte';
   import Instance from './Instance.svelte';
 
   const FOLDED_KEY = 'waymark.folded-folders';
+  /** Other launchers' instances the player said not now to, by folder. */
+  const PASSED_KEY = 'waymark.imports-passed';
 
-  function loadFolded(): string[] {
+  function loadList(key: string): string[] {
     try {
-      return JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]');
+      return JSON.parse(localStorage.getItem(key) ?? '[]');
     } catch {
       return [];
     }
   }
 
+  function saveList(key: string, list: string[]) {
+    try {
+      localStorage.setItem(key, JSON.stringify(list));
+    } catch {
+      // Only remembers a choice about what's shown, so it's fine to lose.
+    }
+  }
+
   let filter = $state('');
   let recent = $state<RecentWorld[]>([]);
-  let folded = $state(loadFolded());
+  let folded = $state(loadList(FOLDED_KEY));
+  let passed = $state(loadList(PASSED_KEY));
 
   function fold(group: string) {
     folded = folded.includes(group) ? folded.filter((name) => name !== group) : [...folded, group];
-    try {
-      localStorage.setItem(FOLDED_KEY, JSON.stringify(folded));
-    } catch {
-      // Only remembers what's folded, so it's fine to lose.
-    }
+    saveList(FOLDED_KEY, folded);
   }
 
   $effect(() => {
@@ -55,15 +63,26 @@
     app.menu = { x: event.clientX, y: event.clientY, items: instanceMenu(entry) };
   }
 
-  /** Instances other launchers have on this computer, counted for a first run. */
-  let found = $state(0);
-  let looked = false;
+  /** Instances other launchers have on this computer. */
+  let external = $state<ExternalInstance[]>([]);
+  const size = $derived(app.library.length);
 
+  // Looked for again whenever an instance comes or goes, so an import takes it off the list.
   $effect(() => {
-    if (looked || !app.loaded || app.library.length || app.libraryError) return;
-    looked = true;
-    api.externalInstances().then((list) => (found = list.length), () => {});
+    size;
+    if (!app.loaded || app.libraryError) return;
+    api.externalInstances().then((list) => (external = list), () => {});
   });
+
+  const waiting = $derived(external.filter((instance) => !inLibrary(instance, app.library)));
+  const found = $derived(waiting.length);
+  /** Asked about again only when something new turns up. */
+  const offered = $derived(waiting.filter((instance) => !passed.includes(instance.gameDir)));
+
+  function notNow() {
+    passed = [...new Set([...passed, ...offered.map((instance) => instance.gameDir)])];
+    saveList(PASSED_KEY, passed);
+  }
 
   let retrying = $state(false);
 
@@ -142,9 +161,19 @@
           </li>
           <li>
             <h2>Bring your instances</h2>
-            <p class="muted">Import from Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher. The originals stay where they are.</p>
-            {#if found}<p class="faint small">{found === 1 ? 'Found 1 on this computer' : `Found ${found} on this computer`}</p>{/if}
-            <button class="btn" class:primary={!!app.activeAccount && found > 0} onclick={() => (app.dialog = 'import')}>Import</button>
+            <p class="muted">Import from the Minecraft Launcher, Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher. The originals stay where they are.</p>
+            {#if found}
+              <p class="faint small">{found === 1 ? 'Found 1 on this computer' : `Found ${found} on this computer`}</p>
+              <p class="faint small sources">{#each byLauncher(waiting) as [launcher, count] (launcher)}<span>{launcher} {count}</span>{/each}</p>
+            {/if}
+            <div class="buttons">
+              {#if found > 1}
+                <button class="btn" onclick={() => (app.dialog = 'import')}>Choose which</button>
+                <button class="btn" class:primary={!!app.activeAccount} onclick={() => (app.dialog = 'import-all')}>Import all ({found})</button>
+              {:else}
+                <button class="btn" class:primary={!!app.activeAccount && found > 0} onclick={() => (app.dialog = 'import')}>Import</button>
+              {/if}
+            </div>
           </li>
           <li>
             <h2>Or start fresh</h2>
@@ -158,6 +187,21 @@
       </div>
     {:else}
     <div class="content">
+      {#if offered.length}
+        <section class="bring" aria-label="Instances in other launchers">
+          <div class="text">
+            <h2>{found === 1 ? "1 instance on this computer isn't in your library yet" : `${found} instances on this computer aren't in your library yet`}</h2>
+            <p class="muted">Importing brings over worlds, mods and settings, so you can keep playing where you left off. The other launcher stays as it is.</p>
+            <p class="faint small sources">{#each byLauncher(waiting) as [launcher, count] (launcher)}<span>{launcher} {count}</span>{/each}</p>
+          </div>
+          <div class="buttons">
+            <button class="btn" onclick={() => (app.dialog = 'import')}>Choose which</button>
+            <button class="btn primary" onclick={() => (app.dialog = 'import-all')}>{found === 1 ? 'Import' : `Import all (${found})`}</button>
+          </div>
+          <button class="btn quiet icon dismiss" aria-label="Not now" title="Not now" onclick={notNow}><X size={16} /></button>
+        </section>
+      {/if}
+
       {#if recent.length}
         <section>
           <h2>Jump back in</h2>
@@ -259,7 +303,16 @@
   .start li:last-child { border-bottom: 1px solid var(--line); }
   .start h2 { grid-column: 1; font-size: var(--text-m); }
   .start p { grid-column: 1; max-width: 60ch; }
-  .start li > .btn, .start li > .buttons { grid-column: 2; grid-row: 1 / span 3; }
+  .start li > .btn, .start li > .buttons { grid-column: 2; grid-row: 1 / span 4; }
   .buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .sources span + span::before { content: ''; display: inline-block; width: 4px; height: 4px; margin: 0 8px 2px; background: var(--text-3); }
+
+  /* Other launchers' instances, offered until they're imported or passed on. */
+  .bring { display: flex; align-items: center; gap: 16px; padding: 14px 10px 14px 18px; background: var(--panel); clip-path: var(--stepped); }
+  .bring .text { flex: 1; min-width: 0; }
+  .bring h2 { margin-bottom: 2px; font-size: var(--text-m); }
+  .bring p { max-width: 70ch; }
+  .bring .sources { margin-top: 4px; }
+  .dismiss { align-self: flex-start; }
   .trouble { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 620px; }
 </style>

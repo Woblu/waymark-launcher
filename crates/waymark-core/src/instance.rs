@@ -66,6 +66,9 @@ pub struct Instance {
     /// The listed server this instance was made to join, so joining again reuses it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<ServerLink>,
+    /// The other launcher's folder this was imported from, so it isn't offered again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_from: Option<std::path::PathBuf>,
     #[serde(default, flatten)]
     pub options: LaunchOptions,
 }
@@ -295,6 +298,7 @@ impl Core {
             group: None,
             keeps_own_settings: false,
             server: None,
+            imported_from: None,
             options: LaunchOptions::default(),
         };
         Lockfile::new(minecraft, loader).save(&dir)?;

@@ -56,7 +56,7 @@
   </main>
   <PlayBar />
   <Toasts />
-  {#if app.dialog === 'new' || app.dialog === 'import'}<NewInstance start={app.dialog} />{/if}
+  {#if app.dialog === 'new' || app.dialog === 'import' || app.dialog === 'import-all'}<NewInstance start={app.dialog === 'new' ? 'new' : 'import'} importEverything={app.dialog === 'import-all'} />{/if}
   {#if app.dialog === 'signin'}<SignIn />{/if}
   {#if app.instanceDialog}{#key app.instanceDialog}<InstanceDialogs dialog={app.instanceDialog} />{/key}{/if}
   {#if app.crash}<CrashSheet />{/if}

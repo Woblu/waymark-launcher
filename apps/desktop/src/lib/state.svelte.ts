@@ -104,7 +104,10 @@ class AppState {
   /** Program files a just-installed pack carried itself, waiting for the player to look. */
   unverified = $state<{ instance: string; name: string; files: string[] } | null>(null);
   /** `import` opens the New instance dialog on its Import tab. */
-  dialog = $state<'none' | 'new' | 'import' | 'signin'>('none');
+  /** The part of Settings on show, kept while the player looks elsewhere. */
+  settingsSection = $state('appearance');
+  /** `import-all` opens the import list and starts importing everything in it. */
+  dialog = $state<'none' | 'new' | 'import' | 'import-all' | 'signin'>('none');
   /** Why the sign-in dialog opened, when something asked for it. */
   signInReason = $state<string | null>(null);
   /** Why the library couldn't be read, so the page can say so instead of looking empty. */

@@ -217,7 +217,6 @@
       {:else if app.tab === 'server'}
         <ServerTab {id} />
       {:else}
-        <h2 class="settings-title">Settings</h2>
         <InstanceSettings {entry} />
       {/if}
     </section>
@@ -239,5 +238,4 @@
   .notice { flex: none; margin: 10px var(--gutter) 0; }
   .sections { flex: none; padding: 0 var(--gutter); }
   .panel { flex: 1; min-height: 0; }
-  .settings-title { margin: 2px 0 10px; font-size: var(--text-l); }
 </style>

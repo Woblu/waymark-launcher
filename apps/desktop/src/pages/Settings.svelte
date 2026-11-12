@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Plus } from '@lucide/svelte';
   import Modal from '../components/Modal.svelte';
+  import SettingsLayout from '../components/SettingsLayout.svelte';
   import StarterMods from '../components/StarterMods.svelte';
   import SharedSettings from '../components/SharedSettings.svelte';
   import { api, openFolder } from '../lib/api';
@@ -12,6 +13,18 @@
   import { LANGUAGE_NAMES, chooseLanguage, savedLanguage } from '../lib/i18n';
   import { PRESETS, previewTheme, useTheme } from '../lib/theme';
   import { EVERY_VERSION, app } from '../lib/state.svelte';
+
+  const SECTIONS = [
+    { id: 'appearance', label: 'Appearance' },
+    { id: 'accounts', label: 'Accounts' },
+    { id: 'game', label: 'Game' },
+    { id: 'instances', label: 'New instances' },
+    { id: 'shared', label: 'Shared settings' },
+    { id: 'updates', label: 'Updates' },
+    { id: 'storage', label: 'Storage' },
+    { id: 'help', label: 'Help' },
+    { id: 'about', label: 'About' },
+  ];
 
   let settings = $state<Settings | null>(null);
   let reclaiming = $state(false);
@@ -93,6 +106,20 @@
   let creating = $state(false);
 
   const ownTheme = $derived(settings?.customThemes.find((theme) => theme.id === settings?.theme));
+
+  /** Every theme with the two colors it's made from. The computer's own is half of each. */
+  const themeChoices = $derived([
+    { id: 'system', name: 'Same as this computer', base: 'linear-gradient(135deg, #0c1118 50%, #f3efe7 50%)', accent: '#efb36c' },
+    { id: 'dark', name: 'Dark', base: '#0c1118', accent: '#efb36c' },
+    { id: 'light', name: 'Light', base: '#f3efe7', accent: '#a85f10' },
+    ...[...PRESETS, ...(settings?.customThemes ?? [])].map((theme) => ({ id: theme.id, name: theme.name, base: theme.base, accent: theme.accent })),
+  ]);
+
+  async function pickTheme(id: string) {
+    if (!settings) return;
+    settings.theme = id;
+    await chooseTheme();
+  }
 
   function newTheme() {
     creating = true;
@@ -226,64 +253,59 @@
 </script>
 
 <div class="page">
-  <div class="column">
-  <h1>Settings</h1>
-  {#if loadProblem}
-    <div class="notice trouble" role="alert">
-      <span><strong>Your settings didn't load.</strong> {loadProblem.sentence || asSentence(loadProblem.technical)}</span>
-      <button class="btn" onclick={loadSettings}>Try again</button>
-    </div>
-  {/if}
-  {#if settings}
-    <section>
-      <h2>Appearance</h2>
-      <div class="body">
-        <div class="form-row">
-          <label for="theme">Theme</label>
-          <div class="themes">
-            <select id="theme" class="field short" bind:value={settings.theme} onchange={chooseTheme}>
-              <option value="system">Same as this computer</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-              {#each [...PRESETS, ...settings.customThemes] as theme (theme.id)}<option value={theme.id}>{theme.name}</option>{/each}
-            </select>
+  <SettingsLayout title="Settings" sections={SECTIONS} bind:selected={app.settingsSection}>
+    {#if loadProblem}
+      <div class="notice trouble" role="alert">
+        <span><strong>Your settings didn't load.</strong> {loadProblem.sentence || asSentence(loadProblem.technical)}</span>
+        <button class="btn" onclick={loadSettings}>Try again</button>
+      </div>
+    {/if}
+
+    {#if app.settingsSection === 'appearance' && settings}
+      <h1 class="section-title">Appearance</h1>
+      <h2 class="group-title">Theme</h2>
+      <div class="group">
+        <div class="lone">
+          <div class="swatches" role="radiogroup" aria-label="Theme">
+            {#each themeChoices as choice (choice.id)}
+              <button class="swatch" role="radio" aria-checked={settings.theme === choice.id} class:chosen={settings.theme === choice.id} class:wide={choice.id === 'system'} onclick={() => pickTheme(choice.id)}>
+                <span class="chip" style:background={choice.base}><span class="dot" style:background={choice.accent}></span></span>
+                <span class="truncate">{choice.name}</span>
+              </button>
+            {/each}
+          </div>
+          <div class="actions">
             {#if ownTheme}<button class="btn" onclick={() => editTheme(ownTheme)}>Edit</button>{/if}
             <button class="btn" onclick={newTheme}><Plus size={16} /> New theme</button>
           </div>
         </div>
-        <div class="form-row">
-          <label for="language">Language</label>
-          <div>
-            <select id="language" class="field short" bind:value={language} onchange={setLanguage}>
-              <option value="system">Same as this computer</option>
-              {#each Object.entries(LANGUAGE_NAMES) as [code, name] (code)}<option value={code}>{name}</option>{/each}
-            </select>
-          </div>
+      </div>
+      <h2 class="group-title">Language</h2>
+      <div class="group">
+        <div class="lone">
+          <select id="language" class="field short" aria-label="Language" bind:value={language} onchange={setLanguage}>
+            <option value="system">Same as this computer</option>
+            {#each Object.entries(LANGUAGE_NAMES) as [code, name] (code)}<option value={code}>{name}</option>{/each}
+          </select>
         </div>
       </div>
-    </section>
-  {/if}
-
-  <section>
-    <h2>Accounts</h2>
-    <div class="body">
-      {#each app.accounts as account (account.uuid)}
-        <div class="account">
-          <span>{account.name}{#if account.active}<span class="faint active">Active</span>{/if}</span>
-          {#if !account.active}<button class="btn" onclick={() => activate(account)}>Use this account</button>{/if}
-          <button class="btn" onclick={() => signOut(account)}>Sign out</button>
-        </div>
-      {:else}
-        <p class="muted">Sign in with a Microsoft account that owns Minecraft: Java Edition to play.</p>
-      {/each}
-      <button class="btn add" onclick={() => (app.dialog = 'signin')}>Add an account</button>
-    </div>
-  </section>
-
-  {#if settings}
-    <section>
-      <h2>Game</h2>
-      <div class="body">
+    {:else if app.settingsSection === 'accounts'}
+      <h1 class="section-title">Accounts</h1>
+      <div class="group">
+        {#each app.accounts as account (account.uuid)}
+          <div class="account">
+            <span class="who">{account.name}{#if account.active}<span class="badge">Active</span>{/if}</span>
+            {#if !account.active}<button class="btn" onclick={() => activate(account)}>Use this account</button>{/if}
+            <button class="btn" onclick={() => signOut(account)}>Sign out</button>
+          </div>
+        {:else}
+          <p class="muted">Sign in with a Microsoft account that owns Minecraft: Java Edition to play.</p>
+        {/each}
+      </div>
+      <div class="after"><button class="btn" onclick={() => (app.dialog = 'signin')}><Plus size={16} /> Add an account</button></div>
+    {:else if app.settingsSection === 'game' && settings}
+      <h1 class="section-title">Game</h1>
+      <div class="group">
         <div class="form-row">
           <span class="form-label">Default memory</span>
           <div class="slider">
@@ -312,11 +334,9 @@
           </div>
         {/if}
       </div>
-    </section>
-
-    <section>
-      <h2>New instances</h2>
-      <div class="body">
+    {:else if app.settingsSection === 'instances' && settings}
+      <h1 class="section-title">New instances</h1>
+      <div class="group">
         <div class="form-row">
           <span class="form-label">Starter mods</span>
           <div>
@@ -330,15 +350,13 @@
           </div>
         </div>
       </div>
-    </section>
-
-    <section>
-      <h2>Shared settings</h2>
-      <div class="body">
+    {:else if app.settingsSection === 'shared' && settings}
+      <h1 class="section-title">Shared settings</h1>
+      <div class="group">
         <div class="form-row">
           <span class="form-label">Game settings</span>
           <div>
-            <label class="check top"><input type="checkbox" bind:checked={settings.shareSettings} onchange={toggleSharing} /> Share game settings between instances</label>
+            <label class="check"><input type="checkbox" bind:checked={settings.shareSettings} onchange={toggleSharing} /> Share game settings between instances</label>
             <p class="form-hint">Keybinds, video, sound and other options carry over. What you change in one instance reaches the others the next time they start. Minecraft 1.13 and newer share one set and older releases another. An instance can keep its own from its settings.</p>
             {#if settings.shareSettings}
               <label class="check"><input type="checkbox" bind:checked={settings.shareServers} onchange={save} /> Share the server list too</label>
@@ -350,34 +368,39 @@
           </div>
         </div>
       </div>
-    </section>
-
-    <section>
-      <h2>Updates</h2>
-      <div class="body">
+    {:else if app.settingsSection === 'updates' && settings}
+      <h1 class="section-title">Updates</h1>
+      <h2 class="group-title">Waymark Launcher</h2>
+      <div class="group">
         <div class="form-row">
-          <span class="form-label">Updates</span>
-          <div>
-            <label class="check top"><input type="checkbox" bind:checked={settings.checkUpdates} onchange={save} /> Check that the game still starts after an update</label>
-            <p class="form-hint">Waymark Launcher starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
+          <span class="form-label">Version</span>
+          <div class="version first">
+            <span class="tabular">{app.version}</span>
+            {#if app.update}
+              <button class="btn primary" onclick={() => app.installUpdate()}>Restart to update</button>
+            {:else}
+              <button class="btn" disabled={checking} onclick={checkNow}>{checking ? 'Checking' : 'Check for updates'}</button>
+              {#if upToDate}<span class="faint">You're up to date</span>{/if}
+            {/if}
           </div>
         </div>
         <div class="form-row">
-          <span class="form-label">Waymark Launcher</span>
+          <span class="form-label">Updates</span>
           <div>
-            <label class="check top"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark Launcher up to date</label>
+            <label class="check"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark Launcher up to date</label>
             <p class="form-hint">New versions download in the background and install when you close Waymark Launcher. It never restarts during a game.</p>
-            <label class="check top"><input type="checkbox" bind:checked={settings.betaUpdates} disabled={!settings.autoUpdate} onchange={save} /> Get beta versions early</label>
+            <label class="check"><input type="checkbox" bind:checked={settings.betaUpdates} disabled={!settings.autoUpdate} onchange={save} /> Get beta versions early</label>
             <p class="form-hint">Betas get new features a few days before everyone else, and sometimes new bugs. Turn this off and you move to the next full release when it comes out.</p>
-            <div class="version">
-              <span class="tabular">Version {app.version}</span>
-              {#if app.update}
-                <button class="btn" onclick={() => app.installUpdate()}>Restart to update</button>
-              {:else}
-                <button class="btn" disabled={checking} onclick={checkNow}>{checking ? 'Checking' : 'Check for updates'}</button>
-                {#if upToDate}<span class="faint">You're up to date</span>{/if}
-              {/if}
-            </div>
+          </div>
+        </div>
+      </div>
+      <h2 class="group-title">Mods and packs</h2>
+      <div class="group">
+        <div class="form-row">
+          <span class="form-label">After an update</span>
+          <div>
+            <label class="check"><input type="checkbox" bind:checked={settings.checkUpdates} onchange={save} /> Check that the game still starts after an update</label>
+            <p class="form-hint">Waymark Launcher starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
           </div>
         </div>
         <div class="form-row">
@@ -392,10 +415,38 @@
             <p class="form-hint">A mod update won't be offered until it has been out this long, which gives people time to catch malware from a stolen author account.</p>
           </div>
         </div>
+      </div>
+    {:else if app.settingsSection === 'storage'}
+      <h1 class="section-title">Storage</h1>
+      <div class="group">
         <div class="form-row">
-          <span class="form-label">Help</span>
+          <span class="form-label">Unused files</span>
           <div>
-            <div class="version">
+            <button class="btn" disabled={reclaiming} onclick={reclaim}>{reclaiming ? 'Cleaning up' : 'Clean up'}</button>
+            <p class="form-hint">Removes stored files that no instance or waymark needs.</p>
+          </div>
+        </div>
+      </div>
+      <h2 class="group-title">Recently deleted</h2>
+      <div class="group">
+        {#each deleted as item (item.id)}
+          <div class="account">
+            <span class="who">{item.name}<span class="faint detail">{item.kind === 'world' ? `World from ${item.instance}` : item.kind === 'screenshot' ? `Screenshot from ${item.instance}` : 'Instance'}, deleted {timeAgo(item.at)}</span></span>
+            <button class="btn" onclick={() => restore(item)}>Restore</button>
+            <button class="btn danger" onclick={() => (erasing = item)}>Delete now</button>
+          </div>
+        {:else}
+          <p class="muted">Nothing deleted lately. Deleted instances, worlds and screenshots are kept here for 30 days.</p>
+        {/each}
+      </div>
+      {#if deleted.length}<p class="form-hint">Kept for 30 days after they're deleted.</p>{/if}
+    {:else if app.settingsSection === 'help'}
+      <h1 class="section-title">Help</h1>
+      <div class="group">
+        <div class="form-row">
+          <span class="form-label">Diagnostics</span>
+          <div>
+            <div class="version first">
               <button class="btn" onclick={copyDiagnostics}>{copiedDiagnostics ? 'Copied' : 'Copy diagnostics'}</button>
               <button class="btn" onclick={openLogFolder}>Open log folder</button>
             </div>
@@ -404,47 +455,17 @@
           </div>
         </div>
       </div>
-    </section>
-  {/if}
-
-  <section>
-    <h2>Storage</h2>
-    <div class="body">
-      <div class="form-row">
-        <span class="form-label">Unused files</span>
-        <div>
-          <button class="btn" disabled={reclaiming} onclick={reclaim}>{reclaiming ? 'Cleaning up' : 'Clean up'}</button>
-          <p class="form-hint">Removes stored files that no instance or waymark needs.</p>
+    {:else if app.settingsSection === 'about'}
+      <h1 class="section-title">About</h1>
+      <div class="group">
+        <div class="lone">
+          <p>Waymark Launcher {app.version}, made by Woblu. Support: waymarklaunchersupport@proton.me</p>
+          <p class="faint legal">Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</p>
+          <p class="faint legal">Skin name tags use Monocraft by Idrees Hassan, under the SIL Open Font License.</p>
         </div>
       </div>
-    </div>
-  </section>
-
-  {#if deleted.length}
-    <section>
-      <h2>Recently deleted</h2>
-      <div class="body">
-        <p class="form-hint first">Kept for 30 days after they're deleted.</p>
-        {#each deleted as item (item.id)}
-          <div class="account">
-            <span>{item.name}<span class="faint active">{item.kind === 'world' ? `World from ${item.instance}` : item.kind === 'screenshot' ? `Screenshot from ${item.instance}` : 'Instance'}, deleted {timeAgo(item.at)}</span></span>
-            <button class="btn" onclick={() => restore(item)}>Restore</button>
-            <button class="btn danger" onclick={() => (erasing = item)}>Delete now</button>
-          </div>
-        {/each}
-      </div>
-    </section>
-  {/if}
-
-  <section>
-    <h2>About</h2>
-    <div class="body">
-      <p>Waymark Launcher {app.version}, made by Woblu. Support: waymarklaunchersupport@proton.me</p>
-      <p class="faint legal">Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</p>
-      <p class="faint legal">Skin name tags use Monocraft by Idrees Hassan, under the SIL Open Font License.</p>
-    </div>
-  </section>
-  </div>
+    {/if}
+  </SettingsLayout>
 </div>
 
 {#if choosingShared && settings}
@@ -501,36 +522,45 @@
 {/if}
 
 <style>
-  .page { height: 100%; overflow-y: auto; padding: 20px var(--gutter) var(--gutter); }
-  .column { max-width: 860px; }
-  h1 { margin-bottom: 8px; }
-  section { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 20px; padding: 18px 0; border-bottom: 1px solid var(--line); }
-  section:last-child { border-bottom: 0; }
-  h2 { padding-top: 8px; font-size: var(--text-m); }
-  .body .form-row:first-child { padding-top: 0; }
-  .form-row:last-child { padding-bottom: 0; }
-  .account { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-  .account > span { flex: 1; min-width: 0; font-weight: 500; }
-  .active { margin-left: 8px; font-weight: 400; }
-  .add { margin-top: 6px; }
+  .page { height: 100%; }
+  .trouble { margin-bottom: 14px; }
+  .lone { padding: 16px 0; }
+  .short { width: 260px; }
+
+  /* Themes as small postcards of their own colors, the chosen one outlined. */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .swatch { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px 8px 8px; background: var(--control); clip-path: var(--stepped); color: var(--text); font-weight: 500; text-align: left; transition: background-color 100ms ease-out; }
+  .swatch:hover { background: var(--control-hover); }
+  .swatch.chosen { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .swatch.wide { grid-column: span 2; }
+  .chip { position: relative; flex: none; width: 34px; height: 24px; clip-path: var(--stepped); }
+  .dot { position: absolute; right: 5px; bottom: 5px; width: 10px; height: 10px; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+
+  .account { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .account:first-child { border-top: 0; }
+  .who { flex: 1; min-width: 0; font-weight: 550; overflow-wrap: anywhere; }
+  .badge { margin-left: 10px; padding: 2px 8px; background: var(--control); clip-path: var(--stepped); color: var(--accent-text); font-size: var(--text-xs); font-weight: 600; }
+  .detail { display: block; margin-top: 2px; font-weight: 400; }
+  .group > .muted { padding: 14px 0; }
+  .after { margin-top: 12px; }
+
   .slider { display: flex; align-items: center; gap: 12px; padding-top: 6px; }
   .slider input { flex: 1; }
   .slider span { width: 56px; text-align: right; }
   .check { display: flex; align-items: center; gap: 8px; padding-top: 8px; color: var(--text); }
-  .short { width: 240px; }
-  .themes { display: flex; align-items: center; gap: 8px; }
+  .check + .form-hint + .check { margin-top: 10px; }
+  .version { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+  .version.first { margin-top: 2px; }
+  .lists { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+  .legal { margin-top: 6px; }
+
   .color { display: flex; align-items: center; gap: 10px; }
   .color input { width: 44px; height: 36px; padding: 0; border: 0; background: none; clip-path: var(--stepped); cursor: pointer; }
   .color input::-webkit-color-swatch-wrapper { padding: 0; }
   .color input::-webkit-color-swatch { border: 0; }
+  .color input:focus-visible { outline-offset: -3px; }
   .buttons { display: flex; gap: 8px; padding-top: 14px; }
   .spacer { flex: 1; }
-  .check.top { padding-top: 8px; }
-  .version { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-  .legal { margin-top: 4px; }
-  .first { margin: 0 0 8px; }
-  .lists { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
-  .trouble { margin: 8px 0 4px; }
   .erasing { margin-bottom: 6px; font-weight: 600; overflow-wrap: anywhere; }
-  .color input:focus-visible { outline-offset: -3px; }
 </style>

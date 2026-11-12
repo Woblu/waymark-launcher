@@ -432,6 +432,7 @@ mod tests {
             group: None,
             keeps_own_settings: false,
             server: None,
+            imported_from: None,
             options: crate::instance::LaunchOptions::default(),
         };
         let text = notes(&instance, &["Sodium".to_string()]);

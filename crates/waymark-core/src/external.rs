@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use directories::BaseDirs;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use walkdir::WalkDir;
 
 use crate::Core;
@@ -28,6 +29,8 @@ pub enum ExternalLauncher {
     AtLauncher,
     #[serde(rename = "gdlauncher")]
     GdLauncher,
+    /// Mojang's own Minecraft Launcher.
+    Official,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +41,40 @@ pub struct ExternalInstance {
     pub game_dir: PathBuf,
     pub minecraft: String,
     pub loader: Loader,
+    /// When it was last played there, so it keeps its place in the library.
+    #[serde(
+        default,
+        with = "time::serde::rfc3339::option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_played: Option<OffsetDateTime>,
+    /// Time played there, which comes along.
+    #[serde(default)]
+    pub playtime_secs: u64,
+    /// The Waymark instance already made from this one, so it isn't offered twice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_as: Option<String>,
+}
+
+impl ExternalInstance {
+    fn found(
+        launcher: ExternalLauncher,
+        name: String,
+        game_dir: PathBuf,
+        minecraft: String,
+        loader: Loader,
+    ) -> Self {
+        Self {
+            launcher,
+            name,
+            game_dir,
+            minecraft,
+            loader,
+            last_played: None,
+            playtime_secs: 0,
+            imported_as: None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -100,18 +137,24 @@ fn prism_instance(dir: &Path, launcher: ExternalLauncher) -> Option<ExternalInst
             version: component.version,
         };
     }
-    Some(ExternalInstance {
-        launcher,
-        name: cfg_value(&cfg, "name").unwrap_or_else(|| {
-            dir.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned()
-        }),
-        game_dir,
-        minecraft: minecraft?,
-        loader,
-    })
+    let name = cfg_value(&cfg, "name").unwrap_or_else(|| {
+        dir.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    });
+    let mut found = ExternalInstance::found(launcher, name, game_dir, minecraft?, loader);
+    let number = |key: &str| cfg_value(&cfg, key)?.parse::<i64>().ok();
+    // Prism counts milliseconds here, and seconds for the time played.
+    found.last_played = number("lastLaunchTime")
+        .filter(|&millis| millis > 0)
+        .and_then(|millis| OffsetDateTime::from_unix_timestamp(millis / 1000).ok());
+    // Only the last session is written until there's a total.
+    found.playtime_secs = number("totalTimePlayed")
+        .or_else(|| number("lastTimePlayed"))
+        .unwrap_or(0)
+        .max(0) as u64;
+    Some(found)
 }
 
 fn loader_named(name: &str, version: Option<String>) -> Loader {
@@ -156,18 +199,19 @@ fn scan_atlauncher(root: &Path) -> Vec<ExternalInstance> {
             let dir = entry.ok()?.path();
             let found: AtInstance =
                 serde_json::from_slice(&fs::read(dir.join("instance.json")).ok()?).ok()?;
-            Some(ExternalInstance {
-                launcher: ExternalLauncher::AtLauncher,
-                name: found.launcher.name,
-                game_dir: dir,
-                minecraft: found.id,
-                loader: found
-                    .launcher
-                    .loader_version
-                    .map_or_else(Loader::default, |loader| {
-                        loader_named(&loader.kind, Some(loader.version))
-                    }),
-            })
+            let loader = found
+                .launcher
+                .loader_version
+                .map_or_else(Loader::default, |loader| {
+                    loader_named(&loader.kind, Some(loader.version))
+                });
+            Some(ExternalInstance::found(
+                ExternalLauncher::AtLauncher,
+                found.launcher.name,
+                dir,
+                found.id,
+                loader,
+            ))
         })
         .collect()
 }
@@ -198,13 +242,14 @@ fn scan_gdlauncher(root: &Path) -> Vec<ExternalInstance> {
             let found: GdConfig =
                 serde_json::from_slice(&fs::read(dir.join("config.json")).ok()?).ok()?;
             let folder = dir.file_name()?.to_string_lossy().into_owned();
-            Some(ExternalInstance {
-                launcher: ExternalLauncher::GdLauncher,
-                name: found.loader.source_name.unwrap_or(folder),
-                minecraft: found.loader.mc_version,
-                loader: loader_named(&found.loader.loader_type, found.loader.loader_version),
-                game_dir: dir,
-            })
+            let loader = loader_named(&found.loader.loader_type, found.loader.loader_version);
+            Some(ExternalInstance::found(
+                ExternalLauncher::GdLauncher,
+                found.loader.source_name.unwrap_or(folder),
+                dir,
+                found.loader.mc_version,
+                loader,
+            ))
         })
         .collect()
 }
@@ -247,13 +292,13 @@ fn scan_curseforge(root: &Path) -> Vec<ExternalInstance> {
             let loader = meta.base_mod_loader.map_or_else(Loader::default, |l| {
                 curse_base_loader(&l.name, &meta.game_version)
             });
-            Some(ExternalInstance {
-                launcher: ExternalLauncher::CurseForge,
-                name: meta.name,
-                game_dir: dir,
-                minecraft: meta.game_version,
+            Some(ExternalInstance::found(
+                ExternalLauncher::CurseForge,
+                meta.name,
+                dir,
+                meta.game_version,
                 loader,
-            })
+            ))
         })
         .collect()
 }
@@ -266,22 +311,241 @@ fn scan_modrinth(root: &Path) -> Vec<ExternalInstance> {
     })
 }
 
+#[derive(Deserialize)]
+struct OfficialProfiles {
+    #[serde(default)]
+    profiles: std::collections::BTreeMap<String, OfficialProfile>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficialProfile {
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "type")]
+    kind: String,
+    #[serde(default)]
+    last_version_id: String,
+    #[serde(default)]
+    game_dir: Option<PathBuf>,
+    #[serde(default)]
+    last_used: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficialVersion {
+    #[serde(default)]
+    inherits_from: Option<String>,
+    #[serde(default)]
+    downloads: Option<OfficialDownloads>,
+}
+
+#[derive(Deserialize)]
+struct OfficialDownloads {
+    client: Option<OfficialDownload>,
+}
+
+#[derive(Deserialize)]
+struct OfficialDownload {
+    url: String,
+}
+
+/// The official launcher's installations that follow the newest version.
+const LATEST: [&str; 2] = ["latest-release", "latest-snapshot"];
+
+/// The Minecraft version and loader behind one of the official launcher's version
+/// ids, when Waymark can set it up itself. A custom client, or a loader Waymark
+/// doesn't install, gives nothing.
+fn official_version(root: &Path, id: &str) -> Option<(String, Loader)> {
+    let file = root.join("versions").join(id).join(format!("{id}.json"));
+    let meta: Option<OfficialVersion> = fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let parent = meta.as_ref().and_then(|meta| meta.inherits_from.clone());
+    let with = |kind, version: &str| Loader {
+        kind,
+        version: Some(version.to_string()),
+    };
+    for (prefix, kind) in [
+        ("fabric-loader-", LoaderKind::Fabric),
+        ("quilt-loader-", LoaderKind::Quilt),
+    ] {
+        if let Some(rest) = id.strip_prefix(prefix) {
+            // `fabric-loader-0.16.9-1.21.4`: the loader, then the game.
+            let (version, minecraft) = match &parent {
+                Some(parent) => (rest.strip_suffix(&format!("-{parent}"))?, parent.clone()),
+                None => rest.split_once('-').map(|(v, m)| (v, m.to_string()))?,
+            };
+            return Some((minecraft, with(kind, version)));
+        }
+    }
+    if let Some((minecraft, version)) = id.split_once("-forge-") {
+        return Some((minecraft.to_string(), with(LoaderKind::Forge, version)));
+    }
+    if let Some(version) = id.strip_prefix("neoforge-") {
+        return Some((parent?, with(LoaderKind::NeoForge, version)));
+    }
+    // A version of its own is Mojang's only when its game comes from Mojang.
+    let from_mojang = meta
+        .and_then(|meta| meta.downloads?.client)
+        .is_some_and(|client| client.url.contains(".mojang.com/"));
+    (parent.is_none() && from_mojang).then(|| (id.to_string(), Loader::default()))
+}
+
+/// Mojang's launcher keeps every installation in one file. Installations that share
+/// a game folder share their worlds and mods too, so each folder comes over once,
+/// on the version that was played there last.
+fn scan_official(root: &Path) -> Vec<ExternalInstance> {
+    let Ok(bytes) = fs::read(root.join("launcher_profiles.json")) else {
+        return Vec::new();
+    };
+    let Ok(file) = serde_json::from_slice::<OfficialProfiles>(&bytes) else {
+        return Vec::new();
+    };
+    let mut profiles: Vec<OfficialProfile> = file.profiles.into_values().collect();
+    // The dates are ISO 8601 in UTC, which sort the same as text.
+    profiles.sort_by(|a, b| b.last_used.cmp(&a.last_used));
+    let mut found: Vec<ExternalInstance> = Vec::new();
+    for profile in profiles {
+        let game_dir = profile
+            .game_dir
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| root.to_path_buf());
+        if !game_dir.is_dir() || found.iter().any(|other| other.game_dir == game_dir) {
+            continue;
+        }
+        let (minecraft, loader) = if LATEST.contains(&profile.kind.as_str()) {
+            (profile.kind.clone(), Loader::default())
+        } else {
+            match official_version(root, &profile.last_version_id) {
+                Some(version) => version,
+                None => continue,
+            }
+        };
+        let name = if game_dir == root {
+            "Minecraft Launcher".to_string()
+        } else if profile.name.is_empty() {
+            profile.last_version_id.clone()
+        } else {
+            profile.name.clone()
+        };
+        let mut external = ExternalInstance::found(
+            ExternalLauncher::Official,
+            name,
+            game_dir,
+            minecraft,
+            loader,
+        );
+        external.last_played = profile.last_used.as_deref().and_then(|when| {
+            OffsetDateTime::parse(when, &time::format_description::well_known::Rfc3339).ok()
+        });
+        found.push(external);
+    }
+    found
+}
+
+/// What stays behind when copying one of the official launcher's game folders.
+/// Its main folder also holds the launcher's own files and the player's sign-in,
+/// so from there only the game's own files come along.
+fn left_behind(external: &ExternalInstance) -> Vec<String> {
+    const GAME_FILES: [&str; 12] = [
+        "mods",
+        "config",
+        "resourcepacks",
+        "shaderpacks",
+        "saves",
+        "screenshots",
+        "schematics",
+        "texturepacks",
+        "options.txt",
+        "optionsof.txt",
+        "optionsshaders.txt",
+        "servers.dat",
+    ];
+    const LAUNCHER_FOLDERS: [&str; 6] = [
+        "versions",
+        "libraries",
+        "assets",
+        "runtime",
+        "bin",
+        "webcache2",
+    ];
+    if external.launcher != ExternalLauncher::Official {
+        return Vec::new();
+    }
+    let launcher_folder = external.game_dir.join("launcher_profiles.json").is_file();
+    let Ok(entries) = fs::read_dir(&external.game_dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            if launcher_folder {
+                !GAME_FILES.contains(&name.as_str())
+            } else {
+                name.starts_with("launcher_") || LAUNCHER_FOLDERS.contains(&name.as_str())
+            }
+        })
+        .collect()
+}
+
+/// The official launcher's folder on each system.
+fn official_root(base: &BaseDirs) -> PathBuf {
+    if cfg!(windows) {
+        base.data_dir().join(".minecraft")
+    } else if cfg!(target_os = "macos") {
+        base.data_dir().join("minecraft")
+    } else {
+        base.home_dir().join(".minecraft")
+    }
+}
+
+/// The Modrinth App's own versions used one `profiles` table. Since late 2026 an
+/// instance's Minecraft version and loader live in the content set it has applied,
+/// and anything still installing has no files worth copying yet.
+const MODRINTH_INSTANCES: &str = "
+    SELECT i.path, i.name, s.game_version, s.loader, s.loader_version, i.last_played,
+           COALESCE(i.submitted_time_played, 0) + COALESCE(i.recent_time_played, 0)
+    FROM instances i
+    JOIN instance_content_sets s ON s.id = i.applied_content_set_id
+    WHERE i.install_stage = 'installed'";
+const MODRINTH_PROFILES: &str = "
+    SELECT path, name, game_version, mod_loader, mod_loader_version, NULL, 0 FROM profiles";
+
 fn read_modrinth(root: &Path) -> rusqlite::Result<Vec<ExternalInstance>> {
     let database =
         Connection::open_with_flags(root.join("app.db"), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let mut query = database
-        .prepare("SELECT path, name, game_version, mod_loader, mod_loader_version FROM profiles")?;
+    let has_instances = database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'instances'")?
+        .exists([])?;
+    let mut query = database.prepare(if has_instances {
+        MODRINTH_INSTANCES
+    } else {
+        MODRINTH_PROFILES
+    })?;
     let rows = query.query_map([], |row| {
         let path: String = row.get(0)?;
         let name: String = row.get(1)?;
         let minecraft: String = row.get(2)?;
         let loader: String = row.get(3)?;
         let version: Option<String> = row.get(4)?;
-        Ok((path, name, minecraft, loader, version))
+        let last_played: Option<i64> = row.get(5)?;
+        let playtime: i64 = row.get(6)?;
+        Ok((
+            path,
+            name,
+            minecraft,
+            loader,
+            version,
+            last_played,
+            playtime,
+        ))
     })?;
     let mut instances = Vec::new();
     for row in rows {
-        let (path, name, minecraft, loader, version) = row?;
+        let (path, name, minecraft, loader, version, last_played, playtime) = row?;
         let kind = match loader.as_str() {
             "fabric" => LoaderKind::Fabric,
             "quilt" => LoaderKind::Quilt,
@@ -289,15 +553,29 @@ fn read_modrinth(root: &Path) -> rusqlite::Result<Vec<ExternalInstance>> {
             "forge" => LoaderKind::Forge,
             _ => LoaderKind::Vanilla,
         };
-        instances.push(ExternalInstance {
-            launcher: ExternalLauncher::Modrinth,
+        let mut found = ExternalInstance::found(
+            ExternalLauncher::Modrinth,
             name,
-            game_dir: root.join("profiles").join(path),
+            root.join("profiles").join(path),
             minecraft,
-            loader: Loader { kind, version },
-        });
+            Loader { kind, version },
+        );
+        found.last_played =
+            last_played.and_then(|seconds| OffsetDateTime::from_unix_timestamp(seconds).ok());
+        found.playtime_secs = playtime.max(0) as u64;
+        instances.push(found);
     }
     Ok(instances)
+}
+
+/// Names the Waymark instance each one was already imported as.
+fn mark_imported(found: &mut [ExternalInstance], instances: &[Instance]) {
+    for external in found {
+        external.imported_as = instances
+            .iter()
+            .find(|instance| instance.imported_from.as_deref() == Some(external.game_dir.as_path()))
+            .map(|instance| instance.id.clone());
+    }
 }
 
 /// Links immutable archives into the store and copies everything else. This
@@ -372,6 +650,8 @@ impl Core {
         found.extend(scan_modrinth(&data.join("ModrinthApp")));
         found.extend(scan_atlauncher(&data.join("ATLauncher/instances")));
         found.extend(scan_gdlauncher(&data.join("gdlauncher_next/instances")));
+        found.extend(scan_official(&official_root(&base)));
+        mark_imported(&mut found, &self.instances().unwrap_or_default());
         found
     }
 
@@ -390,27 +670,39 @@ impl Core {
     }
 
     async fn run_import(&self, external: &ExternalInstance, task: &Task) -> Result<Instance> {
+        let minecraft = match external.minecraft.as_str() {
+            "latest-release" => self.version_manifest().await?.latest.release,
+            "latest-snapshot" => self.version_manifest().await?.latest.snapshot,
+            version => version.to_string(),
+        };
         let version_id = self
             .install_loader(
                 external.loader.kind,
-                &external.minecraft,
+                &minecraft,
                 external.loader.version.as_deref().unwrap_or(""),
                 task,
             )
             .await?;
-        let instance = self.register_instance(
+        let mut instance = self.register_instance(
             &external.name,
-            &external.minecraft,
+            &minecraft,
             external.loader.clone(),
             version_id,
             None,
         )?;
+        // It picks up where it left off there, and isn't offered for import again.
+        instance.imported_from = Some(external.game_dir.clone());
+        instance.last_played = external.last_played;
+        instance.playtime_secs = external.playtime_secs;
+        self.save_instance(&instance)?;
         let core = self.clone();
         let game = self.paths.game(&instance.id);
         let id = instance.id.clone();
         let source = external.game_dir.clone();
+        let left = left_behind(external);
+        let skip: Vec<&str> = left.iter().map(String::as_str).collect();
         tokio::task::block_in_place(|| {
-            copy_game_dir(&core, &source, &game, &[], task)?;
+            copy_game_dir(&core, &source, &game, &skip, task)?;
             core.trail(&id).mark("Imported", WaymarkKind::Import)
         })?;
         Ok(instance)
@@ -513,5 +805,263 @@ mod tests {
     fn a_missing_database_means_no_modrinth_instances() {
         let dir = tempfile::tempdir().unwrap();
         assert!(scan_modrinth(dir.path()).is_empty());
+    }
+
+    /// The Modrinth App's database since late 2026, cut down to what's read.
+    #[test]
+    fn reads_the_modrinth_app_s_instances_and_their_time_played() {
+        let dir = tempfile::tempdir().unwrap();
+        let database = Connection::open(dir.path().join("app.db")).unwrap();
+        database
+            .execute_batch(
+                "CREATE TABLE instances (id TEXT, path TEXT, applied_content_set_id TEXT,
+                     install_stage TEXT, name TEXT, last_played INTEGER,
+                     submitted_time_played INTEGER, recent_time_played INTEGER);
+                 CREATE TABLE instance_content_sets (id TEXT, game_version TEXT, loader TEXT,
+                     loader_version TEXT);
+                 INSERT INTO instances VALUES
+                     ('a', 'MCSR Ranked', 'set-a', 'installed', 'MCSR Ranked', 1794429937, 25857, 360),
+                     ('b', 'Half done', 'set-b', 'installing', 'Half done', NULL, 0, 0);
+                 INSERT INTO instance_content_sets VALUES
+                     ('set-a', '1.16.1', 'fabric', '0.19.3'),
+                     ('set-b', '1.21.4', 'vanilla', NULL);",
+            )
+            .unwrap();
+        drop(database);
+
+        let found = scan_modrinth(dir.path());
+
+        assert_eq!(found.len(), 1, "an instance still installing is left out");
+        assert_eq!(found[0].name, "MCSR Ranked");
+        assert_eq!(found[0].game_dir, dir.path().join("profiles/MCSR Ranked"));
+        assert_eq!(found[0].minecraft, "1.16.1");
+        assert_eq!(
+            found[0].loader,
+            Loader {
+                kind: LoaderKind::Fabric,
+                version: Some("0.19.3".into())
+            }
+        );
+        assert_eq!(found[0].playtime_secs, 26217);
+        assert_eq!(
+            found[0].last_played.unwrap().unix_timestamp(),
+            1_794_429_937
+        );
+    }
+
+    #[test]
+    fn still_reads_the_modrinth_app_s_older_profiles_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let database = Connection::open(dir.path().join("app.db")).unwrap();
+        database
+            .execute_batch(
+                "CREATE TABLE profiles (path TEXT, name TEXT, game_version TEXT,
+                     mod_loader TEXT, mod_loader_version TEXT);
+                 INSERT INTO profiles VALUES ('Pack', 'Pack', '1.21.4', 'quilt', '0.26.0');",
+            )
+            .unwrap();
+        drop(database);
+
+        let found = scan_modrinth(dir.path());
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].loader.kind, LoaderKind::Quilt);
+        assert_eq!(found[0].playtime_secs, 0);
+    }
+
+    #[test]
+    fn a_prism_instance_brings_its_time_played() {
+        let dir = tempfile::tempdir().unwrap();
+        let instance = dir.path().join("run");
+        fs::create_dir_all(instance.join("minecraft")).unwrap();
+        fs::write(
+            instance.join("instance.cfg"),
+            "[General]\nname=Run\nlastLaunchTime=1786398409762\nlastTimePlayed=282\n",
+        )
+        .unwrap();
+        fs::write(
+            instance.join("mmc-pack.json"),
+            r#"{"components":[{"uid":"net.minecraft","version":"1.16.1"}]}"#,
+        )
+        .unwrap();
+
+        let found = scan_prism(dir.path(), ExternalLauncher::Prism);
+
+        assert_eq!(found[0].playtime_secs, 282);
+        assert_eq!(
+            found[0].last_played.unwrap().unix_timestamp(),
+            1_786_398_409
+        );
+    }
+
+    /// A `.minecraft` folder like a real one, cut down: installations that share it,
+    /// one with its own folder, and a custom client Waymark can't set up.
+    fn official_launcher() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let version = |id: &str, json: &str| {
+            fs::create_dir_all(root.join("versions").join(id)).unwrap();
+            fs::write(root.join(format!("versions/{id}/{id}.json")), json).unwrap();
+        };
+        version(
+            "1.8",
+            r#"{"id":"1.8","downloads":{"client":{"url":"https://launcher.mojang.com/v1/objects/x/client.jar"}}}"#,
+        );
+        version(
+            "fabric-loader-0.19.5-26.3",
+            r#"{"id":"fabric-loader-0.19.5-26.3","inheritsFrom":"26.3"}"#,
+        );
+        version(
+            "Wurst MC 1.8",
+            r#"{"id":"Wurst MC 1.8","inheritsFrom":"1.8"}"#,
+        );
+        let laracraft = root.join("LaraCraft");
+        fs::create_dir_all(&laracraft).unwrap();
+        fs::write(
+            root.join("launcher_profiles.json"),
+            serde_json::json!({ "profiles": {
+                "a": { "type": "latest-release", "lastVersionId": "latest-release", "lastUsed": "2024-05-06T15:59:31.796Z" },
+                "b": { "name": "Wurst MC 1.8", "type": "custom", "lastVersionId": "Wurst MC 1.8", "lastUsed": "2025-02-14T18:04:42.814Z" },
+                "c": { "name": "Wurst", "type": "custom", "lastVersionId": "1.8", "lastUsed": "2024-10-20T23:47:11.645Z" },
+                "d": { "name": "LaraCraft", "type": "custom", "lastVersionId": "fabric-loader-0.19.5-26.3",
+                       "gameDir": laracraft, "lastUsed": "2026-10-18T15:07:32.000Z" },
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn reads_the_official_launcher_one_game_folder_at_a_time() {
+        let dir = official_launcher();
+
+        let found = scan_official(dir.path());
+
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0].name, "LaraCraft");
+        assert_eq!(found[0].minecraft, "26.3");
+        assert_eq!(
+            found[0].loader,
+            Loader {
+                kind: LoaderKind::Fabric,
+                version: Some("0.19.5".into())
+            }
+        );
+        // The shared folder takes the newest installation Waymark can set up: not
+        // the custom client played after it, and not the older latest release.
+        assert_eq!(found[1].name, "Minecraft Launcher");
+        assert_eq!(found[1].game_dir, dir.path());
+        assert_eq!(found[1].minecraft, "1.8");
+        assert_eq!(found[1].loader, Loader::default());
+        assert_eq!(
+            found[1].last_played.unwrap().unix_timestamp(),
+            1_729_468_031
+        );
+    }
+
+    #[test]
+    fn reads_other_launchers_version_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let version = |id: &str| official_version(dir.path(), id);
+        assert_eq!(
+            version("quilt-loader-0.26.0-1.21.4").unwrap(),
+            (
+                "1.21.4".to_string(),
+                Loader {
+                    kind: LoaderKind::Quilt,
+                    version: Some("0.26.0".into())
+                }
+            )
+        );
+        assert_eq!(
+            version("1.20.1-forge-47.2.0").unwrap().1,
+            Loader {
+                kind: LoaderKind::Forge,
+                version: Some("47.2.0".into())
+            }
+        );
+        // Without its file nobody can say which game NeoForge or a plain id is for.
+        assert!(version("neoforge-21.1.77").is_none());
+        assert!(version("1.21.4-OptiFine_HD_U_J2").is_none());
+    }
+
+    #[test]
+    fn the_sign_in_never_leaves_the_official_launcher_s_folder() {
+        let dir = official_launcher();
+        let root = dir.path();
+        for name in [
+            "launcher_msa_credentials_microsoft_store.bin",
+            "launcher_accounts_microsoft_store.json",
+            "options.txt",
+        ] {
+            fs::write(root.join(name), b"x").unwrap();
+        }
+        for folder in ["saves", "mods", "libraries", "webcache2", "logs"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        let main = scan_official(root)
+            .into_iter()
+            .find(|found| found.game_dir == root)
+            .unwrap();
+
+        let left = left_behind(&main);
+
+        for kept in ["saves", "mods", "options.txt"] {
+            assert!(!left.contains(&kept.to_string()), "{kept} stays behind");
+        }
+        for skipped in [
+            "launcher_msa_credentials_microsoft_store.bin",
+            "launcher_accounts_microsoft_store.json",
+            "launcher_profiles.json",
+            "libraries",
+            "versions",
+            "webcache2",
+            "logs",
+        ] {
+            assert!(left.contains(&skipped.to_string()), "{skipped} comes along");
+        }
+
+        // A folder of its own holds the game alone, so only launcher files stay behind.
+        let laracraft = root.join("LaraCraft");
+        for name in ["launcher_log.txt", "journeymap", "options.txt"] {
+            fs::write(laracraft.join(name), b"x").unwrap();
+        }
+        let own = ExternalInstance::found(
+            ExternalLauncher::Official,
+            "LaraCraft".into(),
+            laracraft,
+            "26.3".into(),
+            Loader::default(),
+        );
+        assert_eq!(left_behind(&own), ["launcher_log.txt"]);
+    }
+
+    #[test]
+    fn an_instance_already_imported_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path(), crate::event::silent()).unwrap();
+        let mut imported = core
+            .register_instance("Run", "1.16.1", Loader::default(), "1.16.1".into(), None)
+            .unwrap();
+        imported.imported_from = Some(PathBuf::from("/prism/run/minecraft"));
+        let fresh = |path: &str| {
+            ExternalInstance::found(
+                ExternalLauncher::Prism,
+                "Run".into(),
+                PathBuf::from(path),
+                "1.16.1".into(),
+                Loader::default(),
+            )
+        };
+        let mut found = vec![
+            fresh("/prism/run/minecraft"),
+            fresh("/prism/other/minecraft"),
+        ];
+
+        mark_imported(&mut found, &[imported.clone()]);
+
+        assert_eq!(found[0].imported_as.as_deref(), Some(imported.id.as_str()));
+        assert!(found[1].imported_as.is_none());
     }
 }

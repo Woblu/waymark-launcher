@@ -198,6 +198,11 @@ export function applyPreview(app: typeof App) {
   const hash = location.hash.slice(1);
   if (['mods', 'bisect', 'trail', 'worlds', 'instance-settings', 'logs'].includes(hash)) app.selected = 'emberfall';
   if (hash === 'discover' || hash === 'servers' || hash === 'settings' || hash === 'skins' || hash === 'screenshots') app.go(hash);
+  // `#settings-updates` opens one part of Settings.
+  if (hash.startsWith('settings-')) {
+    app.settingsSection = hash.slice('settings-'.length);
+    app.go('settings');
+  }
   if (hash === 'server') app.go('servers');
   if (hash === 'mods' || hash === 'bisect') app.tab = 'mods';
   if (hash === 'trail') app.tab = 'trail';
@@ -338,7 +343,12 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'bisect_status':
       return location.hash === '#bisect' ? { status: 'testing', round: 3, estimate: 11, enabled: 107, total: 214 } : null;
     case 'external_instances':
-      return [{ launcher: 'prism', name: 'Old Survival', gameDir: 'x', minecraft: '1.20.1', loader: { kind: 'fabric' } }];
+      return [
+        { launcher: 'prism', name: 'Old Survival', gameDir: 'x', minecraft: '1.20.1', loader: { kind: 'fabric' } },
+        { launcher: 'modrinth', name: 'MCSR Ranked', gameDir: 'y', minecraft: '1.16.1', loader: { kind: 'fabric' } },
+        { launcher: 'modrinth', name: 'Cozy Farm', gameDir: 'z', minecraft: '1.21.1', loader: { kind: 'neoforge' } },
+        { launcher: 'official', name: 'Minecraft Launcher', gameDir: 'w', minecraft: 'latest-release', loader: { kind: 'vanilla' } },
+      ];
     case 'settings':
       return structuredClone(mockSettings);
     case 'save_settings':

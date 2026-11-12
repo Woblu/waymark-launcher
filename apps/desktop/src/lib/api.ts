@@ -266,11 +266,16 @@ export interface Account { uuid: string; name: string; ownsGame: boolean; verifi
 export interface DeviceLogin { userCode: string; verificationUri: string; expiresIn: number }
 
 export interface ExternalInstance {
-  launcher: 'prism' | 'multimc' | 'curseforge' | 'modrinth' | 'atlauncher' | 'gdlauncher';
+  launcher: 'official' | 'prism' | 'multimc' | 'curseforge' | 'modrinth' | 'atlauncher' | 'gdlauncher';
   name: string;
   gameDir: string;
+  /** A version, or `latest-release` or `latest-snapshot` for the Minecraft Launcher's own. */
   minecraft: string;
   loader: Loader;
+  lastPlayed?: string;
+  playtimeSecs?: number;
+  /** The Waymark instance already imported from this one. */
+  importedAs?: string;
 }
 
 /** `system`, `dark`, `light`, or the id of a built-in or custom theme. */

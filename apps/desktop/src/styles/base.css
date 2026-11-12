@@ -209,6 +209,14 @@ input[type='range'] { accent-color: var(--accent); }
 .form-row > label, .form-row > .form-label { padding-top: 8px; color: var(--text-2); }
 .form-hint { margin-top: 6px; color: var(--text-3); font-size: var(--text-xs); }
 
+/* Settings pages: each section has a heading, then panels of rows, some with a title. */
+.section-title { margin: 2px 0 14px; font-size: 22px; letter-spacing: -0.01em; }
+.group-title { margin: 22px 0 8px; color: var(--text-2); font-size: var(--text-s); font-weight: 600; }
+.group { padding: 4px 20px; background: var(--panel); clip-path: var(--stepped); }
+.group + .group { margin-top: 12px; }
+.group .form-row { grid-template-columns: 170px minmax(0, 1fr); padding: 14px 0; }
+.group > p:only-child, .group > .lone { padding: 14px 0; }
+
 .empty { color: var(--text-2); }
 
 /* The middle of a page with nothing in it yet. */

@@ -86,6 +86,12 @@
       stop?.();
     };
   });
+
+  /** The player's face opens Settings where their accounts are. */
+  function openAccounts() {
+    app.settingsSection = 'accounts';
+    app.go('settings');
+  }
 </script>
 
 <header data-tauri-drag-region>
@@ -99,7 +105,7 @@
     {/each}
   </nav>
   <div class="right" data-tauri-drag-region>
-    <button class="you" title={account ? account.name : 'Sign in'} aria-label={account ? account.name : 'Sign in'} onclick={() => (account ? app.go('settings') : app.askToSignIn())}>
+    <button class="you" title={account ? account.name : 'Sign in'} aria-label={account ? account.name : 'Sign in'} onclick={() => (account ? openAccounts() : app.askToSignIn())}>
       {#if head}<img class="face" src={head} alt="" />{:else}<UserRound size={17} />{/if}
       <!-- A player's name is left as it is, and Sign in is translated like any other label. -->
       {#if account}<span class="truncate label name">{account.name}</span>{:else}<span class="truncate label">Sign in</span>{/if}
