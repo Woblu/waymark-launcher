@@ -20,10 +20,10 @@
       <section>
         <h2>Signing</h2>
         <div>
-          <p>Status, November 2026: Waymark Launcher has applied to the SignPath Foundation and is waiting for an answer. Until it's approved, installers aren't code-signed, and Windows warns about an unknown publisher.</p>
+          <p>Status, November 2026: Waymark Launcher has applied to the SignPath Foundation for free code signing and is waiting for an answer. Today's installers aren't code-signed, and Windows warns about an unknown publisher. The rest of this section is the policy signed releases will follow.</p>
           <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
-          <p>Windows installers are built by GitHub Actions from the public source in <a href="https://github.com/Woblu/waymark-launcher">Woblu/waymark-launcher</a>, and nowhere else. A signature means the file is the one that build made, unchanged. Every release is approved by hand before it's signed.</p>
-          <p>Waymark Launcher also signs its own updates with a separate key, so an installed copy only accepts updates from this project.</p>
+          <p>Windows installers are built by GitHub Actions from the public source in <a href="https://github.com/Woblu/waymark-launcher">Woblu/waymark-launcher</a>, and nowhere else. A signature will mean the file is the one that build made, unchanged. Each release will be approved by hand before it's signed.</p>
+          <p>Separately from that, Waymark Launcher already signs its own updates with a key of its own, and an installed copy only accepts updates signed with it.</p>
         </div>
       </section>
 
@@ -50,7 +50,8 @@
       <section>
         <h2>Installing and removing</h2>
         <div>
-          <p>The installer puts Waymark Launcher in your user folder, adds it to the Start menu and to Apps in Windows Settings, and installs Microsoft's WebView2 runtime if Windows doesn't have it yet. It changes no other system settings. Remove Waymark Launcher from Windows Settings, under Apps. Your instances stay in <code>%APPDATA%\Waymark Launcher</code> until you delete that folder.</p>
+          <p>The installer puts Waymark Launcher in <code>%LOCALAPPDATA%\Waymark Launcher</code>, adds it to the Start menu and to Apps in Windows Settings, and installs Microsoft's WebView2 runtime if Windows doesn't have it. It changes no other system settings.</p>
+          <p>Remove Waymark Launcher from Windows Settings, under Apps. Your instances and settings stay in <code>%APPDATA%\Waymark</code> until you delete that folder. To remove your sign-ins too, sign out of each account in Waymark Launcher before uninstalling, or delete the entries ending in <code>app.waymark.launcher</code> under Windows Credentials in Credential Manager.</p>
         </div>
       </section>
     </main>
