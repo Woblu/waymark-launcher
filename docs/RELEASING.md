@@ -2,16 +2,21 @@
 
 ## The update signing key
 
-Updates are signed so the app only installs ones that really came from you. The private key is at `%USERPROFILE%\.waymark\updater.key`, outside this repository on purpose.
+Updates are signed so the app only installs ones that really came from this project. The public half is in `apps/desktop/src-tauri/tauri.conf.json`, and that's safe to publish. The private key has no password, so whoever has the file can sign an update every installed copy would trust.
 
-**Keep a backup somewhere safe.** If it's lost, existing installs can never update again. If it leaks, someone could ship an update that installed copies would trust.
+Keep exactly two copies of it:
 
-The public half is in `apps/desktop/src-tauri/tauri.conf.json`, and that's safe to publish.
+1. The `TAURI_SIGNING_PRIVATE_KEY` secret in GitHub, which the release workflow signs with.
+2. A backup in a password manager or another encrypted place you control.
+
+Releases are built by GitHub Actions, so the key doesn't need to be on your computer. Once both copies exist, delete `%USERPROFILE%\.waymark\updater.key`. If the key is lost, existing installs can never update again.
 
 ## Building on your own computer
 
+You only need this to test a release build. Copy the key from your backup, then run the lines below. The first one reads the key from the clipboard, so it never lands in PowerShell's history. Afterwards, close the terminal and clear the clipboard (Windows key + V, then Clear all).
+
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$env:USERPROFILE\.waymark\updater.key"
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Clipboard -Raw).Trim()
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 $env:WAYMARK_CURSEFORGE_API_KEY = '<your key>'
 cd apps/desktop
@@ -34,9 +39,39 @@ An update never installs while a game or a hosted server is running, because the
 
 ## Making a release
 
-1. Set the version in `apps/desktop/src-tauri/tauri.conf.json` and the root `Cargo.toml`. It has to be higher than the version people have, or the app won't offer it.
-2. Push a tag like `v0.2.0`. GitHub builds Windows, macOS (Apple silicon and Intel) and Linux, and creates a draft release.
-3. Test the draft, then publish it. Drafts are invisible to the app, and publishing is the moment every installed copy starts updating, so a bad release reaches people within hours.
+1. Set the version in the root `Cargo.toml`, `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/package.json` and the two `version` lines at the top of `apps/desktop/package-lock.json`, then run `cargo update --workspace --offline`. It has to be higher than the version people have, or the app won't offer it.
+2. In `CHANGELOG.md`, give the Unreleased section the new version and today's date.
+3. Commit that as "Release 0.6.0" and push a tag like `v0.6.0`. GitHub builds Windows, macOS (Apple silicon and Intel) and Linux, and creates a draft release.
+4. Paste the version's changelog section into the draft as its notes, as described below.
+5. Test the draft, then publish it. Drafts are invisible to the app, and publishing is the moment every installed copy starts updating, so a bad release reaches people within hours.
+
+### How often
+
+Fewer, larger releases are easier on players and on anyone reviewing the project. Collect changes for a week or two, ship anything big as a beta first, and give the beta a few days. A fix for something broken can go out as soon as it's tested.
+
+### Release notes
+
+The notes are the version's section of `CHANGELOG.md`, plus two lines at the end:
+
+```markdown
+### Added
+- One line for each thing a player can now do.
+
+### Changed
+- One line for each thing that works differently, and why if it isn't obvious.
+
+### Fixed
+- One line for each bug, described the way a player saw it.
+
+### Known problems
+- Anything a player should know before updating.
+
+Every file in this release is listed in `SHA256SUMS.txt`, so you can check a download.
+
+Windows warns about an unknown publisher, because the installer isn't code-signed. Choose More info, then Run anyway.
+```
+
+Leave out headings with nothing under them. Write plain sentences: no bold lead-ins, nothing about what a future version might do, and nothing you haven't checked.
 
 ### Betas first
 
