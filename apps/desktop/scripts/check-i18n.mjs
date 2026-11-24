@@ -22,7 +22,7 @@ const SKIPPED_FILES = new Set(['lib/catalog.ts', 'lib/mock.ts']);
 const LEAVE_ALONE = new Set(['rich', 'selectable', 'mono', 'name', 'title']);
 const LEAVE_ALONE_TAGS = new Set(['script', 'style', 'textarea', 'svelte:head']);
 /** Attributes the translator rewrites, and component props that end up as visible text. */
-const ATTRIBUTES = new Set(['placeholder', 'title', 'aria-label']);
+const ATTRIBUTES = new Set(['placeholder', 'title', 'aria-label', 'label']);
 const COMPONENT_PROPS = new Set(['title', 'what']);
 const CALLS = new Map([
   ['toast', [1, 2]],

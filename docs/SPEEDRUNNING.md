@@ -23,6 +23,7 @@ If Microsoft's or Mojang's servers can't be reached, an account whose ownership 
 | Libraries old FML downloads at startup (Forge 1.3.2 to 1.5.2) | Prism Launcher's mirror, `files.prismlauncher.org/fmllibs`, because the address FML used is gone. Each file is checked against a SHA-1 kept in [`loaders.rs`](../crates/waymark-core/src/loaders.rs). |
 | Mods, resource packs and shaders | Only what the player adds: from Modrinth, from CurseForge, or a file they drop on the window |
 | A speedrunning preset's mods | The jars on speedrun.com's legal-mods list, read from [mcsr-meta](https://github.com/tildejustin/mcsr-meta), fetched only from the hosts that list uses, and checked against its SHA-512 hashes |
+| The picture on the player's cape, while they wear a cape they made | The player's own picture, written where the game keeps its copy of that cape in `assets/skins`. Only their computer shows it. Choosing the real cape again deletes it, and the game downloads Mojang's again. See `wear_made_cape` in [`skins.rs`](../crates/waymark-core/src/skins.rs). |
 
 Mods are kept once in a read-only store and placed into each instance from there. A jar stays byte for byte the file that was downloaded or dropped in.
 

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Check, Pencil, Plus, RotateCcw } from '@lucide/svelte';
+  import { Check, Paintbrush, Pencil, Plus, RotateCcw, Trash2 } from '@lucide/svelte';
+  import CapeMaker from '../components/CapeMaker.svelte';
   import Modal from '../components/Modal.svelte';
   import SkinModel from '../components/SkinModel.svelte';
   import { api, inTauri, localImage, pickSkinFile } from '../lib/api';
-  import type { DefaultSkin, SavedSkin, SkinProfile, SkinVariant, Wear } from '../lib/api';
+  import type { DefaultSkin, MadeCape, SavedSkin, SkinProfile, SkinVariant, Wear } from '../lib/api';
   import { STEVE, detectVariant, skinPicture } from '../lib/skin-render';
   import type { SkinPicture } from '../lib/skin-render';
   import { app } from '../lib/state.svelte';
@@ -41,6 +42,18 @@
 
   const worn = $derived(profile?.skins.find((skin) => skin.state === 'ACTIVE'));
   const wornCape = $derived(profile?.capes.find((cape) => cape.state === 'ACTIVE'));
+  let madeCapes = $state<MadeCape[]>([]);
+  /** The made cape the game shows in place of the real one, on this computer. */
+  const wornMade = $derived(madeCapes.find((cape) => cape.id === wornCape?.showing));
+  /** What the cape list shows as worn. Made capes are told apart by a prefix. */
+  const capeChoice = $derived(wornMade ? `made:${wornMade.id}` : (wornCape?.id ?? ''));
+  let changingCape = $state(false);
+  let making = $state(false);
+  /** The cape being made, which the model wears instead while it's open. */
+  let drawn = $state.raw<HTMLCanvasElement | null>(null);
+  let drawnTick = $state(0);
+  let asElytra = $state(false);
+  const shownCape = $derived(making && drawn ? drawn : ((wornMade && localImage(`cape/${wornMade.id}.png`)) || wornCape?.url));
   const wornVariant = $derived<SkinVariant>(worn?.variant === 'SLIM' ? 'slim' : 'classic');
   // Without an answer from Mojang, the skin Waymark saw last stands in, so a hiccup doesn't look like Steve.
   const lastSeen = $derived(app.activeAccount?.skinUrl ? { url: app.activeAccount.skinUrl, variant: (app.activeAccount.skinSlim ? 'slim' : 'classic') as SkinVariant } : null);
@@ -80,6 +93,10 @@
     } catch (error) {
       app.fail(error, 'Could not read your skins');
     }
+    api.madeCapes().then(
+      (capes) => (madeCapes = capes),
+      (error) => app.fail(error, 'Could not read the capes you made'),
+    );
     try {
       profile = await api.skinProfile();
     } catch (error) {
@@ -158,13 +175,32 @@
     applying = false;
   }
 
+  /** Wears a real cape, a made one in a real one's place, or none. */
   async function chooseCape(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
+    const select = event.currentTarget as HTMLSelectElement;
+    const value = select.value;
+    const madeId = value.startsWith('made:') ? value.slice('made:'.length) : null;
+    const label = madeId ? madeCapes.find((cape) => cape.id === madeId)?.name : profile?.capes.find((cape) => cape.id === value)?.alias;
+    changingCape = true;
     try {
-      profile = await api.wearCape(value || null);
+      profile = madeId ? await api.wearMadeCape(madeId) : await api.wearCape(value || null);
       unreachable = '';
+      if (label) app.toast('good', `Now wearing ${label}`, 'It shows the next time you open Minecraft.');
     } catch (error) {
+      select.value = capeChoice;
       app.fail(error, 'Could not change your cape');
+    }
+    changingCape = false;
+  }
+
+  async function deleteMadeCape() {
+    if (!wornMade) return;
+    try {
+      madeCapes = await api.removeMadeCape(wornMade.id);
+      profile = await api.skinProfile();
+      app.toast('good', 'Cape deleted', 'Your real cape shows the next time you open Minecraft.');
+    } catch (error) {
+      app.fail(error, 'Could not delete that cape');
     }
   }
 </script>
@@ -192,7 +228,13 @@
   <div class="layout">
     <div class="preview">
       <h1>Skins</h1>
-      <SkinModel skin={showing.url} variant={showing.variant} cape={wornCape?.url} {name} />
+      <SkinModel skin={showing.url} variant={showing.variant} cape={shownCape} capeTick={drawnTick} elytra={asElytra} back={making} {name} />
+      {#if shownCape}
+        <div class="equip" role="group" aria-label="Show the cape as">
+          <button class="focus-inset" class:active={!asElytra} aria-pressed={!asElytra} onclick={() => (asElytra = false)}>Cape</button>
+          <button class="focus-inset" class:active={asElytra} aria-pressed={asElytra} onclick={() => (asElytra = true)}>Elytra</button>
+        </div>
+      {/if}
       {#if unreachable && signedIn && !selected}
         <p class="faint small unreachable">Could not reach Minecraft, so this is the last skin Waymark Launcher saw. <span class="selectable">{unreachable}</span></p>
       {/if}
@@ -206,17 +248,50 @@
           <button class="btn" onclick={() => startEditing(selected!.saved!)}><Pencil size={14} /> Edit skin</button>
         {/if}
       </div>
-      {#if profile?.capes.length}
-        <div class="cape">
+      <div class="cape">
+        {#if profile?.capes.length}
           <label for="cape" class="muted">Cape</label>
-          <select id="cape" class="field" value={wornCape?.id ?? ''} onchange={chooseCape}>
+          <select id="cape" class="field" value={capeChoice} disabled={changingCape} onchange={chooseCape}>
             <option value="">None</option>
-            {#each profile.capes as cape (cape.id)}<option value={cape.id}>{cape.alias ?? 'Cape'}</option>{/each}
+            <optgroup label="From Mojang">
+              {#each profile.capes as cape (cape.id)}<option value={cape.id}>{cape.alias ?? 'Cape'}</option>{/each}
+            </optgroup>
+            {#if madeCapes.length}
+              <optgroup label="Made by you">
+                {#each madeCapes as cape (cape.id)}<option value="made:{cape.id}">{cape.name}</option>{/each}
+              </optgroup>
+            {/if}
           </select>
+        {/if}
+        <button class="btn" disabled={making} onclick={() => (making = true)}><Paintbrush size={15} /> Make a cape</button>
+      </div>
+      {#if wornMade && !making}
+        <div class="in-game">
+          <p class="muted small">Only you see {wornMade.name}. Other players see your cape from Mojang.</p>
+          <button class="btn quiet" onclick={deleteMadeCape}><Trash2 size={14} /> Delete cape</button>
         </div>
       {/if}
     </div>
 
+    {#if making}
+      <div class="lists">
+        <CapeMaker
+          {profile}
+          onpreview={(cape) => {
+            drawn = cape;
+            drawnTick++;
+          }}
+          onmade={(cape, next) => {
+            madeCapes = [cape, ...madeCapes.filter((each) => each.id !== cape.id)];
+            if (next) {
+              profile = next;
+              making = false;
+            }
+          }}
+          onclose={() => (making = false)}
+        />
+      </div>
+    {:else}
     <div class="lists">
       <section>
         <h2>Saved skins</h2>
@@ -247,6 +322,7 @@
         </div>
       {/if}
     </div>
+    {/if}
   </div>
 </div>
 
@@ -280,7 +356,16 @@
   .preview { position: sticky; top: 8px; display: flex; flex-direction: column; align-self: start; height: calc(100vh - var(--titlebar) - var(--playbar) - 24px); min-height: 380px; }
   h1 { position: absolute; top: 14px; left: 16px; z-index: 1; color: #f0ebe1; pointer-events: none; }
   .actions { position: absolute; right: 0; bottom: 14px; left: 0; z-index: 1; display: flex; justify-content: center; gap: 8px; }
-  .cape { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 10px; }
+  .cape { flex: none; display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  .cape select { flex: 1; min-width: 0; }
+  .cape > .btn:only-child { flex: 1; }
+  .in-game { flex: none; display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 8px; }
+
+  /* Over the model's top right corner, like the heading in the other one. */
+  .equip { position: absolute; top: 12px; right: 12px; z-index: 1; display: flex; background: rgb(0 0 0 / 38%); clip-path: var(--stepped); }
+  .equip button { height: 30px; padding: 0 12px; color: #e3e7ec; font-weight: 600; }
+  .equip button:hover { background: rgb(255 255 255 / 10%); }
+  .equip button.active { background: var(--accent); color: var(--on-accent); }
   .unreachable { flex: none; margin-top: 8px; }
 
   .lists { min-width: 0; padding-top: 6px; }

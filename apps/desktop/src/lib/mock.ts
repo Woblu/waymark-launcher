@@ -243,6 +243,8 @@ const SAMPLE_SERVERS = [
   { id: 'srv-forge', slug: 'deepforge', name: 'Deepforge Industries', summary: 'Tech and magic on a hand-tuned pack. Whitelist by application.', icon: null, banner: null, address: 'deepforge.example', content: { kind: 'modpack', project: 'srv-forge', version: 'v12', name: 'Deepforge Industries', icon: null }, online: false, players: null, capacity: null, versionName: null, region: 'us_west', languages: ['en'], categories: ['technical', 'whitelisted'], plays: 210 },
 ];
 let mockKept: { id: string; name: string; address: string; icon: string | null }[] = [];
+/** The made cape the sample account shows in place of its real one. */
+let mockShowing: string | null = null;
 
 const SAMPLE_LOG = [
   '[main/INFO] Loading Minecraft 1.21.4 with Fabric Loader 0.20.1',
@@ -339,6 +341,14 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
       return { ready: false, eulaAccepted: false, running: false, address: '192.168.1.20:25565', port: 25565 };
     case 'skin_library':
       return { saved: [], defaults: [{ name: 'Steve', variant: 'classic', url: 'https://textures.minecraft.net/texture/31f477eb1a7beee631c2ca64d06f8f68fa93a3386d04452ab27f43acdf1b60cb' }] };
+    case 'skin_profile':
+    case 'wear_cape':
+    case 'wear_made_cape':
+      if (command === 'wear_made_cape') mockShowing = args?.id as string;
+      else if (command === 'wear_cape') mockShowing = null;
+      return { name: 'Wayfarer', skins: [], capes: [{ id: 'migrator', state: 'ACTIVE', alias: 'Migrator', url: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0ba7defd635ca7a933', showing: mockShowing }] };
+    case 'made_capes':
+      return [{ id: 'sunset', name: 'Sunset' }];
     case 'data_packs':
       return [];
     case 'bisect_status':

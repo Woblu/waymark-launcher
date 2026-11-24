@@ -203,7 +203,22 @@ export type Wear = { kind: 'saved'; id: string } | { kind: 'default'; url: strin
 export interface SkinProfile {
   name: string;
   skins: { url: string; variant: string; state: string }[];
-  capes: { id: string; url: string; alias?: string | null; state: string }[];
+  capes: Cape[];
+}
+
+export interface Cape {
+  id: string;
+  url: string;
+  alias?: string | null;
+  state: string;
+  /** The made cape the game on this computer shows in its place, by id, if there is one. */
+  showing?: string | null;
+}
+
+/** A cape the player made from a picture. Its PNG is `localImage(\`cape/${id}.png\`)`. */
+export interface MadeCape {
+  id: string;
+  name: string;
 }
 
 export type Join = { kind: 'world'; folder: string } | { kind: 'server'; address: string };
@@ -552,6 +567,14 @@ export const api = {
   skinProfile: () => call<SkinProfile>('skin_profile'),
   wearSkin: (wear: Wear) => call<SkinProfile>('wear_skin', { wear }),
   wearCape: (cape: string | null) => call<SkinProfile>('wear_cape', { cape }),
+  madeCapes: () => call<MadeCape[]>('made_capes'),
+  /** Keeps a cape drawn in the window, given as base64 PNG, so it can be worn. */
+  makeCape: (name: string, png: string) => call<MadeCape>('make_cape', { name, png }),
+  removeMadeCape: (id: string) => call<MadeCape[]>('remove_made_cape', { id }),
+  /** Shows a made cape in game in place of the player's real one, on this computer only. */
+  wearMadeCape: (id: string) => call<SkinProfile>('wear_made_cape', { id }),
+  /** Writes a cape drawn in the window, given as base64 PNG, to a path the player picked. */
+  saveCape: (target: string, png: string) => call<void>('save_cape', { target, png }),
   trashed: () => call<Trashed[]>('trashed'),
   restoreTrashed: (id: string) => call<Trashed>('restore_trashed', { id }),
   eraseTrashed: (id: string) => call<void>('erase_trashed', { id }),

@@ -42,7 +42,7 @@ use waymark_core::server_list::{
 };
 use waymark_core::share::{ShareCode, SharedResult};
 use waymark_core::shortcut::LAUNCH_FLAG;
-use waymark_core::skins::{SavedSkin, SkinLibrary, SkinProfile, SkinVariant, Wear};
+use waymark_core::skins::{MadeCape, SavedSkin, SkinLibrary, SkinProfile, SkinVariant, Wear};
 use waymark_core::social::{FriendOverview, friends_available};
 use waymark_core::start_check::StartCheck;
 use waymark_core::starters::StarterResult;
@@ -1257,6 +1257,34 @@ async fn wear_cape(launcher: State<'_, Launcher>, cape: Option<String>) -> Reply
 }
 
 #[tauri::command]
+async fn made_capes(launcher: State<'_, Launcher>) -> Reply<Vec<MadeCape>> {
+    off_thread(&launcher, |core| core.made_capes()).await
+}
+
+#[tauri::command]
+async fn make_cape(launcher: State<'_, Launcher>, name: String, png: String) -> Reply<MadeCape> {
+    off_thread(&launcher, move |core| core.make_cape(&name, &png)).await
+}
+
+#[tauri::command]
+async fn remove_made_cape(launcher: State<'_, Launcher>, id: String) -> Reply<Vec<MadeCape>> {
+    off_thread(&launcher, move |core| core.remove_made_cape(&id)).await
+}
+
+#[tauri::command]
+async fn wear_made_cape(launcher: State<'_, Launcher>, id: String) -> Reply<SkinProfile> {
+    launcher.core.wear_made_cape(&id).await
+}
+
+#[tauri::command]
+async fn save_cape(launcher: State<'_, Launcher>, target: PathBuf, png: String) -> Reply<()> {
+    off_thread(&launcher, move |_| {
+        waymark_core::skins::save_cape(&target, &png)
+    })
+    .await
+}
+
+#[tauri::command]
 async fn trashed(launcher: State<'_, Launcher>) -> Reply<Vec<Trashed>> {
     off_thread(&launcher, |core| core.trashed()).await
 }
@@ -1548,6 +1576,11 @@ pub fn run() {
             skin_profile,
             wear_skin,
             wear_cape,
+            made_capes,
+            make_cape,
+            remove_made_cape,
+            wear_made_cape,
+            save_cape,
             trashed,
             restore_trashed,
             erase_trashed,

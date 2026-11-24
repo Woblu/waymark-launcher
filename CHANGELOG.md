@@ -6,6 +6,8 @@ Every release of Waymark Launcher, newest first. Versions with a hyphen, like 0.
 
 ### Added
 - An instance's settings can show the full command Play runs, without starting the game, under Launching. In a terminal, `waymark command <instance>` prints the same. The access token and your user folder are left out.
+- Make a cape from a picture, on the Skins page, and wear it in game in place of a cape you own. Capes you make stay in the cape list, so you can switch between them and the real one whenever you like. Only you see them: the game on your computer shows your picture, and other players still see the real cape. Pick the part of the picture that goes on the cape, the color of the edges, and whether the elytra gets the picture too, at up to 2048 × 1024. A cape can also be saved as a PNG.
+- The 3D model on the Skins page can show a cape as an elytra.
 
 ### Changed
 - The MCSR Ranked preset is gone. MCSR Ranked only starts from the launchers speedrun.com allows, so the instance it made couldn't start.

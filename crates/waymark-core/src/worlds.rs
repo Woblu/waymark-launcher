@@ -626,6 +626,7 @@ impl Core {
                 self.paths.game(instance).join("screenshots").join(file)
             }
             ["skin", file] => self.paths.skins().join(file),
+            ["cape", file] => self.paths.skins().join(crate::skins::MADE_CAPES).join(file),
             _ => return None,
         };
         let lower = file.extension()?.to_string_lossy().to_ascii_lowercase();

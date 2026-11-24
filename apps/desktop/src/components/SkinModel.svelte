@@ -6,7 +6,26 @@
   import { modelName } from '../lib/skin-render';
   import Art from './Art.svelte';
 
-  let { skin, variant, cape, name }: { skin: string; variant: SkinVariant; cape?: string | null; name: string } = $props();
+  let {
+    skin,
+    variant,
+    cape,
+    capeTick = 0,
+    elytra = false,
+    back = false,
+    name,
+  }: {
+    skin: string;
+    variant: SkinVariant;
+    /** An address, or a canvas being drawn on. Bump capeTick when the canvas changes. */
+    cape?: string | HTMLCanvasElement | null;
+    capeTick?: number;
+    /** Wears the cape's texture as an elytra. */
+    elytra?: boolean;
+    /** Turns the model's back to the viewer, where the cape is. */
+    back?: boolean;
+    name: string;
+  } = $props();
 
   const START_TURN = Math.PI / 8;
   /** With these the model fills about 55% of the stage, which .tag and .floor line up with. */
@@ -57,8 +76,18 @@
   $effect(() => {
     const model = viewer;
     if (!model) return;
-    if (cape) Promise.resolve(model.loadCape(cape)).catch(() => {});
-    else model.resetCape();
+    const options = { backEquipment: elytra ? 'elytra' : 'cape' } as const;
+    void capeTick;
+    if (!cape) model.resetCape();
+    else if (typeof cape === 'string') Promise.resolve(model.loadCape(cape, options)).catch(() => {});
+    else model.loadCape(cape, options);
+  });
+
+  // Turned from wherever the player has dragged the view to, not from the start.
+  $effect(() => {
+    const model = viewer;
+    if (!model) return;
+    model.playerWrapper.rotation.y = model.controls.getAzimuthalAngle() + START_TURN + (back ? Math.PI : 0);
   });
 </script>
 

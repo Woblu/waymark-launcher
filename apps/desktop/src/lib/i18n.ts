@@ -6,7 +6,7 @@
 const KEY = 'waymark.language';
 /** Anything the player or a store wrote, which is never translated. */
 const LEAVE_ALONE = '.rich, .selectable, .mono, .name, .title, input, textarea, script, style';
-const ATTRIBUTES = ['placeholder', 'title', 'aria-label'];
+const ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'label'];
 const PLURAL = /^(zero|one|two|few|many|other):\s?/;
 
 export const LANGUAGE_NAMES: Record<string, string> = {

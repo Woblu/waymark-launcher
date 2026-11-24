@@ -108,4 +108,4 @@ Waymark Launcher stands on other people's work, and none of it is shipped inside
 
 ## License
 
-Waymark Launcher is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt), and so is the Monocraft font used for skin name tags ([license](apps/desktop/public/licenses/monocraft-OFL.txt)).
+Waymark Launcher is licensed under the [GNU General Public License v3.0](LICENSE). The Libre Franklin font is licensed under the [SIL Open Font License 1.1](apps/site/assets/fonts/OFL.txt), and so is the Monocraft font used for skin name tags ([license](apps/desktop/public/licenses/monocraft-OFL.txt)). The cape maker's layout comes from James Harrison's [Minecraft Cape Creator](https://github.com/minecraftcapes/minecraft-cape-creator) for MinecraftCapes, under the [MIT License](apps/desktop/public/licenses/minecraft-cape-creator-MIT.txt).

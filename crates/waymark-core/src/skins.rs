@@ -3,7 +3,7 @@
 //! from Mojang's own texture server, the same place the game gets them.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,19 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 /// Far larger than any real skin, so a wrong file is caught before it's read.
 const MAX_SKIN_BYTES: u64 = 1 << 20;
 const SKIN_SIZES: [(u32, u32); 2] = [(64, 64), (64, 32)];
+/// Capes are 64 by 32 at the game's own size. The game also draws sharper ones
+/// at whole multiples of that, and the cape maker goes up to 2048 by 1024.
+const CAPE_SCALES: [u32; 6] = [1, 2, 4, 8, 16, 32];
+/// Far larger than a 2048 by 1024 PNG gets.
+const MAX_CAPE_BASE64: usize = 48 << 20;
+/// The folder in the shared assets where the game keeps every skin and cape it
+/// downloads. It loads them from there afterwards instead of downloading again.
+const GAME_TEXTURES: &str = "skins";
+/// The capes the player made, listed in the skin library's folder.
+const MADE_CAPES_FILE: &str = "capes.json";
+/// The pictures of the capes the player made, by id, in the skin library's folder.
+pub(crate) const MADE_CAPES: &str = "capes";
+const MAX_CAPE_NAME: usize = 64;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -170,6 +183,19 @@ pub struct Cape {
     pub alias: Option<String>,
     #[serde(default)]
     pub state: String,
+    /// The cape the player made that the game on this computer shows in this
+    /// one's place, by id, if there is one.
+    #[serde(default, skip_deserializing)]
+    pub showing: Option<String>,
+}
+
+/// A cape the player made from a picture, kept so it can be worn again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MadeCape {
+    /// The BLAKE3 hash of its PNG, which is also the PNG's name.
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -241,6 +267,93 @@ fn check_skin(bytes: &[u8]) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// A cape the window drew, sent as base64 PNG. Only a PNG at a cape's size is
+/// taken, so the window can't use this to put anything else on disk.
+fn cape_png(png_base64: &str) -> Result<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    if png_base64.len() > MAX_CAPE_BASE64 {
+        return Err(Error::Other("that cape is too big".into()));
+    }
+    let not_a_cape = || Error::Other("that isn't a cape texture".into());
+    let bytes = STANDARD.decode(png_base64).map_err(|_| not_a_cape())?;
+    let fits = png_size(&bytes).is_some_and(|size| {
+        CAPE_SCALES
+            .iter()
+            .any(|scale| size == (64 * scale, 32 * scale))
+    });
+    if !fits {
+        return Err(not_a_cape());
+    }
+    Ok(bytes)
+}
+
+/// Saves a cape the window drew where the player chose, under a .png name.
+pub fn save_cape(target: &Path, png_base64: &str) -> Result<()> {
+    if !target
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+    {
+        return Err(Error::Other("a cape has to be saved as a .png file".into()));
+    }
+    crate::atomic::write(target, &cape_png(png_base64)?)?;
+    Ok(())
+}
+
+/// The hash the game names a texture by: the last part of its address.
+fn texture_hash(url: &str) -> Option<&str> {
+    let hash = url.rsplit('/').next()?;
+    let plain = !hash.is_empty() && hash.len() <= 64 && hash.bytes().all(|b| b.is_ascii_hexdigit());
+    plain.then_some(hash)
+}
+
+/// The files the game reads a texture from before it downloads it, and never
+/// checks. Up to 1.20.1 the file is named after the texture's hash. From 1.20.2
+/// on, it's named after a SHA-1 of that hash, taken over its UTF-16 code units
+/// (`SkinManager.TextureCache` in the game).
+fn cached_texture(textures: &Path, hash: &str) -> [PathBuf; 2] {
+    use sha1::{Digest, Sha1};
+
+    let units: Vec<u8> = hash.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    [hash.to_string(), hex::encode(Sha1::digest(&units))].map(|name| {
+        let folder = if name.len() > 2 { &name[..2] } else { "xx" };
+        textures.join(folder).join(&name)
+    })
+}
+
+fn remove_if_there(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
+/// The real cape a made one takes the place of: the one the player has on, or
+/// else their first.
+fn base_cape(profile: &SkinProfile) -> Option<&Cape> {
+    profile
+        .capes
+        .iter()
+        .find(|cape| cape.state == "ACTIVE")
+        .or_else(|| profile.capes.first())
+}
+
+fn cape_name(name: &str) -> String {
+    let name: String = name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_CAPE_NAME)
+        .collect();
+    if name.is_empty() {
+        "Cape".to_string()
+    } else {
+        name
+    }
 }
 
 impl Core {
@@ -363,7 +476,7 @@ impl Core {
             at: std::time::Instant::now(),
             profile: profile.clone(),
         });
-        Ok(profile)
+        Ok(self.with_pictures(profile))
     }
 
     /// Mojang's last answer for this account, if it's no older than `within`.
@@ -399,12 +512,13 @@ impl Core {
     pub async fn skin_profile(&self) -> Result<SkinProfile> {
         let account = self.active_account()?;
         if let Some(known) = self.known_profile(&account.uuid, PROFILE_FRESH) {
-            return Ok(known);
+            return Ok(self.with_pictures(known));
         }
         match self.signed(|client| Ok(client.get(PROFILE))).await {
             Ok(profile) => Ok(profile),
             Err(error) => self
                 .known_profile(&account.uuid, std::time::Duration::MAX)
+                .map(|known| self.with_pictures(known))
                 .ok_or(error),
         }
     }
@@ -442,8 +556,8 @@ impl Core {
         }
     }
 
-    /// Puts on one of the player's capes, or takes it off.
-    pub async fn wear_cape(&self, cape: Option<&str>) -> Result<SkinProfile> {
+    /// Tells Mojang which of the player's capes to show, or none.
+    async fn set_active_cape(&self, cape: Option<&str>) -> Result<SkinProfile> {
         let active = format!("{PROFILE}/capes/active");
         match cape {
             Some(id) => {
@@ -453,6 +567,184 @@ impl Core {
             }
             None => self.signed(|client| Ok(client.delete(&active))).await,
         }
+    }
+
+    /// Puts on one of the player's capes as Mojang made it, or takes it off. A
+    /// made cape worn in its place comes off, so the game shows the real one.
+    pub async fn wear_cape(&self, cape: Option<&str>) -> Result<SkinProfile> {
+        let current = self.skin_profile().await?;
+        let worn = current.capes.iter().find(|each| each.state == "ACTIVE");
+        let profile = if worn.map(|each| each.id.as_str()) == cape {
+            current
+        } else {
+            self.set_active_cape(cape).await?
+        };
+        self.take_off_made(None)?;
+        // Also undoes a picture put there by hand, which can't be told from Mojang's.
+        let chosen = profile
+            .capes
+            .iter()
+            .find(|each| Some(each.id.as_str()) == cape);
+        if let Some(hash) = chosen.and_then(|each| texture_hash(&each.url)) {
+            self.take_off(hash)?;
+        }
+        Ok(self.with_pictures(profile))
+    }
+
+    /// The capes the player made, newest first.
+    pub fn made_capes(&self) -> Result<Vec<MadeCape>> {
+        match fs::read(self.paths.skins().join(MADE_CAPES_FILE)) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn save_made_capes(&self, capes: &[MadeCape]) -> Result<()> {
+        let path = self.paths.skins().join(MADE_CAPES_FILE);
+        crate::atomic::write(&path, &serde_json::to_vec_pretty(capes)?)?;
+        Ok(())
+    }
+
+    fn made_cape_file(&self, id: &str) -> PathBuf {
+        self.paths
+            .skins()
+            .join(MADE_CAPES)
+            .join(format!("{id}.png"))
+    }
+
+    /// Keeps a cape the window drew, sent as base64 PNG. Making the same cape
+    /// twice keeps one, under the newer name.
+    pub fn make_cape(&self, name: &str, png_base64: &str) -> Result<MadeCape> {
+        let bytes = cape_png(png_base64)?;
+        let cape = MadeCape {
+            id: blake3::hash(&bytes).to_hex().to_string(),
+            name: cape_name(name),
+        };
+        crate::atomic::write(&self.made_cape_file(&cape.id), &bytes)?;
+        let mut capes = self.made_capes()?;
+        capes.retain(|each| each.id != cape.id);
+        capes.insert(0, cape.clone());
+        self.save_made_capes(&capes)?;
+        Ok(cape)
+    }
+
+    /// Deletes a cape the player made. If the game shows it in place of a real
+    /// cape, the real one comes back.
+    pub fn remove_made_cape(&self, id: &str) -> Result<Vec<MadeCape>> {
+        let mut capes = self.made_capes()?;
+        if !capes.iter().any(|cape| cape.id == id) {
+            return Err(Error::NotFound("that cape".into()));
+        }
+        self.take_off_made(Some(id))?;
+        capes.retain(|cape| cape.id != id);
+        // The id was found in the list, which only ever holds hashes, so this is a file in it.
+        remove_if_there(&self.made_cape_file(id))?;
+        self.save_made_capes(&capes)?;
+        Ok(capes)
+    }
+
+    /// Wears a cape the player made. Its picture goes where the game keeps its
+    /// copy of the player's real cape, and the game shows it from then on, on
+    /// this computer only. Other players see the real cape, which is put on if
+    /// none is. Everyone wearing the same real cape shares the game's copy, so
+    /// on this computer they show the picture too.
+    pub async fn wear_made_cape(&self, id: &str) -> Result<SkinProfile> {
+        if !self.made_capes()?.iter().any(|cape| cape.id == id) {
+            return Err(Error::NotFound("that cape".into()));
+        }
+        let mut profile = self.skin_profile().await?;
+        let none = || {
+            Error::Other(
+                "a cape you make shows in place of one from Mojang, and this account has none"
+                    .into(),
+            )
+        };
+        let base = base_cape(&profile).ok_or_else(none)?;
+        let (base_id, worn) = (base.id.clone(), base.state == "ACTIVE");
+        let hash = texture_hash(&base.url).ok_or_else(none)?.to_string();
+        if !worn {
+            profile = self.set_active_cape(Some(&base_id)).await?;
+        }
+        self.take_off_made(None)?;
+        let bytes = fs::read(self.made_cape_file(id))?;
+        for copy in self.game_copies(&hash) {
+            crate::atomic::write(&copy, &bytes)?;
+        }
+        Ok(self.with_pictures(profile))
+    }
+
+    /// The files the game shows a real cape from, once it has downloaded it.
+    fn game_copies(&self, hash: &str) -> [PathBuf; 2] {
+        cached_texture(&self.paths.assets().join(GAME_TEXTURES), hash)
+    }
+
+    /// The made cape the game shows in place of a real one, if its copy is one.
+    fn showing(&self, hash: &str, made: &[MadeCape]) -> Option<String> {
+        self.game_copies(hash).iter().find_map(|copy| {
+            let id = blake3::hash(&fs::read(copy).ok()?).to_hex().to_string();
+            made.iter().any(|cape| cape.id == id).then_some(id)
+        })
+    }
+
+    fn with_pictures(&self, mut profile: SkinProfile) -> SkinProfile {
+        let made = self.made_capes().unwrap_or_default();
+        for cape in &mut profile.capes {
+            cape.showing = match texture_hash(&cape.url) {
+                Some(hash) if !made.is_empty() => self.showing(hash, &made),
+                _ => None,
+            };
+        }
+        profile
+    }
+
+    /// Deletes the game's copy of a cape, so it downloads the real one again.
+    fn take_off(&self, hash: &str) -> Result<()> {
+        for copy in self.game_copies(hash) {
+            remove_if_there(&copy)?;
+        }
+        Ok(())
+    }
+
+    /// Deletes every copy the game has that is a made cape, or just `only`'s,
+    /// so the real capes come back. Files are matched by size, then by hash.
+    fn take_off_made(&self, only: Option<&str>) -> Result<()> {
+        let wanted: Vec<(u64, String)> = self
+            .made_capes()?
+            .into_iter()
+            .filter(|cape| only.is_none_or(|id| cape.id == id))
+            .filter_map(|cape| {
+                let size = fs::metadata(self.made_cape_file(&cape.id)).ok()?.len();
+                Some((size, cape.id))
+            })
+            .collect();
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        let Ok(folders) = fs::read_dir(self.paths.assets().join(GAME_TEXTURES)) else {
+            return Ok(());
+        };
+        for copy in folders
+            .flatten()
+            .filter_map(|folder| fs::read_dir(folder.path()).ok())
+            .flatten()
+            .flatten()
+        {
+            let Ok(size) = copy.metadata().map(|meta| meta.len()) else {
+                continue;
+            };
+            if !wanted.iter().any(|(each, _)| *each == size) {
+                continue;
+            }
+            let Ok(bytes) = fs::read(copy.path()) else {
+                continue;
+            };
+            let id = blake3::hash(&bytes).to_hex().to_string();
+            if wanted.iter().any(|(_, each)| *each == id) {
+                remove_if_there(&copy.path())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -473,6 +765,150 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path().join("data"), crate::event::silent()).unwrap();
         (dir, core)
+    }
+
+    #[test]
+    fn only_a_png_at_a_cape_size_is_saved_as_a_cape() {
+        use base64::Engine;
+        use base64::engine::general_purpose::STANDARD;
+
+        let dir = tempfile::tempdir().unwrap();
+        let encode = |bytes: &[u8]| STANDARD.encode(bytes);
+        let target = dir.path().join("My Cape.PNG");
+
+        save_cape(&target, &encode(&png(64, 32))).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), png(64, 32));
+        save_cape(&target, &encode(&png(2048, 1024))).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), png(2048, 1024));
+
+        for wrong in [
+            png(64, 64),
+            png(96, 48),
+            png(4096, 2048),
+            b"MZ not a png".to_vec(),
+        ] {
+            assert!(save_cape(&dir.path().join("wrong.png"), &encode(&wrong)).is_err());
+        }
+        assert!(save_cape(&dir.path().join("wrong.png"), "not base64!").is_err());
+        assert!(save_cape(&dir.path().join("cape.exe"), &encode(&png(64, 32))).is_err());
+        assert!(save_cape(&dir.path().join("cape"), &encode(&png(64, 32))).is_err());
+        assert!(!dir.path().join("wrong.png").exists());
+    }
+
+    const STEVE_HASH: &str = "31f477eb1a7beee631c2ca64d06f8f68fa93a3386d04452ab27f43acdf1b60cb";
+
+    #[test]
+    fn textures_are_found_under_both_names_the_game_uses() {
+        let textures = Path::new("assets").join("skins");
+        let [older, newer] = cached_texture(&textures, STEVE_HASH);
+        assert_eq!(older, textures.join("31").join(STEVE_HASH));
+        // Checked against a skin the game cached itself, with 26.3.
+        assert_eq!(
+            newer,
+            textures
+                .join("d3")
+                .join("d38251731a5a61c0406b7e78cf88ceae837fa345")
+        );
+        assert_eq!(
+            cached_texture(&textures, "ab")[0],
+            textures.join("xx").join("ab")
+        );
+
+        let url = format!("http://textures.minecraft.net/texture/{STEVE_HASH}");
+        assert_eq!(texture_hash(&url), Some(STEVE_HASH));
+        for wrong in [
+            "",
+            "http://textures.minecraft.net/texture/",
+            "x/..",
+            "x/not-hex",
+        ] {
+            assert_eq!(texture_hash(wrong), None, "{wrong}");
+        }
+    }
+
+    fn encoded(bytes: &[u8]) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    #[test]
+    fn made_capes_are_kept_named_and_deleted() {
+        let (_dir, core) = core();
+        let first = core
+            .make_cape("  My   sunset ", &encoded(&png(2048, 1024)))
+            .unwrap();
+        assert_eq!(first.name, "My sunset");
+        assert_eq!(
+            core.local_image(&format!("cape/{}.png", first.id)).unwrap(),
+            png(2048, 1024)
+        );
+        let second = core.make_cape("", &encoded(&png(64, 32))).unwrap();
+        assert_eq!(second.name, "Cape");
+        let again = core.make_cape("Dusk", &encoded(&png(2048, 1024))).unwrap();
+        assert_eq!(again.id, first.id);
+        assert_eq!(
+            core.made_capes().unwrap(),
+            vec![again.clone(), second.clone()]
+        );
+        assert!(core.make_cape("Skin", &encoded(&png(64, 64))).is_err());
+        assert_eq!(core.made_capes().unwrap().len(), 2);
+
+        assert_eq!(core.remove_made_cape(&first.id).unwrap(), vec![second]);
+        assert_eq!(core.local_image(&format!("cape/{}.png", first.id)), None);
+        assert!(core.remove_made_cape(&first.id).is_err());
+        assert!(core.remove_made_cape("../capes").is_err());
+    }
+
+    #[test]
+    fn a_made_cape_shows_in_place_of_a_real_one_until_it_comes_off() {
+        let (_dir, core) = core();
+        let sunset = core
+            .make_cape("Sunset", &encoded(&png(2048, 1024)))
+            .unwrap();
+        let dusk = core.make_cape("Dusk", &encoded(&png(128, 64))).unwrap();
+        let made = core.made_capes().unwrap();
+        let [older, newer] = core.game_copies(STEVE_HASH);
+        let real = png(64, 32);
+        fs::create_dir_all(newer.parent().unwrap()).unwrap();
+        fs::write(&newer, &real).unwrap();
+        assert_eq!(core.showing(STEVE_HASH, &made), None);
+
+        for copy in [&older, &newer] {
+            crate::atomic::write(copy, &fs::read(core.made_cape_file(&sunset.id)).unwrap())
+                .unwrap();
+        }
+        assert_eq!(core.showing(STEVE_HASH, &made), Some(sunset.id.clone()));
+
+        // Taking off only the other cape leaves this one, and an unrelated texture stays.
+        let other = core.game_copies("abcdef")[1].clone();
+        crate::atomic::write(&other, &png(64, 64)).unwrap();
+        core.take_off_made(Some(&dusk.id)).unwrap();
+        assert_eq!(core.showing(STEVE_HASH, &made), Some(sunset.id.clone()));
+
+        core.take_off_made(None).unwrap();
+        assert!(!older.exists() && !newer.exists());
+        assert!(other.exists());
+        assert_eq!(core.showing(STEVE_HASH, &made), None);
+
+        // Deleting a made cape that's worn brings the real one back too.
+        crate::atomic::write(&newer, &fs::read(core.made_cape_file(&dusk.id)).unwrap()).unwrap();
+        core.remove_made_cape(&dusk.id).unwrap();
+        assert!(!newer.exists());
+        core.take_off(STEVE_HASH).unwrap();
+    }
+
+    #[test]
+    fn a_made_cape_goes_over_the_cape_worn_or_else_the_first() {
+        let cape = |id: &str, state: &str| json!({ "id": id, "state": state, "url": format!("http://textures.minecraft.net/texture/{STEVE_HASH}"), "alias": id });
+        let profile = |capes: Vec<serde_json::Value>| -> SkinProfile {
+            serde_json::from_value(json!({ "name": "Player", "capes": capes })).unwrap()
+        };
+        let worn = profile(vec![cape("Pan", "INACTIVE"), cape("Migrator", "ACTIVE")]);
+        assert_eq!(base_cape(&worn).unwrap().id, "Migrator");
+        assert_eq!(worn.capes[1].showing, None);
+        let none_on = profile(vec![cape("Pan", "INACTIVE"), cape("Migrator", "INACTIVE")]);
+        assert_eq!(base_cape(&none_on).unwrap().id, "Pan");
+        assert!(base_cape(&profile(vec![])).is_none());
     }
 
     #[test]
