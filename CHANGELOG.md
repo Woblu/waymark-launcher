@@ -2,7 +2,9 @@
 
 Every release of Waymark Launcher, newest first. Versions with a hyphen, like 0.5.0-beta.1, are betas that only reach players who turned on beta versions.
 
-## Unreleased
+## 0.5.0 (24 November 2026)
+
+Everything in 0.5.0-beta.1 below, and these.
 
 ### Added
 - An instance's settings can show the full command Play runs, without starting the game, under Launching. In a terminal, `waymark command <instance>` prints the same. The access token and your user folder are left out.
