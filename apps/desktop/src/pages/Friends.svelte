@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { Check, Ellipsis, Plus, Send, Trash2, UserPlus, X } from '@lucide/svelte';
+  import { Check, Ellipsis, Plus, Trash2, UserPlus, X } from '@lucide/svelte';
   import Art from '../components/Art.svelte';
   import Modal from '../components/Modal.svelte';
   import OfflineLine from '../components/OfflineLine.svelte';
   import { api } from '../lib/api';
   import { tabKeys } from '../lib/tabs';
-  import type { Friend, OtherPlayer, SharedByFriend } from '../lib/api';
+  import type { Friend, LibraryEntry, OtherPlayer, SharedByFriend } from '../lib/api';
   import { timeAgo } from '../lib/format';
   import { app } from '../lib/state.svelte';
 
@@ -20,6 +20,8 @@
   let confirming = $state(false);
   let installing = $state<string | null>(null);
   let joining = $state<string | null>(null);
+  /** An instance about to be sent that has files no store has, which a share can't carry. */
+  let stranded = $state<{ friend: Friend; entry: LibraryEntry; files: string[] } | null>(null);
 
   const overview = $derived(app.friends);
   const online = $derived(overview?.friends.filter((friend) => friend.online) ?? []);
@@ -88,7 +90,7 @@
       await api.friendDeleteAccount();
       app.friendAccount = null;
       app.friends = null;
-      app.toast('good', 'Your account is gone');
+      app.toast('good', 'Account deleted');
     } catch (error) {
       app.fail(error, 'Could not delete your account');
     }
@@ -99,15 +101,29 @@
     app.menu = {
       x: box.left,
       y: box.bottom + 4,
-      items: app.library.map((entry) => ({
-        label: entry.name,
-        run: () =>
-          change(async () => {
-            const leftOut = await api.friendSendInstance(friend.id, entry.id);
-            app.toast('good', `Sent ${entry.name} to ${friend.username}`, leftOut.length ? `${leftOut.length} files can't travel, because no store has them.` : undefined);
-          }, 'Could not send that'),
-      })),
+      items: app.library.map((entry) => ({ label: entry.name, run: () => sendInstance(friend, entry) })),
     };
+  }
+
+  async function sendInstance(friend: Friend, entry: LibraryEntry, anyway = false) {
+    if (!anyway) {
+      const files = await api.shareCode(entry.id).then((share) => share.leftOut, () => []);
+      if (files.length) {
+        stranded = { friend, entry, files };
+        return;
+      }
+    }
+    stranded = null;
+    await change(async () => {
+      await api.friendSendInstance(friend.id, entry.id);
+      app.toast('good', `Sent ${entry.name} to ${friend.username}`);
+    }, 'Could not send that');
+  }
+
+  function exportInstead() {
+    if (!stranded) return;
+    app.instanceDialog = { kind: 'export', id: stranded.entry.id };
+    stranded = null;
   }
 
   function more(event: MouseEvent, friend: Friend) {
@@ -163,7 +179,7 @@
       </span>
     </span>
     {#if friend.hosting}<button class="btn primary" disabled={joining !== null} onclick={() => join(friend)}>{joining === friend.id ? 'Getting ready' : 'Join'}</button>{/if}
-    {#if app.library.length}<button class="btn" onclick={(event) => send(event, friend)}><Send size={15} /> Send instance</button>{/if}
+    {#if app.library.length}<button class="btn" onclick={(event) => send(event, friend)}>Send instance</button>{/if}
     <button class="btn icon quiet" aria-label="More for {friend.username}" title="More" onclick={(event) => more(event, friend)}><Ellipsis size={17} /></button>
   </li>
 {/snippet}
@@ -209,7 +225,7 @@
         <button class="btn primary" disabled={busy}>{mode === 'new' ? 'Create account' : 'Sign in'}</button>
       </form>
       {#if mode === 'new'}
-        <p class="form-hint">This is separate from your Minecraft account, and needs no email. That also means a forgotten password can't be recovered.</p>
+        <p class="form-hint">Separate from your Minecraft account. There's no email, so a lost password can't be recovered.</p>
       {/if}
     </div>
   {:else if overview}
@@ -246,7 +262,7 @@
         {#if !overview.friends.length && !overview.incoming.length && !overview.outgoing.length}
           <div class="blank">
             <h2>No friends yet</h2>
-            <p class="muted">Add someone by their Waymark Launcher username to see when they're playing and send them instances.</p>
+            <p class="muted">Add friends by their Waymark Launcher username.</p>
           </div>
         {/if}
       </div>
@@ -307,6 +323,19 @@
   </Modal>
 {/if}
 
+{#if stranded}
+  {@const { friend, entry, files } = stranded}
+  <Modal title="Send {entry.name}" width={440} onclose={() => (stranded = null)}>
+    <p>{files.length === 1 ? "1 file isn't on Modrinth or CurseForge, so it can't be sent:" : `${files.length} files aren't on Modrinth or CurseForge, so they can't be sent:`}</p>
+    <p class="muted files">{files.slice(0, 8).join(', ')}{files.length > 8 ? ', …' : ''}</p>
+    <p class="muted">Export it as a pack to include them.</p>
+    <div class="buttons">
+      <button class="btn" onclick={() => sendInstance(friend, entry, true)}>Send without them</button>
+      <button class="btn primary" onclick={exportInstead}>Export pack</button>
+    </div>
+  </Modal>
+{/if}
+
 <style>
   .page { height: 100%; overflow-y: auto; }
   .top { height: clamp(110px, 18vh, 150px); }
@@ -334,4 +363,5 @@
   .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .actions { display: flex; gap: 8px; margin-top: 12px; }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; }
+  .files { margin: 6px 0 10px; overflow-wrap: anywhere; }
 </style>

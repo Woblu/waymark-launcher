@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Check, Download, ImagePlus, X } from '@lucide/svelte';
-  import { api, inTauri, pickSavePath } from '../lib/api';
+  import { api, inTauri, openFolder, pickSavePath } from '../lib/api';
   import type { MadeCape, SkinProfile } from '../lib/api';
   import { CAPE_SCALES, drawCape, fitCrop, wholeCrop } from '../lib/cape';
   import type { Crop } from '../lib/cape';
@@ -25,12 +25,12 @@
   const base = $derived(profile?.capes.find((each) => each.state === 'ACTIVE') ?? profile?.capes[0]);
   /** Why the cape can't be worn, or what happens when it is. */
   const wearHint = $derived.by(() => {
-    if (!app.activeAccount) return 'Sign in to wear it in game.';
-    if (!profile) return 'Could not reach Minecraft to see which capes you have.';
-    if (!base) return 'To wear it in game, you need a cape from Mojang for it to take the place of.';
+    if (!app.activeAccount) return 'Sign in to wear it.';
+    if (!profile) return 'Could not load your capes.';
+    if (!base) return 'You need a cape from Mojang to wear this over.';
     const alias = base.alias ?? 'Mojang';
-    if (base.state === 'ACTIVE') return `In game, it takes the place of your ${alias} cape, from the next time you open Minecraft. Only you see it. Other players see the real one, and on your screen, anyone else wearing that cape has your picture too.`;
-    return `Wearing it also puts on your ${alias} cape, which other players see. In game, you see your picture in its place, from the next time you open Minecraft. On your screen, anyone else wearing that cape has your picture too.`;
+    if (base.state === 'ACTIVE') return `Replaces your ${alias} cape. Only you can see it.`;
+    return `Also puts on your ${alias} cape. Only you can see the picture.`;
   });
 
   /** How far the slider zooms in, as the frame's share of the biggest one. */
@@ -53,23 +53,60 @@
   let onElytra = $state(true);
   let scale = $state(CAPE_SCALES[CAPE_SCALES.length - 1]);
   let busy = $state(false);
+  let link = $state('');
+  let fetching = $state(false);
 
   let dragging: { x: number; y: number; from: Crop } | null = null;
 
-  async function picked() {
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
+  /** A GIF opens at its first frame, since capes don't move. */
+  async function open(blob: Blob, fileName: string) {
     try {
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await createImageBitmap(blob);
       picture?.close();
       picture = bitmap;
-      name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+      name = fileName.replace(/\.[^.]+$/, '').replace(/[-_+]+/g, ' ').trim();
       crop = wholeCrop(bitmap);
       zoom = 1;
     } catch (error) {
       app.fail(error, 'Could not open that picture');
     }
+  }
+
+  function picked() {
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) open(file, file.name);
+  }
+
+  async function openLink(address: string) {
+    if (!address.trim() || fetching) return;
+    fetching = true;
+    try {
+      const bytes = await api.pictureFromLink(address.trim());
+      let fileName = '';
+      try {
+        fileName = decodeURIComponent(new URL(address.trim()).pathname.split('/').pop() ?? '');
+      } catch {
+        // A name is only a starting point.
+      }
+      await open(new Blob([bytes]), fileName);
+      link = '';
+    } catch (error) {
+      app.fail(error, 'Could not open that link');
+    }
+    fetching = false;
+  }
+
+  /** Ctrl+V with a picture or a link, unless a text field has the focus. */
+  function pasted(event: ClipboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select')) return;
+    const file = [...(event.clipboardData?.files ?? [])].find((each) => each.type.startsWith('image/'));
+    const text = event.clipboardData?.getData('text/plain').trim() ?? '';
+    if (file) open(file, file.name === 'image.png' ? '' : file.name);
+    else if (/^https?:\/\/\S+$/i.test(text) && inTauri) openLink(text);
+    else return;
+    event.preventDefault();
   }
 
   function moveTo(middleX: number, middleY: number, width = crop.width) {
@@ -156,7 +193,8 @@
     busy = true;
     try {
       await api.saveCape(target, finished(picture));
-      app.toast('good', 'Cape saved', target);
+      const folder = target.replace(/[\\/][^\\/]*$/, '');
+      app.toast('good', 'Cape saved', undefined, { label: 'Open folder', run: () => openFolder(folder) });
     } catch (error) {
       app.fail(error, 'Could not save the cape');
     }
@@ -171,7 +209,7 @@
       made = await api.makeCape(name, finished(picture));
       const next = await api.wearMadeCape(made.id);
       onmade(made, next);
-      app.toast('good', `Now wearing ${made.name}`, 'It shows the next time you open Minecraft.');
+      app.toast('good', `Now wearing ${made.name}`);
     } catch (error) {
       if (made) onmade(made, null);
       app.fail(error, 'Could not wear the cape');
@@ -180,12 +218,13 @@
   }
 </script>
 
+<svelte:window onpaste={pasted} />
+
 <section class="maker">
   <div class="head">
     <h2>Make a cape</h2>
     <button class="btn quiet" onclick={onclose}><X size={15} /> Close</button>
   </div>
-  <p class="muted intro">Turns a picture into a cape. Wear it in game in place of a cape you have from Mojang, and switch back whenever you like from the cape list.</p>
 
   {#if !picture}
     <button class="choose" onclick={() => input.click()}>
@@ -193,6 +232,16 @@
       <span class="choose-label">Choose a picture</span>
       <span class="faint small">PNG, JPEG, WebP or GIF</span>
     </button>
+    <form
+      class="link"
+      onsubmit={(event) => {
+        event.preventDefault();
+        openLink(link);
+      }}
+    >
+      <input class="field" placeholder="Or paste a link" aria-label="Link to a picture" bind:value={link} disabled={!inTauri || fetching} />
+      <button class="btn" disabled={!inTauri || fetching || !link.trim()}>{fetching ? 'Opening' : 'Open'}</button>
+    </form>
   {:else}
     <div class="crop-area">
       <!-- Dragging anywhere moves the frame. From the keyboard, the frame itself takes the arrow keys. -->
@@ -214,7 +263,7 @@
           class="frame"
           role="group"
           tabindex="0"
-          aria-label="The part of the picture on the cape. Arrow keys move it, plus and minus zoom."
+          aria-label="Cape area. Arrow keys move it, plus and minus zoom."
           style:left="{(crop.x / picture.width) * 100}%"
           style:top="{(crop.y / picture.height) * 100}%"
           style:width="{(crop.width / picture.width) * 100}%"
@@ -222,7 +271,6 @@
           onkeydown={nudge}
         ></div>
       </div>
-      <p class="faint small">Drag the frame to choose what goes on the cape.</p>
     </div>
 
     <div class="group">
@@ -235,32 +283,29 @@
         <input id="cape-zoom" type="range" min="1" max={MOST_ZOOM} step="0.01" value={zoom} oninput={(event) => zoomTo(Number(event.currentTarget.value))} />
       </div>
       <div class="form-row">
-        <span class="form-label">Edges and inside</span>
+        <span class="form-label">Edge color</span>
         <div class="choices">
-          <label class="check"><input type="radio" name="cape-color" value="match" bind:group={colorMode} /> Match the picture</label>
+          <label class="check"><input type="radio" name="cape-color" value="match" bind:group={colorMode} /> Match picture</label>
           <div class="check">
-            <label class="check"><input type="radio" name="cape-color" value="chosen" bind:group={colorMode} /> This color</label>
-            <input type="color" class="swatch" aria-label="Color for the edges and inside" bind:value={color} oninput={() => (colorMode = 'chosen')} />
+            <label class="check"><input type="radio" name="cape-color" value="chosen" bind:group={colorMode} /> Custom</label>
+            <input type="color" class="swatch" aria-label="Edge color" bind:value={color} oninput={() => (colorMode = 'chosen')} />
           </div>
         </div>
       </div>
       <div class="form-row">
         <span class="form-label">Elytra</span>
-        <label class="check"><input type="checkbox" bind:checked={onElytra} /> Put the picture on the elytra too</label>
+        <label class="check"><input type="checkbox" bind:checked={onElytra} /> Use the picture</label>
       </div>
       <div class="form-row">
         <label for="cape-size">Size</label>
-        <div>
-          <select id="cape-size" class="field" bind:value={scale}>
-            {#each CAPE_SCALES as each (each)}<option value={each}>{64 * each} × {32 * each}</option>{/each}
-          </select>
-          <p class="form-hint">Minecraft's own capes are 64 × 32. Larger ones look sharper, and the game shows them at full size.</p>
-        </div>
+        <select id="cape-size" class="field" bind:value={scale}>
+          {#each CAPE_SCALES as each (each)}<option value={each}>{64 * each} × {32 * each}</option>{/each}
+        </select>
       </div>
     </div>
 
     <div class="buttons">
-      <button class="btn" onclick={() => input.click()}><ImagePlus size={15} /> Choose another picture</button>
+      <button class="btn" onclick={() => input.click()}><ImagePlus size={15} /> Change picture</button>
       <span class="spacer"></span>
       <button class="btn" disabled={!inTauri || busy} onclick={save}><Download size={15} /> Save as PNG</button>
       <button class="btn primary" disabled={!inTauri || busy || !base} onclick={saveAndWear}><Check size={15} /> Save and wear</button>
@@ -273,9 +318,10 @@
 
 <style>
   .maker { padding-top: 6px; }
-  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   h2 { font-size: var(--text-l); }
-  .intro { max-width: 62ch; margin-bottom: 16px; }
+  .link { display: flex; gap: 8px; margin-top: 10px; }
+  .link .field { flex: 1; min-width: 0; }
 
   .choose { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 180px; box-shadow: inset 0 0 0 2px var(--line-strong); color: var(--text-2); }
   .choose:hover { background: var(--panel); color: var(--text); }

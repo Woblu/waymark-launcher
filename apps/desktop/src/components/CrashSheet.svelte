@@ -73,7 +73,7 @@
         {#if finding.fix.kind === 'raiseMemory'}
           <div class="fix"><button class="btn" onclick={() => openTab('settings', 'memory')}>Change memory</button></div>
         {:else if finding.fix.kind === 'useJava'}
-          <p class="faint small how">{`Install Java ${finding.fix.major} or newer, then choose it as the Java path in this instance's settings.`}</p>
+          <p class="faint small how">{`Install Java ${finding.fix.major} or newer and pick it in this instance's settings.`}</p>
           <div class="fix"><button class="btn" onclick={() => openTab('settings', 'java')}>Open Java settings</button></div>
         {:else if finding.fix.kind === 'installMod'}
           {@const missing = named(finding)}
@@ -86,7 +86,7 @@
           <p class="faint small how">Turn off or remove one of the two copies in the Mods tab.</p>
           <div class="fix"><button class="btn" onclick={() => findInMods(duplicate)}>Open Mods</button></div>
         {:else if finding.fix.kind === 'updateDrivers'}
-          <p class="faint small how">Get the newest driver from your graphics card maker's website, NVIDIA, AMD or Intel, then start the game again.</p>
+          <p class="faint small how">Update your graphics driver from NVIDIA, AMD or Intel, then try again.</p>
         {/if}
       </li>
     {/each}

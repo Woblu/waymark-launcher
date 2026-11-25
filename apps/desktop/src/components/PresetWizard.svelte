@@ -62,7 +62,7 @@
       await app.refresh();
       app.open(result.instance.id);
       const missing = result.skipped.map((item) => item.title);
-      app.toast('good', `Set up ${result.instance.name}`, missing.length ? `Not added, with nothing for this version yet: ${missing.join(', ')}` : undefined);
+      app.toast('good', `Set up ${result.instance.name}`, missing.length ? `Not available for this version: ${missing.join(', ')}` : undefined);
     } catch (error) {
       app.fail(error, 'Could not set that up');
     }

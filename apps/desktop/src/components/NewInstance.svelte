@@ -256,7 +256,7 @@
           </div>
         {/if}
         {#if loader === 'cleanroom'}
-          <p class="muted note">Cleanroom warns on its first launch that two patch mods, Fugue and Scalar, are missing. Both can be installed from Discover.</p>
+          <p class="muted note">Cleanroom will say Fugue and Scalar are missing. Both are in Discover.</p>
         {/if}
         <div class="actions">
           <button type="button" class="btn" onclick={close}>Cancel</button>
@@ -301,7 +301,7 @@
           {/each}
         </ul>
       {:else if searched}
-        <p class="muted intro">No instances found from the Minecraft Launcher, Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher.</p>
+        <p class="muted intro">No instances found in other launchers.</p>
       {:else}
         <p class="muted intro">Looking for other launchers</p>
       {/if}

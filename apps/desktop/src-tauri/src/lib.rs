@@ -1123,6 +1123,11 @@ async fn shared_settings(launcher: State<'_, Launcher>) -> Reply<SharedSettings>
 }
 
 #[tauri::command]
+async fn share_settings_from(launcher: State<'_, Launcher>, id: String) -> Reply<SharedSettings> {
+    off_thread(&launcher, move |core| core.share_from(&id)).await
+}
+
+#[tauri::command]
 async fn public_servers(launcher: State<'_, Launcher>, query: ServerQuery) -> Reply<ServerPage> {
     launcher.core.public_servers(&query).await
 }
@@ -1274,6 +1279,16 @@ async fn remove_made_cape(launcher: State<'_, Launcher>, id: String) -> Reply<Ve
 #[tauri::command]
 async fn wear_made_cape(launcher: State<'_, Launcher>, id: String) -> Reply<SkinProfile> {
     launcher.core.wear_made_cape(&id).await
+}
+
+/// A picture from a link, as raw bytes, for the cape maker to open.
+#[tauri::command]
+async fn picture_from_link(
+    launcher: State<'_, Launcher>,
+    link: String,
+) -> Reply<tauri::ipc::Response> {
+    let bytes = waymark_core::skins::picture_from_link(launcher.core.net.client(), &link).await?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -1534,6 +1549,7 @@ pub fn run() {
             install_share,
             add_starters,
             shared_settings,
+            share_settings_from,
             public_servers,
             server_categories,
             public_server,
@@ -1580,6 +1596,7 @@ pub fn run() {
             make_cape,
             remove_made_cape,
             wear_made_cape,
+            picture_from_link,
             save_cape,
             trashed,
             restore_trashed,

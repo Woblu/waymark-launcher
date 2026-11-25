@@ -90,7 +90,7 @@
     busy = true;
     try {
       status = await api.openHostToFriends(id, open);
-      if (open && !status.friends?.internet) app.toast('info', 'Your router said no', `Friends on your network can still join. Others need port ${status.port} forwarded on your router.`);
+      if (open && !status.friends?.internet) app.toast('info', `Could not open port ${status.port}`, 'Only people on your network can join.');
     } catch (error) {
       app.fail(error, 'Could not open the server to friends');
     }
@@ -108,7 +108,7 @@
       {#if !status.ready}
         <div class="intro">
           <strong>Host a server from this computer</strong>
-          <p class="muted">Friends can join your world while the server is running. Waymark Launcher builds it from this instance and leaves out mods that only work on the client.</p>
+          <p class="muted">Host this instance as a server. Client-only mods are left out.</p>
         </div>
         <button class="btn primary" disabled={busy} onclick={prepare}>{busy ? 'Setting up' : 'Set up a server'}</button>
       {:else}

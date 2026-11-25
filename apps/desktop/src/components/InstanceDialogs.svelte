@@ -88,12 +88,9 @@
       const report = await api.exportPack(dialog.id, target, format, name.trim(), version.trim());
       const inside = report.bundled.length;
       const names = report.bundled.slice(0, 6).join(', ');
-      // A sentence a line, so each one is translated on its own.
-      const lines = [report.linked === 1 ? '1 file linked to the store.' : `${report.linked} files linked to the store.`];
-      if (inside === 1) lines.push(`1 file is inside the pack, so check you're allowed to share it: ${names}.`);
-      else if (inside > 6) lines.push(`${inside} files are inside the pack, so check you're allowed to share them: ${names}, and more.`);
-      else if (inside) lines.push(`${inside} files are inside the pack, so check you're allowed to share them: ${names}.`);
-      app.toast('good', 'Pack exported', lines.join('\n'));
+      const more = inside > 6 ? ', …' : '';
+      const detail = inside === 1 ? `Includes 1 file from your computer: ${names}` : inside ? `Includes ${inside} files from your computer: ${names}${more}` : undefined;
+      app.toast('good', 'Pack exported', detail);
       close();
     } catch (error) {
       app.fail(error, 'Could not export this instance');
@@ -114,7 +111,7 @@
         <span class="form-label">Worlds</span>
         <div>
           <label class="check"><input type="checkbox" bind:checked={worlds} /> Copy worlds too</label>
-          <p class="form-hint">Mods and packs are shared with the original on disk, so a copy takes up almost no extra space.</p>
+          <p class="form-hint">Takes up almost no extra space.</p>
         </div>
       </div>
       <div class="buttons">
@@ -149,7 +146,7 @@
   </Modal>
 {:else if entry && dialog.kind === 'share'}
   <Modal title="Share {entry.name}" width={520} onclose={close}>
-    <p class="muted intro">Send this code to a friend. They paste it under Import when adding an instance, and Waymark Launcher downloads the same versions of everything from the stores.</p>
+    <p class="muted intro">Your friend pastes this under Import when adding an instance.</p>
     {#if share}
       <textarea class="field mono code" readonly rows="5" aria-label="Share code" value={share.code}></textarea>
       {#if share.leftOut.length}
@@ -177,7 +174,7 @@
             <option value="list">List of mods</option>
           </select>
           {#if format !== 'list'}
-            <p class="form-hint">Whatever the store has is linked. Anything else goes inside the pack, and you'll be told which files those are.</p>
+            <p class="form-hint">Files from Modrinth or CurseForge are linked. Anything else goes inside the pack.</p>
           {/if}
         </div>
       </div>

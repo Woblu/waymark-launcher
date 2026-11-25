@@ -25,7 +25,7 @@ async function changeIcon(entry: LibraryEntry, picture: string | null) {
 async function makeShortcut(entry: LibraryEntry) {
   try {
     await api.createShortcut(entry.id);
-    app.toast('good', 'Shortcut added', `${entry.name} is on your desktop.`);
+    app.toast('good', 'Desktop shortcut added');
   } catch (error) {
     app.fail(error, 'Could not add a shortcut');
   }

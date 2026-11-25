@@ -195,7 +195,8 @@ export type ProjectTarget =
   | { hash: string; instance: string; preview?: ProjectPreview };
 
 export type SkinVariant = 'classic' | 'slim';
-export interface SavedSkin { id: string; name: string; variant: SkinVariant }
+/** `texture` is Mojang's address for the skin, once it has been worn from the library. */
+export interface SavedSkin { id: string; name: string; variant: SkinVariant; texture?: string }
 export interface DefaultSkin { name: string; variant: SkinVariant; url: string }
 export interface SkinLibrary { saved: SavedSkin[]; defaults: DefaultSkin[] }
 export type Wear = { kind: 'saved'; id: string } | { kind: 'default'; url: string; variant: SkinVariant };
@@ -543,6 +544,8 @@ export const api = {
   installShare: (code: string) => call<{ instance: LibraryEntry; failed: string[] }>('install_share', { code }),
   addStarters: (id: string) => call<StarterResult>('add_starters', { id }),
   sharedSettings: () => call<SharedSettings>('shared_settings'),
+  /** Starts the shared settings over from one instance's. */
+  shareSettingsFrom: (id: string) => call<SharedSettings>('share_settings_from', { id }),
   publicServers: (query: ServerQuery) => call<ServerPage>('public_servers', { query }),
   serverCategories: () => call<SearchCategory[]>('server_categories'),
   publicServer: (id: string) => call<ServerDetails>('public_server', { id }),
@@ -575,6 +578,8 @@ export const api = {
   wearMadeCape: (id: string) => call<SkinProfile>('wear_made_cape', { id }),
   /** Writes a cape drawn in the window, given as base64 PNG, to a path the player picked. */
   saveCape: (target: string, png: string) => call<void>('save_cape', { target, png }),
+  /** Downloads a picture from a link, or the preview picture of a page like a GIF's on Tenor. */
+  pictureFromLink: (link: string) => call<ArrayBuffer>('picture_from_link', { link }),
   trashed: () => call<Trashed[]>('trashed'),
   restoreTrashed: (id: string) => call<Trashed>('restore_trashed', { id }),
   eraseTrashed: (id: string) => call<void>('erase_trashed', { id }),

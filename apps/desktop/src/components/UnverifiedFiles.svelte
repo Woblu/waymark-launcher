@@ -24,7 +24,7 @@
       app.unverified = null;
       app.go('library');
       await app.refresh();
-      app.toast('good', `Deleted ${name}`, 'It stays in the trash for 30 days.');
+      app.toast('good', `Deleted ${name}`);
     } catch (error) {
       app.fail(error, `Could not delete ${name}`);
     } finally {
@@ -42,7 +42,7 @@
       {#each pack.files.slice(0, SHOWN) as file (file)}<li>{file}</li>{/each}
       {#if pack.files.length > SHOWN}<li class="faint">and {pack.files.length - SHOWN} more</li>{/if}
     </ul>
-    <p class="muted">If you trust where the pack came from, keep it. If you don't, delete the instance. It goes to the trash for 30 days.</p>
+    <p class="muted">Only keep it if you trust where the pack came from.</p>
     <div class="buttons">
       <span class="spacer"></span>
       <button class="btn danger" disabled={deleting} onclick={remove}>Delete instance</button>

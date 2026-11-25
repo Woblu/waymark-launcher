@@ -143,7 +143,7 @@
       <div class="content">
         <div class="trouble">
           {#if !app.libraryError.complete && app.libraryError.sentence}<p class="faint small selectable mono">{app.libraryError.technical}</p>{/if}
-          <p class="muted">Nothing has been deleted. Waymark Launcher couldn't read the list of instances just now.</p>
+          <p class="muted">Could not read your instances. Nothing was deleted.</p>
           <button class="btn primary" disabled={retrying} onclick={retry}>{retrying ? 'Trying again' : 'Try again'}</button>
         </div>
       </div>
@@ -161,7 +161,7 @@
           </li>
           <li>
             <h2>Bring your instances</h2>
-            <p class="muted">Import from the Minecraft Launcher, Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher. The originals stay where they are.</p>
+            <p class="muted">From the Minecraft Launcher, Prism Launcher, MultiMC, CurseForge, the Modrinth App, ATLauncher or GDLauncher.</p>
             {#if found}
               <p class="faint small">{found === 1 ? 'Found 1 on this computer' : `Found ${found} on this computer`}</p>
               <p class="faint small sources">{#each byLauncher(waiting) as [launcher, count] (launcher)}<span>{launcher} {count}</span>{/each}</p>
@@ -177,7 +177,7 @@
           </li>
           <li>
             <h2>Or start fresh</h2>
-            <p class="muted">Pick a preset for what you want to play, or choose a Minecraft version and mod loader yourself.</p>
+            <p class="muted">Start from a preset, or pick a version and mod loader.</p>
             <div class="buttons">
               <button class="btn" class:primary={!!app.activeAccount && !found} onclick={() => (app.dialog = 'presets')}>Choose a preset</button>
               <button class="btn" onclick={() => (app.dialog = 'new')}><Plus size={16} /> New instance</button>
@@ -192,7 +192,7 @@
         <section class="bring" aria-label="Instances in other launchers">
           <div class="text">
             <h2>{found === 1 ? "1 instance on this computer isn't in your library yet" : `${found} instances on this computer aren't in your library yet`}</h2>
-            <p class="muted">Importing brings over worlds, mods and settings, so you can keep playing where you left off. The other launcher stays as it is.</p>
+            <p class="muted">Brings over worlds, mods and settings.</p>
             <p class="faint small sources">{#each byLauncher(waiting) as [launcher, count] (launcher)}<span>{launcher} {count}</span>{/each}</p>
           </div>
           <div class="buttons">

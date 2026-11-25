@@ -54,7 +54,7 @@
       await api.updateInstance(entry.id, { server: null });
       await app.refresh();
       base = app.library.find((other) => other.id === entry.id) ?? base;
-      app.toast('good', `${entry.name} no longer joins a server on Play`);
+      app.toast('good', 'Server unlinked');
     } catch (error) {
       app.fail(error, 'Could not save');
     }
@@ -190,11 +190,8 @@
     try {
       const result = await api.exportServer(entry.id, folder);
       const left = result.skipped.length;
-      // A sentence a line, so each one is translated on its own.
-      const lines = [result.mods === 1 ? '1 mod copied.' : `${result.mods} mods copied.`];
-      if (left) lines.push(left === 1 ? '1 client-only mod left out.' : `${left} client-only mods left out.`);
-      lines.push('See README.txt in the folder.');
-      app.toast('good', 'Server folder created', lines.join('\n'));
+      const detail = left === 1 ? '1 client-only mod left out.' : left ? `${left} client-only mods left out.` : undefined;
+      app.toast('good', 'Server folder created', detail);
       await openFolder(result.folder);
     } catch (error) {
       app.fail(error, 'Could not export the server');
@@ -208,7 +205,7 @@
       const item = await api.deleteInstance(entry.id);
       await app.refresh();
       app.selected = null;
-      app.toast('good', `Deleted ${entry.name}`, 'You can restore it from Settings for 30 days.', { label: 'Undo', run: () => app.restore(item.id) });
+      app.toast('good', `Deleted ${entry.name}`, undefined, { label: 'Undo', run: () => app.restore(item.id) });
     } catch (error) {
       gone = false;
       app.fail(error, 'Could not delete this instance');
@@ -320,7 +317,7 @@
           <label for="post-exit">After the game closes</label>
           <div>
             <input id="post-exit" class="field mono" bind:value={postExit} />
-            <p class="form-hint">Commands run on your computer, so only use ones you trust. They can read INST_NAME, INST_DIR, INST_MC_DIR and INST_MC_VER.</p>
+            <p class="form-hint">Only run commands you trust. They can read INST_NAME, INST_DIR, INST_MC_DIR, INST_MC_VER and INST_JAVA.</p>
           </div>
         </div>
       </div>
@@ -329,7 +326,7 @@
     <h2 class="group-title">Launch command</h2>
     <div class="group">
       <div class="lone">
-        <p class="form-hint first">Everything Play runs for this instance, written out without starting the game. Missing game files are downloaded first.</p>
+        <p class="form-hint first">The full command Play runs. Missing game files download first.</p>
         <button type="button" class="btn after" disabled={writingCommand} onclick={showCommand}>{writingCommand ? 'Writing it out' : 'Show the launch command'}</button>
       </div>
     </div>
@@ -338,7 +335,7 @@
       <div class="group">
         <div class="lone">
           <label class="check"><input type="checkbox" checked={entry.legacyFixes} onchange={(event) => setLegacyFixes(event.currentTarget.checked)} /> Run with LegacyFix</label>
-          <p class="form-hint">LegacyFix brings back skins and fixes problems this version has on today's computers. It changes the game, which speedrun.com's rules don't allow.</p>
+          <p class="form-hint">Brings back skins and fixes bugs on modern computers. Not allowed by speedrun.com's rules.</p>
         </div>
       </div>
     {/if}
@@ -349,7 +346,7 @@
         <div class="group">
           <div class="lone">
             <label class="check"><input type="checkbox" bind:checked={keepOwn} /> Keep this instance's own game settings</label>
-            <p class="form-hint">Its keybinds, video and other options stay as they are, and what you change here stays here.</p>
+            <p class="form-hint">This instance keeps its own keybinds, video and other options.</p>
           </div>
         </div>
         {@render saveRow()}
@@ -364,7 +361,7 @@
             {folder.label}
           </label>
         {/each}
-        <p class="form-hint">Instances that share a folder see the same files. Turning this off leaves this instance with its own copy.</p>
+        <p class="form-hint">Turning this off gives this instance its own copy.</p>
       </div>
     </div>
     {#if others.length}
@@ -388,7 +385,7 @@
       <div class="group">
         <div class="lone">
           <p class="linked"><span class="name">{entry.server.name}</span> <span class="faint mono">{entry.server.address}</span></p>
-          <p class="form-hint">Play joins this server straight away, and joining it from Servers keeps this instance on the version it needs.</p>
+          <p class="form-hint">Play joins this server directly.</p>
           <button type="button" class="btn after" onclick={unlink}>Stop joining it on Play</button>
         </div>
       </div>
@@ -396,7 +393,7 @@
     <div class="group">
       <div class="lone">
         <button class="btn" disabled={exporting} onclick={exportServer}>{exporting ? 'Exporting' : 'Export as a server'}</button>
-        <p class="form-hint">Builds a server folder with your mods and configs, and leaves out client-only mods. You accept the Minecraft EULA on its first run.</p>
+        <p class="form-hint">A server folder with your mods and configs, minus client-only mods. You accept the Minecraft EULA on first run.</p>
       </div>
     </div>
   {:else if section === 'delete'}

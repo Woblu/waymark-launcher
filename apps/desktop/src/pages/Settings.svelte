@@ -322,7 +322,7 @@
           <span class="form-label">While playing</span>
           <div>
             <label class="check"><input type="checkbox" bind:checked={settings.closeWhilePlaying} onchange={save} /> Close the window to free memory for the game</label>
-            <p class="form-hint">The window comes back when the game exits. While it's closed, you can reopen it from the Waymark Launcher icon in the system tray.</p>
+            <p class="form-hint">It reopens when the game exits, or from the tray icon.</p>
           </div>
         </div>
         {#if discordAvailable}
@@ -330,7 +330,7 @@
             <span class="form-label">Discord</span>
             <div>
               <label class="check"><input type="checkbox" bind:checked={settings.discordPresence} onchange={save} /> Show what you're playing on your Discord profile</label>
-              <p class="form-hint">Your Discord friends see the instance's name, its Minecraft version, and the server's name when it's from the server list. Waymark Launcher tells the Discord app on this computer, and never shares a private server's address.</p>
+              <p class="form-hint">Shows the instance, its version and the server's name on your Discord profile. Private server addresses are never shown.</p>
             </div>
           </div>
         {/if}
@@ -358,7 +358,7 @@
           <span class="form-label">Game settings</span>
           <div>
             <label class="check"><input type="checkbox" bind:checked={settings.shareSettings} onchange={toggleSharing} /> Share game settings between instances</label>
-            <p class="form-hint">Keybinds, video, sound and other options carry over. What you change in one instance reaches the others the next time they start. Minecraft 1.13 and newer share one set and older releases another. An instance can keep its own from its settings.</p>
+            <p class="form-hint">Keybinds, video, sound and other options carry over between instances. 1.13 and newer share one set, older versions another.</p>
             {#if settings.shareSettings}
               <label class="check"><input type="checkbox" bind:checked={settings.shareServers} onchange={save} /> Share the server list too</label>
               <div class="version">
@@ -389,9 +389,9 @@
           <span class="form-label">Updates</span>
           <div>
             <label class="check"><input type="checkbox" bind:checked={settings.autoUpdate} onchange={save} /> Keep Waymark Launcher up to date</label>
-            <p class="form-hint">New versions download in the background and install when you close Waymark Launcher. It never restarts during a game.</p>
+            <p class="form-hint">Updates install when you close Waymark Launcher, never during a game.</p>
             <label class="check"><input type="checkbox" bind:checked={settings.betaUpdates} disabled={!settings.autoUpdate} onchange={save} /> Get beta versions early</label>
-            <p class="form-hint">Betas get new features a few days before everyone else, and sometimes new bugs. Turn this off and you move to the next full release when it comes out.</p>
+            <p class="form-hint">New features a few days early, and sometimes new bugs.</p>
           </div>
         </div>
       </div>
@@ -401,7 +401,7 @@
           <span class="form-label">After an update</span>
           <div>
             <label class="check"><input type="checkbox" bind:checked={settings.checkUpdates} onchange={save} /> Check that the game still starts after an update</label>
-            <p class="form-hint">Waymark Launcher starts the game out of sight after updating mods or a pack, and undoes the update if it won't load. Pressing Play stops the check.</p>
+            <p class="form-hint">After an update, the game starts in the background, and the update is undone if it won't load.</p>
           </div>
         </div>
         <div class="form-row">
@@ -413,7 +413,7 @@
               <option value={48}>2 days</option>
               <option value={168}>7 days</option>
             </select>
-            <p class="form-hint">A mod update won't be offered until it has been out this long, which gives people time to catch malware from a stolen author account.</p>
+            <p class="form-hint">Waits before offering new mod versions, in case an author's account was stolen.</p>
           </div>
         </div>
       </div>
@@ -437,7 +437,7 @@
             <button class="btn danger" onclick={() => (erasing = item)}>Delete now</button>
           </div>
         {:else}
-          <p class="muted">Nothing deleted lately. Deleted instances, worlds and screenshots are kept here for 30 days.</p>
+          <p class="muted">Nothing here. Deleted instances, worlds and screenshots stay for 30 days.</p>
         {/each}
       </div>
       {#if deleted.length}<p class="form-hint">Kept for 30 days after they're deleted.</p>{/if}
@@ -451,7 +451,7 @@
               <button class="btn" onclick={copyDiagnostics}>{copiedDiagnostics ? 'Copied' : 'Copy diagnostics'}</button>
               <button class="btn" onclick={openLogFolder}>Open log folder</button>
             </div>
-            <p class="form-hint">Diagnostics are the version, your system and the end of Waymark Launcher's own log, with folder names and sign-in tokens taken out. Nothing is sent anywhere by itself.</p>
+            <p class="form-hint">The version, your system and the end of the launcher's log, with folder names and sign-in tokens removed.</p>
             <p class="form-hint">Paste them into a GitHub issue or an email to <span class="selectable">waymarklaunchersupport@proton.me</span></p>
           </div>
         </div>

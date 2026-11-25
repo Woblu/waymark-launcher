@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
   import type { Settings, SharedOption, SharedSettings } from '../lib/api';
+  import { app } from '../lib/state.svelte';
   import Modal from './Modal.svelte';
 
   let { settings = $bindable(), onsave, onclose }: { settings: Settings; onsave: () => Promise<void>; onclose: () => void } = $props();
@@ -9,6 +10,8 @@
   let shared = $state<SharedSettings | null>(null);
   let problem = $state('');
   let text = $state('');
+  let fromId = $state('');
+  let copying = $state(false);
 
   onMount(async () => {
     try {
@@ -29,6 +32,22 @@
     { label: 'Everything else', items: options.filter((option) => !option.key.startsWith('key_') && matches(option)) },
   ];
 
+  /** Starts the shared settings over from one instance's. */
+  async function copyFrom(event: SubmitEvent) {
+    event.preventDefault();
+    const entry = app.library.find((each) => each.id === fromId);
+    if (!entry) return;
+    copying = true;
+    try {
+      shared = await api.shareSettingsFrom(entry.id);
+      problem = '';
+      app.toast('good', `Copied settings from ${entry.name}`);
+    } catch (error) {
+      app.fail(error, 'Could not copy those settings');
+    }
+    copying = false;
+  }
+
   async function choose(option: SharedOption, on: boolean) {
     settings.sharedChoices = { ...settings.sharedChoices, [option.key]: on };
     await onsave();
@@ -36,14 +55,22 @@
 </script>
 
 <Modal title="Shared game settings" width={640} {onclose}>
-  <p class="muted intro">Ticked settings are the same in every instance that shares. Untick one and each instance keeps its own value for it.</p>
+  <p class="muted intro">Ticked settings are the same in every instance.</p>
+  <form class="from" onsubmit={copyFrom}>
+    <label for="shared-from">Copy from</label>
+    <select id="shared-from" class="field" bind:value={fromId}>
+      <option value="" disabled>Choose an instance</option>
+      {#each app.library as entry (entry.id)}<option value={entry.id}>{entry.name}</option>{/each}
+    </select>
+    <button class="btn" disabled={!fromId || copying}>Use for all</button>
+  </form>
   <input class="field" placeholder="Search settings" aria-label="Search settings" bind:value={text} />
 
   <div class="sets">
     {#if !shared}
       <p class="faint empty">{problem ? `Could not read the shared settings. ${problem}` : 'Loading'}</p>
     {:else if !shared.sets.length}
-      <p class="faint empty">Nothing is shared yet. The first instance you play starts the set.</p>
+      <p class="faint empty">Nothing is shared yet.</p>
     {:else}
       {#each shared.sets as set (set.family)}
         <h3>{set.label}</h3>
@@ -72,6 +99,8 @@
 
 <style>
   .intro { margin: 0 0 10px; }
+  .from { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .from select { flex: 1; min-width: 0; }
   .sets { max-height: 440px; margin-top: 10px; overflow-y: auto; border-top: 1px solid var(--line); }
   .empty { padding: 14px 0; }
   h3 { margin: 14px 0 2px; font-size: var(--text-m); }

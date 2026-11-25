@@ -91,7 +91,7 @@
       const url = await api.uploadLog(all.map((line) => line.text).join('\n'));
       await navigator.clipboard.writeText(url);
       sharing = false;
-      app.toast('good', 'Log shared, and the link is copied', url, { label: 'Open', run: () => openExternal(url) });
+      app.toast('good', 'Link copied', url, { label: 'Open', run: () => openExternal(url) });
     } catch (error) {
       app.fail(error, 'Could not share that log');
     }
@@ -128,7 +128,7 @@
 
 {#if sharing}
   <Modal title="Share this log" width={440} onclose={() => (sharing = false)}>
-    <p class="muted">This uploads the log to mclo.gs, and anyone with the link can read it. Waymark Launcher removes your folder names and account tokens first, but other details from your game can still be in there.</p>
+    <p class="muted">Uploads the log to mclo.gs, where anyone with the link can read it. Folder names and account tokens are removed first, but other details may remain.</p>
     <div class="buttons">
       <button class="btn" onclick={() => (sharing = false)}>Cancel</button>
       <button class="btn primary" disabled={uploading || (chosen !== LIVE && savedPath !== chosen)} onclick={upload}>{uploading ? 'Uploading' : 'Upload'}</button>

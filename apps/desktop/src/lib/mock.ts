@@ -346,7 +346,7 @@ export function mockCall(command: string, args?: Record<string, unknown>): unkno
     case 'wear_made_cape':
       if (command === 'wear_made_cape') mockShowing = args?.id as string;
       else if (command === 'wear_cape') mockShowing = null;
-      return { name: 'Wayfarer', skins: [], capes: [{ id: 'migrator', state: 'ACTIVE', alias: 'Migrator', url: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0ba7defd635ca7a933', showing: mockShowing }] };
+      return { name: 'Wayfarer', skins: [{ url: 'https://textures.minecraft.net/texture/31f477eb1a7beee631c2ca64d06f8f68fa93a3386d04452ab27f43acdf1b60cb', variant: 'CLASSIC', state: 'ACTIVE' }], capes: [{ id: 'migrator', state: 'ACTIVE', alias: 'Migrator', url: 'https://textures.minecraft.net/texture/2340c0e03dd24a11b15a8b33c2a7e9e32abb2051b2481d0ba7defd635ca7a933', showing: mockShowing }] };
     case 'made_capes':
       return [{ id: 'sunset', name: 'Sunset' }];
     case 'data_packs':

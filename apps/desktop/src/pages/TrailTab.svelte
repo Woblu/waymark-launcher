@@ -80,7 +80,7 @@
       selected = null;
       app.contentTick++;
       await app.refresh();
-      app.toast('good', `Returned to "${mark.label}"`, 'Your previous state is still in the list.');
+      app.toast('good', `Returned to "${mark.label}"`);
     } catch (error) {
       app.fail(error, 'Could not return to that waymark');
     }
@@ -101,12 +101,12 @@
       <input class="field" placeholder="Name" aria-label="Waymark name" bind:value={label} />
       <button class="btn" disabled={working || !changes}>Set waymark</button>
     </form>
-    <p class="faint small about">Waymark Launcher sets a waymark whenever mods or config files change, and before each launch. Returning to one puts your mods and settings back as they were. Worlds aren't included.</p>
+    <p class="faint small about">A waymark is set when mods or config files change, and before each launch. Worlds aren't included.</p>
 
     {#if loaded && !entries.length}
       <div class="blank">
         <h2>No waymarks yet</h2>
-        <p class="muted">The first one is set the next time mods or config files change, or when you press Play. You can also set one now.</p>
+        <p class="muted">One is set when mods or config files change, or when you press Play.</p>
       </div>
     {:else}
     <div class="columns">

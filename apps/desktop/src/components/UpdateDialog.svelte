@@ -103,7 +103,7 @@
     {/each}
   </ul>
   <div class="buttons">
-    <p class="faint small undo">The update is saved as a waymark, so you can go back to how things were from Waymarks.</p>
+    <p class="faint small undo">You can undo this from Waymarks.</p>
     <button class="btn" onclick={onclose}>Cancel</button>
     <button class="btn primary" disabled={updating || !chosen.size} onclick={run}>{updating ? 'Updating' : `Update ${chosen.size}`}</button>
   </div>

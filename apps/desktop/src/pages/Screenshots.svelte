@@ -35,7 +35,7 @@
     try {
       const item = await api.deleteScreenshot(shot.instance, shot.file);
       app.contentTick++;
-      app.toast('good', 'Screenshot deleted', 'You can restore it from Settings for 30 days.', { label: 'Undo', run: () => app.restore(item.id) });
+      app.toast('good', 'Screenshot deleted', undefined, { label: 'Undo', run: () => app.restore(item.id) });
     } catch (error) {
       app.fail(error, 'Could not delete that screenshot');
     }

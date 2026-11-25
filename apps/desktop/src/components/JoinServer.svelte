@@ -22,9 +22,9 @@
     </div>
   </div>
   {#if pack}
-    <p class="muted">{`This server plays with the ${pack} modpack. Waymark Launcher installs the exact version it uses, then joins as soon as it's ready.`}</p>
+    <p class="muted">{`Uses the ${pack} modpack, which installs before you join.`}</p>
   {/if}
-  <p class="muted">The new instance stays linked to this server, so joining again starts it straight away, and it follows the server when it moves to a new version.</p>
+  <p class="muted">The new instance stays linked to this server and follows its updates.</p>
   <div class="actions">
     <button class="btn" onclick={onclose}>Cancel</button>
     <button class="btn primary" onclick={join}>Install and join</button>

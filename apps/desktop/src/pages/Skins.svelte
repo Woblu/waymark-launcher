@@ -62,9 +62,9 @@
   const signedIn = $derived(!!app.activeAccount);
   const name = $derived(profile?.name ?? app.activeAccount?.name ?? 'Player');
 
-  /** Mojang rehosts uploads, so a saved skin's address never matches and only a default can be recognised. */
+  /** Mojang rehosts uploads, so a saved skin is recognised by the address it got when it was worn from here. */
   function isWorn(choice: Choice): boolean {
-    return choice.url === worn?.url && choice.variant === wornVariant;
+    return !!worn && (choice.saved?.texture ?? choice.url) === worn.url && choice.variant === wornVariant;
   }
 
   async function draw(choices: Choice[]) {
@@ -167,7 +167,9 @@
       profile = await api.wearSkin(selected.wear);
       unreachable = '';
       app.refreshAccounts().catch(() => {});
-      app.toast('good', `Now wearing ${selected.name}`, 'The game shows your new skin next time you join a world.');
+      // A saved skin learns its address from Mojang as it's worn, which marks it as worn.
+      if (selected.saved) await load().catch(() => {});
+      app.toast('good', `Now wearing ${selected.name}`);
       selected = null;
     } catch (error) {
       app.fail(error, 'Could not change your skin');
@@ -185,7 +187,7 @@
     try {
       profile = madeId ? await api.wearMadeCape(madeId) : await api.wearCape(value || null);
       unreachable = '';
-      if (label) app.toast('good', `Now wearing ${label}`, 'It shows the next time you open Minecraft.');
+      if (label) app.toast('good', `Now wearing ${label}`);
     } catch (error) {
       select.value = capeChoice;
       app.fail(error, 'Could not change your cape');
@@ -198,7 +200,7 @@
     try {
       madeCapes = await api.removeMadeCape(wornMade.id);
       profile = await api.skinProfile();
-      app.toast('good', 'Cape deleted', 'Your real cape shows the next time you open Minecraft.');
+      app.toast('good', 'Cape deleted');
     } catch (error) {
       app.fail(error, 'Could not delete that cape');
     }
@@ -217,6 +219,7 @@
       {/if}
     </button>
     {#if selected?.key === choice.key}<span class="tick"><Check size={13} strokeWidth={3} /></span>{/if}
+    {#if isWorn(choice)}<span class="wearing">Wearing</span>{/if}
     {#if choice.saved}
       <button class="edit focus-inset" aria-label="Edit {choice.name}" title="Edit" onclick={() => startEditing(choice.saved!)}><Pencil size={13} /></button>
     {/if}
@@ -267,7 +270,7 @@
       </div>
       {#if wornMade && !making}
         <div class="in-game">
-          <p class="muted small">Only you see {wornMade.name}. Other players see your cape from Mojang.</p>
+          <p class="muted small">Only you can see {wornMade.name}.</p>
           <button class="btn quiet" onclick={deleteMadeCape}><Trash2 size={14} /> Delete cape</button>
         </div>
       {/if}
@@ -385,7 +388,9 @@
   }
   .tile:hover { background: var(--raised); }
   .tile.selected { outline-color: var(--accent); }
-  .tile.worn { outline-color: var(--good); }
+  .tile.worn { outline: 3px solid var(--good); outline-offset: -3px; }
+  .wearing { position: absolute; bottom: 7px; left: 50%; padding: 2px 8px; background: var(--good); clip-path: var(--stepped); color: var(--on-accent); font-size: var(--text-xs); font-weight: 700; pointer-events: none; transform: translateX(-50%); transition: opacity 100ms ease-out; }
+  .tile:hover .wearing { opacity: 0; }
   .pick { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
   .pick img { position: absolute; inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; }
   .back { opacity: 0; }

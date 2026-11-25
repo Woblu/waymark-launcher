@@ -77,7 +77,7 @@
     try {
       const item = await api.deleteWorld(id, world.folder);
       app.contentTick++;
-      app.toast('good', `Deleted ${world.name}`, 'You can restore it from Settings for 30 days.', { label: 'Undo', run: () => app.restore(item.id) });
+      app.toast('good', `Deleted ${world.name}`, undefined, { label: 'Undo', run: () => app.restore(item.id) });
     } catch (error) {
       app.fail(error, 'Could not delete that world');
     }
@@ -141,7 +141,7 @@
     {#if loaded && !worlds.length}
       <p class="muted none">This instance has no worlds yet.</p>
     {:else if loaded && !canJoin}
-      <p class="faint small note">Opening a world directly needs Minecraft 1.20 or newer, so use Play on this instance and pick it in the game.</p>
+      <p class="faint small note">Opening a world directly needs Minecraft 1.20 or newer.</p>
     {/if}
 
     <ul>

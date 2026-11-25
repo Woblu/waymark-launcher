@@ -381,6 +381,51 @@ impl Core {
         Ok(())
     }
 
+    /// Starts the shared settings over from one instance's, so every instance that
+    /// shares gets them when it next starts. Only its version's set changes: 1.13
+    /// and newer, or older releases. Its server list becomes the shared one too,
+    /// if servers are shared.
+    pub fn share_from(&self, id: &str) -> Result<SharedSettings> {
+        let instance = self.instance(id)?;
+        let family = crate::sync::family(&instance.minecraft).ok_or_else(|| {
+            crate::error::Error::Other(format!(
+                "Minecraft {} is too old to share settings",
+                instance.minecraft
+            ))
+        })?;
+        let settings = self.settings()?;
+        let game = self.paths.game(&instance.id);
+        let text = fs::read_to_string(game.join(OPTIONS)).map_err(|_| {
+            crate::error::Error::Other(format!(
+                "{} has no settings yet. Play it once first.",
+                instance.name
+            ))
+        })?;
+        let lines = parse(&text);
+        let set = SharedOptions {
+            version: lines
+                .iter()
+                .find(|(key, _)| key == "version")
+                .map(|(_, value)| value.clone()),
+            values: lines
+                .into_iter()
+                .filter(|(key, _)| shared(key, &settings))
+                .collect(),
+            from: Some(instance.name.clone()),
+        };
+        self.write_shared(family, &set)?;
+        if settings.share_servers
+            && let Ok(bytes) = fs::read(game.join(SERVERS))
+        {
+            crate::atomic::write(&self.shared_dir().join(SERVERS), &bytes)?;
+            crate::atomic::write(
+                &self.shared_dir().join("servers-from.txt"),
+                instance.name.as_bytes(),
+            )?;
+        }
+        self.shared_settings()
+    }
+
     /// Every shared option and whether it's shared, for choosing in Settings.
     pub fn shared_settings(&self) -> Result<SharedSettings> {
         let settings = self.settings()?;
@@ -559,6 +604,35 @@ mod tests {
         fn servers(&self, instance: &Instance) -> Vec<u8> {
             fs::read(self.core.paths.game(&instance.id).join(SERVERS)).unwrap_or_default()
         }
+    }
+
+    #[test]
+    fn the_shared_set_can_start_over_from_a_chosen_instance() {
+        let s = Setup::new();
+        let main = s.instance("Main", "1.21.4", 10, Some("version:4189\nfov:0.5\n"), None);
+        let chosen = s.instance(
+            "Chosen",
+            "1.20.1",
+            900,
+            Some("version:3465\nfov:1.0\nlastServer:play.example.net\n"),
+            None,
+        );
+        s.core.share_settings_in(&main).unwrap();
+
+        let shared = s.core.share_from(&chosen.id).unwrap();
+        assert_eq!(shared.sets[0].from.as_deref(), Some("Chosen"));
+        s.core.share_settings_in(&main).unwrap();
+        let given = s.options(&main);
+        assert!(given.contains("fov:1.0"), "{given}");
+        assert!(
+            given.contains("version:4189") && !given.contains("lastServer"),
+            "{given}"
+        );
+
+        let empty = s.instance("Empty", "1.21.4", 5, None, None);
+        assert!(s.core.share_from(&empty.id).is_err());
+        let ancient = s.instance("Ancient", "b1.7.3", 5, Some("fov:0.0\n"), None);
+        assert!(s.core.share_from(&ancient.id).is_err());
     }
 
     #[test]

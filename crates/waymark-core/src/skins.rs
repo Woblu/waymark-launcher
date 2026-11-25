@@ -149,6 +149,9 @@ pub struct SavedSkin {
     pub id: String,
     pub name: String,
     pub variant: SkinVariant,
+    /// Mojang's address for this skin, once it has been worn from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -331,6 +334,141 @@ fn remove_if_there(path: &Path) -> Result<()> {
     }
 }
 
+/// The most a picture from a link may weigh. Big GIFs run to tens of megabytes.
+const MAX_LINKED_PICTURE: usize = 40 << 20;
+/// Far more than the head of a page, where preview tags are.
+const MAX_LINKED_PAGE: usize = 2 << 20;
+
+/// What a link the player pasted led to.
+enum Linked {
+    Picture(Vec<u8>),
+    /// A web page, and where it ended up after redirects.
+    Page(String, reqwest::Url),
+}
+
+async fn fetch_linked(client: &reqwest::Client, link: &str) -> Result<Linked> {
+    let url = reqwest::Url::parse(link.trim())
+        .ok()
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .ok_or_else(|| Error::Other("that isn't a web link".into()))?;
+    let mut response = client.get(url).send().await?.error_for_status()?;
+    let base = response.url().clone();
+    let kind = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let page = kind.starts_with("text/html") || kind.starts_with("application/xhtml");
+    let limit = if page {
+        MAX_LINKED_PAGE
+    } else {
+        MAX_LINKED_PICTURE
+    };
+    let too_big = || Error::Other("that picture is too big".into());
+    if !page
+        && response
+            .content_length()
+            .is_some_and(|size| size > limit as u64)
+    {
+        return Err(too_big());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() > limit {
+            if page {
+                break;
+            }
+            return Err(too_big());
+        }
+    }
+    Ok(if page {
+        Linked::Page(String::from_utf8_lossy(&bytes).into_owned(), base)
+    } else {
+        Linked::Picture(bytes)
+    })
+}
+
+/// One attribute's value from an HTML tag, matched without regard to case.
+fn attribute(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(found) = lower[from..].find(name) {
+        let start = from + found;
+        from = start + name.len();
+        if !lower[..start].ends_with(|c: char| c.is_ascii_whitespace()) {
+            continue;
+        }
+        let Some(rest) = lower[from..].trim_start().strip_prefix('=') else {
+            continue;
+        };
+        // Lowercasing ASCII keeps every byte where it was, so this lines up with `tag`.
+        let value = tag[tag.len() - rest.len()..].trim_start();
+        let (body, end) = match value.chars().next()? {
+            quote @ ('"' | '\'') => {
+                let body = &value[1..];
+                (body, body.find(quote)?)
+            }
+            _ => (
+                value,
+                value
+                    .find(|c: char| c.is_ascii_whitespace() || c == '>')
+                    .unwrap_or(value.len()),
+            ),
+        };
+        return Some(body[..end].replace("&amp;", "&"));
+    }
+    None
+}
+
+/// The picture a page names for link previews, which on Tenor and Giphy is the GIF.
+fn preview_picture(html: &str) -> Option<String> {
+    const TAGS: [&str; 4] = [
+        "og:image:secure_url",
+        "og:image",
+        "og:image:url",
+        "twitter:image",
+    ];
+    let lower = html.to_ascii_lowercase();
+    let mut best: Option<(usize, String)> = None;
+    let mut at = 0;
+    while let Some(found) = lower[at..].find("<meta") {
+        let start = at + found;
+        let end = lower[start..]
+            .find('>')
+            .map_or(lower.len(), |end| start + end);
+        at = end;
+        let tag = &html[start..end];
+        let key = attribute(tag, "property").or_else(|| attribute(tag, "name"));
+        let rank = key.and_then(|key| TAGS.iter().position(|each| key.eq_ignore_ascii_case(each)));
+        if let (Some(rank), Some(content)) = (rank, attribute(tag, "content"))
+            && best.as_ref().is_none_or(|(kept, _)| rank < *kept)
+        {
+            best = Some((rank, content));
+        }
+    }
+    best.map(|(_, content)| content)
+}
+
+/// Downloads a picture from a link the player pasted into the cape maker. A
+/// link to a page, like a GIF's page on Tenor or Giphy, gives the picture the
+/// page names for previews.
+pub async fn picture_from_link(client: &reqwest::Client, link: &str) -> Result<Vec<u8>> {
+    let no_picture = || Error::Other("there's no picture at that link".into());
+    match fetch_linked(client, link).await? {
+        Linked::Picture(bytes) => Ok(bytes),
+        Linked::Page(html, base) => {
+            let preview = preview_picture(&html).ok_or_else(no_picture)?;
+            let url = base.join(&preview).map_err(|_| no_picture())?;
+            match fetch_linked(client, url.as_str()).await? {
+                Linked::Picture(bytes) => Ok(bytes),
+                Linked::Page(..) => Err(no_picture()),
+            }
+        }
+    }
+}
+
 /// The real cape a made one takes the place of: the one the player has on, or
 /// else their first.
 fn base_cape(profile: &SkinProfile) -> Option<&Cape> {
@@ -407,6 +545,7 @@ impl Core {
             id,
             name,
             variant: SkinVariant::Classic,
+            texture: None,
         };
         skins.insert(0, skin.clone());
         self.save_skins(&skins)?;
@@ -542,18 +681,38 @@ impl Core {
                     .find(|skin| skin.id == id)
                     .ok_or_else(|| Error::NotFound("that skin".into()))?;
                 let bytes = fs::read(self.paths.skins().join(format!("{}.png", skin.id)))?;
-                self.signed(|client| {
-                    let file = Part::bytes(bytes.clone())
-                        .file_name("skin.png")
-                        .mime_str("image/png")?;
-                    let form = Form::new()
-                        .text("variant", skin.variant.name())
-                        .part("file", file);
-                    Ok(client.post(&url).multipart(form))
-                })
-                .await
+                let profile = self
+                    .signed(|client| {
+                        let file = Part::bytes(bytes.clone())
+                            .file_name("skin.png")
+                            .mime_str("image/png")?;
+                        let form = Form::new()
+                            .text("variant", skin.variant.name())
+                            .part("file", file);
+                        Ok(client.post(&url).multipart(form))
+                    })
+                    .await?;
+                let worn = profile.skins.iter().find(|each| each.state == "ACTIVE");
+                if let Some(worn) = worn {
+                    self.note_texture(&skin.id, &worn.url)?;
+                }
+                Ok(profile)
             }
         }
+    }
+
+    /// Remembers the address Mojang gave a saved skin, so the library can tell
+    /// when it's the one worn. The same picture always gets the same address.
+    fn note_texture(&self, id: &str, texture: &str) -> Result<()> {
+        let mut skins = self.saved_skins()?;
+        let Some(skin) = skins.iter_mut().find(|skin| skin.id == id) else {
+            return Ok(());
+        };
+        if skin.texture.as_deref() != Some(texture) {
+            skin.texture = Some(texture.to_string());
+            self.save_skins(&skins)?;
+        }
+        Ok(())
     }
 
     /// Tells Mojang which of the player's capes to show, or none.
@@ -895,6 +1054,36 @@ mod tests {
         core.remove_made_cape(&dusk.id).unwrap();
         assert!(!newer.exists());
         core.take_off(STEVE_HASH).unwrap();
+    }
+
+    #[test]
+    fn a_page_link_gives_its_preview_picture() {
+        let tenor = r#"<html><head><meta name="viewport" content="width=device-width">
+            <meta content="https://media.tenor.com/abc/tenor.gif?a=1&amp;b=2" property="og:image">
+            <meta name="twitter:image" content='https://media.tenor.com/abc/small.gif'></head></html>"#;
+        assert_eq!(
+            preview_picture(tenor).as_deref(),
+            Some("https://media.tenor.com/abc/tenor.gif?a=1&b=2")
+        );
+        let secure = r#"<META PROPERTY='og:image' CONTENT='http://x/a.png'><meta property="og:image:secure_url" content="https://x/a.png">"#;
+        assert_eq!(preview_picture(secure).as_deref(), Some("https://x/a.png"));
+        assert_eq!(
+            preview_picture(r#"<meta name=twitter:image content=/pic.gif>"#).as_deref(),
+            Some("/pic.gif")
+        );
+        assert_eq!(preview_picture("<p>no meta here</p>"), None);
+        assert_eq!(
+            preview_picture(r#"<meta data-property="og:image" content="x">"#),
+            None
+        );
+    }
+
+    #[test]
+    fn saved_skins_from_before_keep_loading() {
+        let skins: Vec<SavedSkin> =
+            serde_json::from_str(r#"[{ "id": "a", "name": "Old", "variant": "slim" }]"#).unwrap();
+        assert_eq!(skins[0].texture, None);
+        assert!(!serde_json::to_string(&skins).unwrap().contains("texture"));
     }
 
     #[test]

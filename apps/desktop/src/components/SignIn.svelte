@@ -66,7 +66,7 @@
     </div>
   {:else if failure}
     <p>Signing in didn't finish.</p>
-    <p class="muted more">{explained?.sentence || 'The code may have run out of time, or the sign-in page was closed. Try again for a new code.'}</p>
+    <p class="muted more">{explained?.sentence || 'The code expired or the page was closed. Try again.'}</p>
     {#if failure.message}<p class="faint small technical selectable">{failure.message}</p>{/if}
     <div class="actions"><button class="btn primary" onclick={begin}>Try again</button></div>
   {:else if login}

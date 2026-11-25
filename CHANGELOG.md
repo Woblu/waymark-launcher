@@ -9,12 +9,20 @@ Everything in 0.5.0-beta.1 below, and these.
 ### Added
 - An instance's settings can show the full command Play runs, without starting the game, under Launching. In a terminal, `waymark command <instance>` prints the same. The access token and your user folder are left out.
 - Make a cape from a picture, on the Skins page, and wear it in game in place of a cape you own. Capes you make stay in the cape list, so you can switch between them and the real one whenever you like. Only you see them: the game on your computer shows your picture, and other players still see the real cape. Pick the part of the picture that goes on the cape, the color of the edges, and whether the elytra gets the picture too, at up to 2048 × 1024. A cape can also be saved as a PNG.
+- A cape can start from a link, including a GIF's page on Tenor or Giphy, or from a picture pasted with Ctrl+V.
 - The 3D model on the Skins page can show a cape as an elytra.
+- The Skins page marks the skin you're wearing, including one from your saved skins once you've worn it from there.
+- Shared settings can start over from an instance you pick.
+- Send instance offers to export a pack when the instance has files that aren't on Modrinth or CurseForge, since only a pack can carry them.
 
 ### Changed
+- Shorter text throughout the app, and no explanations under messages that don't need them.
 - The MCSR Ranked preset is gone. MCSR Ranked only starts from the launchers speedrun.com allows, so the instance it made couldn't start.
 - The RSG and SSG presets say they're for practice, since speedrun.com doesn't accept runs made in Waymark Launcher.
 - The friends server keeps sign-up addresses as a keyed hash that can't be reversed. Before, an IPv4 address could be recovered from its hash by trying every address.
+
+### Fixed
+- Checkboxes in mod, pack and shader lists sat on the edge of the row's highlight.
 
 ## 0.5.0-beta.1 (12 November 2026)
 
